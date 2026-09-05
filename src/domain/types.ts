@@ -7,6 +7,8 @@ export type ScreeningDecisionId = string;
 export type ScreeningState = "unscreened" | "included" | "excluded" | "maybe";
 export type ScreeningDecisionValue = "include" | "exclude" | "maybe";
 export type ScreeningCriterionType = "inclusion" | "exclusion";
+export type ExtractionFieldType = "short_text" | "long_text" | "number" | "boolean" | "single_select";
+export type ExtractionValueState = "present" | "not_reported" | "not_applicable" | "cleared";
 
 export type SupportStatus = "supported" | "unsupported";
 
@@ -100,4 +102,67 @@ export interface ScreeningHistoryItem extends ScreeningDecision {
 export interface PaperWithScreening extends Paper {
   screeningState: ScreeningState;
   currentDecision: ScreeningDecision | null;
+}
+
+export interface ExtractionField {
+  id: string;
+  projectId: ProjectId;
+  name: string;
+  description: string | null;
+  fieldType: ExtractionFieldType;
+  required: boolean;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+  archivedAt: Date | null;
+}
+
+export interface ExtractionOption {
+  id: string;
+  projectId: ProjectId;
+  fieldId: string;
+  label: string;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+  archivedAt: Date | null;
+}
+
+export interface ExtractionValue {
+  id: string;
+  projectId: ProjectId;
+  paperId: PaperId;
+  fieldId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ExtractionRevision {
+  id: string;
+  sequence: number;
+  projectId: ProjectId;
+  paperId: PaperId;
+  fieldId: string;
+  extractionValueId: string;
+  fieldType: ExtractionFieldType;
+  valueState: ExtractionValueState;
+  textValue: string | null;
+  numberValue: string | null;
+  booleanValue: boolean | null;
+  optionId: string | null;
+  researcherNote: string | null;
+  createdAt: Date;
+  finalizedAt: Date | null;
+}
+
+export interface ExtractionRevisionWithEvidence extends ExtractionRevision {
+  evidence: Evidence[];
+}
+
+export type ExtractionSupportStatus = "grounded" | "ungrounded";
+
+export interface ExtractionValueCurrent extends ExtractionValue {
+  field: ExtractionField;
+  currentRevision: ExtractionRevisionWithEvidence | null;
+  supportStatus: ExtractionSupportStatus;
 }
