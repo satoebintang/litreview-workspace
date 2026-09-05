@@ -5,7 +5,8 @@ export type DomainErrorCode =
   | "CROSS_PROJECT_REFERENCE"
   | "DUPLICATE_LINK"
   | "PROTECTED_DELETE"
-  | "DATABASE_CONSTRAINT";
+  | "DATABASE_CONSTRAINT"
+  | "INELIGIBLE_REFERENCE";
 
 export class DomainError extends Error {
   constructor(

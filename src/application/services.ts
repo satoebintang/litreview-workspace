@@ -55,6 +55,7 @@ import {
   ClaimRevisionRepository,
   ClaimRevisionSupportRepository,
 } from "./repositories";
+import { createManuscriptServices } from "./manuscript-services";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
   const result = schema.safeParse(input);
@@ -402,7 +403,7 @@ export function createReviewServices(db: Database) {
     return (await synthesisViewsForRevisions(projectId, new Map([[statement.id, statement]]), [revision]))[0];
   }
 
-  return {
+  const services = {
     async createProject(input: CreateProjectInput) {
       const values = validate(createProjectSchema, input);
       return projectRepo.create({ title: values.title, description: values.description ?? null, researchQuestion: values.researchQuestion ?? null });
@@ -936,4 +937,5 @@ export function createReviewServices(db: Database) {
       return { claim: result.claim, supportStatus: result.currentRevision.supportStatus, evidence: result.currentRevision.supports.evidence.map((item) => item.evidence) };
     },
   };
+  return Object.assign(services, createManuscriptServices(db));
 }

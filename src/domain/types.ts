@@ -3,6 +3,10 @@ export type PaperId = string;
 export type EvidenceId = string;
 export type ClaimId = string;
 export type ClaimRevisionId = string;
+export type ManuscriptId = string;
+export type ManuscriptSectionId = string;
+export type ManuscriptClaimPlacementId = string;
+export type ManuscriptPlacementEventId = string;
 export type ScreeningCriterionId = string;
 export type ScreeningDecisionId = string;
 export type ScreeningState = "unscreened" | "included" | "excluded" | "maybe";
@@ -17,6 +21,9 @@ export type ClaimSupportKind = "evidence" | "extractionRevision" | "synthesisRev
 export type ClaimRevisionSupportStatus = "supported" | "unsupported";
 export type SynthesisState = "active" | "withdrawn";
 export type SynthesisSupportStatus = "supported" | "unsupported";
+export type ManuscriptSectionType = "introduction" | "methods" | "results" | "discussion" | "limitations" | "conclusion" | "custom";
+export type ManuscriptPlacementEventType = "placed" | "replaced" | "removed";
+export type ManuscriptWarningCode = "unsupported_claim_revision" | "superseded_claim_revision" | "withdrawn_parent_claim" | "no_citation_candidates" | "incomplete_bibliography";
 
 export interface Project {
   id: ProjectId;
@@ -122,6 +129,126 @@ export interface ClaimRevisionView extends ClaimRevision {
   distinctPaperCount: number;
   citationCandidateCount: number;
   citationCandidates: CitationCandidate[];
+}
+
+/** A structured manuscript container. Manuscripts are intentionally separate
+ * from Project so that alternate drafts can be added without changing the
+ * Project identity model. */
+export interface Manuscript {
+  id: ManuscriptId;
+  projectId: ProjectId;
+  title: string;
+  isDefault: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ManuscriptSection {
+  id: ManuscriptSectionId;
+  projectId: ProjectId;
+  manuscriptId: ManuscriptId;
+  title: string;
+  sectionType: ManuscriptSectionType;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+  archivedAt: Date | null;
+}
+
+/** The placement's claimRevisionId is the historical content identity. It is
+ * never resolved dynamically to the stable Claim's latest revision. */
+export interface ManuscriptClaimPlacement {
+  id: ManuscriptClaimPlacementId;
+  projectId: ProjectId;
+  manuscriptId: ManuscriptId;
+  sectionId: ManuscriptSectionId;
+  claimId: ClaimId;
+  claimRevisionId: ClaimRevisionId;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt?: Date;
+  removedAt: Date | null;
+}
+
+export interface ManuscriptPlacementEvent {
+  id: ManuscriptPlacementEventId;
+  sequence: number;
+  projectId: ProjectId;
+  manuscriptId: ManuscriptId;
+  sectionId: ManuscriptSectionId;
+  placementId: ManuscriptClaimPlacementId;
+  claimId: ClaimId;
+  eventType: ManuscriptPlacementEventType;
+  fromClaimRevisionId: ClaimRevisionId | null;
+  toClaimRevisionId: ClaimRevisionId | null;
+  occurredAt: Date;
+}
+
+/** Citation candidate with its derived number in one manuscript projection. */
+export interface ManuscriptCitationCandidate extends CitationCandidate {
+  citationNumber: number;
+  firstOccurrence: {
+    sectionId: ManuscriptSectionId;
+    placementId: ManuscriptClaimPlacementId;
+    claimRevisionId: ClaimRevisionId;
+  };
+}
+
+export interface ManuscriptClaimCitationCandidate extends CitationCandidate {
+  citationNumber: number;
+}
+
+export interface ManuscriptClaimPlacementView extends ManuscriptClaimPlacement {
+  claim: Claim;
+  claimRevision: ClaimRevision;
+  latestClaimRevisionId: ClaimRevisionId;
+  claimLifecycle: ClaimLifecycle;
+  supportStatus: ClaimRevisionSupportStatus;
+  isCurrentClaimRevision: boolean;
+  isSuperseded: boolean;
+  citationCandidates: ManuscriptClaimCitationCandidate[];
+  /** Full exact-revision provenance, when requested by the projection. */
+  provenance: ClaimRevisionView;
+}
+
+export interface ManuscriptBibliographyCandidate {
+  paper: Paper;
+  citationNumber: number;
+  firstOccurrence: {
+    sectionId: ManuscriptSectionId;
+    placementId: ManuscriptClaimPlacementId;
+    claimRevisionId: ClaimRevisionId;
+  };
+}
+
+export interface ManuscriptWarning {
+  code: ManuscriptWarningCode;
+  message: string;
+  sectionId?: ManuscriptSectionId;
+  placementId?: ManuscriptClaimPlacementId;
+  claimId?: ClaimId;
+  claimRevisionId?: ClaimRevisionId;
+  paperId?: PaperId;
+}
+
+export interface ManuscriptCounts {
+  sectionCount: number;
+  placedClaimCount: number;
+  unsupportedPlacedClaimCount: number;
+  supersededPlacedClaimCount: number;
+  withdrawnParentClaimCount: number;
+  distinctCitationCandidatePaperCount: number;
+}
+
+export interface ManuscriptSectionView extends ManuscriptSection {
+  placements: ManuscriptClaimPlacementView[];
+}
+
+export interface ManuscriptView extends Manuscript {
+  sections: ManuscriptSectionView[];
+  bibliographyCandidates: ManuscriptBibliographyCandidate[];
+  warnings: ManuscriptWarning[];
+  counts: ManuscriptCounts;
 }
 
 export type ClaimHistoryItem = ClaimRevisionView;

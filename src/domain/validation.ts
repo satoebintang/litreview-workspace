@@ -139,6 +139,55 @@ export const extractionComparisonFilterSchema = z.object({
   booleanValue: z.boolean().optional(),
 });
 
+const manuscriptSectionTypeSchema = z.enum(["introduction", "methods", "results", "discussion", "limitations", "conclusion", "custom"]);
+
+/** Manuscript titles are organizational metadata; the default service may
+ * create one without caller input and receives the default title here. */
+export const createManuscriptSchema = z.object({
+  title: z.string().trim().min(1).max(500).default("Manuscript"),
+});
+
+export const createManuscriptSectionSchema = z.object({
+  title: z.string().trim().min(1).max(500),
+  sectionType: manuscriptSectionTypeSchema.default("custom"),
+});
+
+export const renameManuscriptSectionSchema = z.object({
+  title: z.string().trim().min(1).max(500),
+});
+
+export const reorderManuscriptSectionsSchema = z.object({
+  sectionIds: z.array(idSchema),
+});
+
+export const archiveManuscriptSectionSchema = z.object({
+  sectionId: idSchema,
+});
+
+export const placeClaimRevisionSchema = z.object({
+  sectionId: idSchema,
+  claimId: idSchema,
+  claimRevisionId: idSchema,
+});
+
+export const replacePlacedClaimRevisionSchema = z.object({
+  placementId: idSchema,
+  claimRevisionId: idSchema,
+  /** Optional optimistic-concurrency guard. The service still validates the
+   * currently placed revision and monotonic sequence when omitted. */
+  expectedCurrentClaimRevisionId: idSchema.optional(),
+});
+
+export const removeClaimPlacementSchema = z.object({
+  placementId: idSchema,
+  expectedCurrentClaimRevisionId: idSchema.optional(),
+});
+
+export const reorderClaimPlacementsSchema = z.object({
+  sectionId: idSchema,
+  placementIds: z.array(idSchema),
+});
+
 export type CreateProjectInput = z.input<typeof createProjectSchema>;
 export type CreatePaperInput = z.input<typeof createPaperSchema>;
 export type RecordEvidenceInput = z.input<typeof recordEvidenceSchema>;
@@ -156,3 +205,12 @@ export type ReviseExtractionValueInput = z.input<typeof reviseExtractionValueSch
 export type SynthesisRevisionInput = z.input<typeof synthesisRevisionInputSchema>;
 export type SynthesisWithdrawalInput = z.input<typeof synthesisWithdrawalSchema>;
 export type ExtractionComparisonFilter = z.input<typeof extractionComparisonFilterSchema>;
+export type CreateManuscriptInput = z.input<typeof createManuscriptSchema>;
+export type CreateManuscriptSectionInput = z.input<typeof createManuscriptSectionSchema>;
+export type RenameManuscriptSectionInput = z.input<typeof renameManuscriptSectionSchema>;
+export type ReorderManuscriptSectionsInput = z.input<typeof reorderManuscriptSectionsSchema>;
+export type ArchiveManuscriptSectionInput = z.input<typeof archiveManuscriptSectionSchema>;
+export type PlaceClaimRevisionInput = z.input<typeof placeClaimRevisionSchema>;
+export type ReplacePlacedClaimRevisionInput = z.input<typeof replacePlacedClaimRevisionSchema>;
+export type RemoveClaimPlacementInput = z.input<typeof removeClaimPlacementSchema>;
+export type ReorderClaimPlacementsInput = z.input<typeof reorderClaimPlacementsSchema>;

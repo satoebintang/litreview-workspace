@@ -12,6 +12,7 @@ import {
   bigint,
   boolean,
   numeric,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -490,4 +491,144 @@ export const claimRevisionSynthesisSupports = pgTable(
   }),
 );
 
-export const schema = { projects, papers, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports };
+export const manuscripts = pgTable(
+  "manuscripts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    title: text("title").notNull().default("Manuscript"),
+    isDefault: boolean("is_default").notNull().default(false),
+    ...timestamps,
+  },
+  (table) => ({
+    projectIdentity: unique("manuscripts_project_id_id_unique").on(table.projectId, table.id),
+    projectCreatedAt: index("manuscripts_project_created_at_idx").on(table.projectId, table.createdAt),
+    defaultPerProject: uniqueIndex("manuscripts_project_default_unique")
+      .on(table.projectId)
+      .where(sql`${table.isDefault} = true`),
+    titleNonblank: check("manuscripts_title_nonblank", sql`btrim(${table.title}) <> ''`),
+  }),
+);
+
+export const manuscriptSections = pgTable(
+  "manuscript_sections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    manuscriptId: uuid("manuscript_id").notNull(),
+    title: text("title").notNull(),
+    sectionType: text("section_type").notNull().default("custom"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...timestamps,
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => ({
+    projectIdentity: unique("manuscript_sections_project_id_id_unique").on(table.projectId, table.id),
+    manuscriptIdentity: unique("manuscript_sections_project_manuscript_id_id_unique").on(table.projectId, table.manuscriptId, table.id),
+    manuscriptOwnership: foreignKey({
+      columns: [table.projectId, table.manuscriptId],
+      foreignColumns: [manuscripts.projectId, manuscripts.id],
+      name: "manuscript_sections_project_manuscript_fk",
+    }).onDelete("restrict"),
+    manuscriptOrder: index("manuscript_sections_project_manuscript_order_idx").on(table.projectId, table.manuscriptId, table.sortOrder, table.id),
+    sectionTypeValid: check("manuscript_sections_section_type_valid", sql`${table.sectionType} in ('introduction', 'methods', 'results', 'discussion', 'limitations', 'conclusion', 'custom')`),
+    titleNonblank: check("manuscript_sections_title_nonblank", sql`btrim(${table.title}) <> ''`),
+    sortOrderValid: check("manuscript_sections_sort_order_valid", sql`${table.sortOrder} >= 0`),
+  }),
+);
+
+export const manuscriptClaimPlacements = pgTable(
+  "manuscript_claim_placements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    manuscriptId: uuid("manuscript_id").notNull(),
+    sectionId: uuid("section_id").notNull(),
+    claimId: uuid("claim_id").notNull(),
+    claimRevisionId: uuid("claim_revision_id").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+  },
+  (table) => ({
+    projectIdentity: unique("manuscript_claim_placements_project_id_id_unique").on(table.projectId, table.id),
+    sectionIdentity: unique("manuscript_claim_placements_project_section_id_id_unique").on(table.projectId, table.sectionId, table.id),
+    manuscriptIdentity: unique("manuscript_claim_placements_project_manuscript_id_id_unique").on(table.projectId, table.manuscriptId, table.id),
+    claimRevisionIdentity: unique("manuscript_claim_placements_claim_revision_uq").on(table.projectId, table.claimId, table.claimRevisionId, table.id),
+    sectionOwnership: foreignKey({
+      columns: [table.projectId, table.manuscriptId, table.sectionId],
+      foreignColumns: [manuscriptSections.projectId, manuscriptSections.manuscriptId, manuscriptSections.id],
+      name: "manuscript_claim_placements_project_manuscript_section_fk",
+    }).onDelete("restrict"),
+    claimRevisionOwnership: foreignKey({
+      columns: [table.projectId, table.claimId, table.claimRevisionId],
+      foreignColumns: [claimRevisions.projectId, claimRevisions.claimId, claimRevisions.id],
+      name: "manuscript_claim_placements_project_claim_revision_fk",
+    }).onDelete("restrict"),
+    sectionOrder: index("manuscript_claim_placements_project_section_order_idx").on(table.projectId, table.sectionId, table.sortOrder, table.id),
+    manuscriptOrder: index("manuscript_claim_placements_project_manuscript_order_idx").on(table.projectId, table.manuscriptId, table.sortOrder, table.id),
+    activeRevisionUnique: uniqueIndex("manuscript_claim_placements_active_revision_unique")
+      .on(table.projectId, table.sectionId, table.claimRevisionId)
+      .where(sql`${table.removedAt} is null`),
+    sortOrderValid: check("manuscript_claim_placements_sort_order_valid", sql`${table.sortOrder} >= 0`),
+  }),
+);
+
+export const manuscriptClaimPlacementEvents = pgTable(
+  "manuscript_claim_placement_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    manuscriptId: uuid("manuscript_id").notNull(),
+    sectionId: uuid("section_id").notNull(),
+    placementId: uuid("placement_id").notNull(),
+    claimId: uuid("claim_id").notNull(),
+    eventType: text("event_type").notNull(),
+    fromClaimRevisionId: uuid("from_claim_revision_id"),
+    toClaimRevisionId: uuid("to_claim_revision_id"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    placementSequence: unique("manuscript_claim_placement_events_placement_sequence_uq").on(table.projectId, table.placementId, table.sequence),
+    placementOwnership: foreignKey({
+      columns: [table.projectId, table.placementId],
+      foreignColumns: [manuscriptClaimPlacements.projectId, manuscriptClaimPlacements.id],
+      name: "manuscript_claim_placement_events_project_placement_fk",
+    }).onDelete("restrict"),
+    manuscriptOwnership: foreignKey({
+      columns: [table.projectId, table.manuscriptId],
+      foreignColumns: [manuscripts.projectId, manuscripts.id],
+      name: "manuscript_claim_placement_events_project_manuscript_fk",
+    }).onDelete("restrict"),
+    sectionOwnership: foreignKey({
+      columns: [table.projectId, table.manuscriptId, table.sectionId],
+      foreignColumns: [manuscriptSections.projectId, manuscriptSections.manuscriptId, manuscriptSections.id],
+      name: "manuscript_claim_placement_events_project_manuscript_section_fk",
+    }).onDelete("restrict"),
+    claimOwnership: foreignKey({
+      columns: [table.projectId, table.claimId],
+      foreignColumns: [claims.projectId, claims.id],
+      name: "manuscript_claim_placement_events_project_claim_fk",
+    }).onDelete("restrict"),
+    fromRevisionOwnership: foreignKey({
+      columns: [table.projectId, table.claimId, table.fromClaimRevisionId],
+      foreignColumns: [claimRevisions.projectId, claimRevisions.claimId, claimRevisions.id],
+      name: "manuscript_claim_placement_events_project_from_revision_fk",
+    }).onDelete("restrict"),
+    toRevisionOwnership: foreignKey({
+      columns: [table.projectId, table.claimId, table.toClaimRevisionId],
+      foreignColumns: [claimRevisions.projectId, claimRevisions.claimId, claimRevisions.id],
+      name: "manuscript_claim_placement_events_project_to_revision_fk",
+    }).onDelete("restrict"),
+    placementLookup: index("manuscript_claim_placement_events_project_placement_idx").on(table.projectId, table.placementId, table.sequence),
+    eventTypeValid: check("manuscript_claim_placement_events_event_type_valid", sql`${table.eventType} in ('placed', 'replaced', 'removed')`),
+    eventShape: check("manuscript_claim_placement_events_shape_valid", sql`(
+      (${table.eventType} = 'placed' and ${table.fromClaimRevisionId} is null and ${table.toClaimRevisionId} is not null)
+      or (${table.eventType} = 'replaced' and ${table.fromClaimRevisionId} is not null and ${table.toClaimRevisionId} is not null and ${table.fromClaimRevisionId} <> ${table.toClaimRevisionId})
+      or (${table.eventType} = 'removed' and ${table.fromClaimRevisionId} is not null and ${table.toClaimRevisionId} is null)
+    )`),
+  }),
+);
+
+export const schema = { projects, papers, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptClaimPlacementEvents };
