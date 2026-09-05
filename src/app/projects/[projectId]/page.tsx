@@ -1,0 +1,38 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { addPaperAction, createClaimAction, recordEvidenceAction } from "@/app/actions";
+import { DomainError } from "@/domain/errors";
+import { reviewServices } from "@/app/server";
+
+export default async function ProjectPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams?: Promise<{ error?: string; saved?: string }> }) {
+  const { projectId } = await params;
+  const query = searchParams ? await searchParams : {};
+  let project;
+  try { project = await reviewServices.getProject(projectId); } catch (error) { if (error instanceof DomainError && (error.code === "PROJECT_NOT_FOUND" || error.code === "VALIDATION_ERROR")) notFound(); throw error; }
+  const [papers, evidence, claims] = await Promise.all([reviewServices.listPapers(projectId), reviewServices.listEvidence(projectId), reviewServices.listClaims(projectId)]);
+  const paperById = new Map(papers.map((paper) => [paper.id, paper]));
+  return (
+    <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
+      <div className="container workspace"><Link className="back-link" href="/">← All projects</Link>
+        <div className="workspace-header"><div><p className="eyebrow">Review workspace</p><h1>{project.title}</h1>{project.researchQuestion && <p>Research question: {project.researchQuestion}</p>}</div><span className="status supported">● Workspace active</span></div>
+        <nav className="stagebar" aria-label="Review stages"><span className="stage active">1. Question</span><span className="stage active">2. Papers</span><span className="stage active">3. Evidence</span><span className="stage active">4. Claims</span><span className="stage">5. Synthesis</span><span className="stage">6. Writing</span></nav>
+        {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">{query.saved === "paper" ? "Paper added to the collection." : "Evidence recorded with source provenance."}</div>}
+        <div className="workspace-grid">
+          <section className="card section-card"><div className="section-heading"><h2>Paper collection</h2><span className="count">{papers.length} {papers.length === 1 ? "paper" : "papers"}</span></div>
+            <form action={addPaperAction}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="paper-title">Title</label><input id="paper-title" name="title" required placeholder="Paper title" /></div><div className="field"><label htmlFor="paper-authors">Authors <span className="hint">comma-separated, in order</span></label><input id="paper-authors" name="authors" placeholder="First Author, Second Author" /></div><div className="field"><label htmlFor="paper-year">Publication year <span className="hint">optional</span></label><input id="paper-year" name="publicationYear" type="number" min="1000" max="3000" placeholder="2024" /></div><div className="field"><label htmlFor="paper-venue">Venue <span className="hint">optional</span></label><input id="paper-venue" name="venue" placeholder="Journal or conference" /></div><button className="button" type="submit">Add paper</button></form>
+            <div className="item-list" style={{ marginTop: 22 }}>{papers.length === 0 ? <div className="empty">Your source collection is empty. Add the first paper above.</div> : papers.map((paper) => <div className="item" key={paper.id}><div className="item-title">{paper.title}</div><div className="item-meta">{paper.authors.length ? paper.authors.join(", ") : "Author details not added"}{paper.publicationYear ? ` · ${paper.publicationYear}` : ""}</div>{paper.venue && <div className="item-meta">{paper.venue}</div>}</div>)}</div>
+          </section>
+          <section className="card section-card"><div className="section-heading"><h2>Source evidence</h2><span className="count">{evidence.length} captured</span></div>
+            {papers.length === 0 ? <div className="empty">Add a paper before recording source evidence.</div> : <form action={recordEvidenceAction}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="evidence-paper">Paper</label><select id="evidence-paper" name="paperId" required defaultValue=""><option value="" disabled>Select a paper</option>{papers.map((paper) => <option key={paper.id} value={paper.id}>{paper.title}</option>)}</select></div><div className="field"><label htmlFor="source-text">Verbatim source passage</label><textarea id="source-text" name="sourceText" required placeholder="Copy the exact passage that supports your work" /></div><div className="field"><label htmlFor="page-number">Page number</label><input id="page-number" name="pageNumber" required type="number" min="1" placeholder="12" /></div><div className="field"><label htmlFor="evidence-note">Researcher note <span className="hint">optional · not source text</span></label><textarea id="evidence-note" name="note" placeholder="Your context or interpretation" /></div><button className="button" type="submit">Record evidence</button></form>}
+            <div className="item-list" style={{ marginTop: 22 }}>{evidence.length === 0 ? <div className="empty">Evidence you capture will appear here with its source page.</div> : evidence.map((item) => <div className="item" key={item.id}><div className="quote">“{item.sourceText}”</div><div className="item-meta">Page {item.pageNumber} · <span className="paper-chip">{paperById.get(item.paperId)?.title ?? "Source paper"}</span></div>{item.note && <div className="item-meta">Note: {item.note}</div>}</div>)}</div>
+          </section>
+          <section className="card section-card full"><div className="section-heading"><h2>Claim ledger</h2><span className="count">{claims.length} {claims.length === 1 ? "claim" : "claims"}</span></div>
+            <form action={createClaimAction}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="claim-text">New claim</label><textarea id="claim-text" name="claimText" required placeholder="State a claim you want to support with evidence" /></div><button className="button" type="submit">Create claim</button></form>
+            <div className="item-list" style={{ marginTop: 22 }}>{claims.length === 0 ? <div className="empty">Claims start unsupported until you connect them to source evidence.</div> : claims.map(async (claim) => { const provenance = await reviewServices.getClaimProvenance(projectId, claim.id); return <div className="item item-row" key={claim.id}><div><div className="item-title">{claim.claimText}</div><div className="item-meta">{provenance.evidence.length} supporting {provenance.evidence.length === 1 ? "passage" : "passages"}</div></div><div style={{ display: "flex", alignItems: "center", gap: 10 }}><span className={`status ${provenance.supportStatus}`}>{provenance.supportStatus === "supported" ? "● Supported" : "○ Unsupported"}</span><Link className="button ghost" href={`/projects/${projectId}/claims/${claim.id}`}>Inspect provenance →</Link></div></div>; })}</div>
+          </section>
+        </div>
+        <p className="footer-note">Your research record is source-first: claims become supported only when linked to captured evidence.</p>
+      </div>
+    </main>
+  );
+}

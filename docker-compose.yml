@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: litreview
+      POSTGRES_PASSWORD: litreview
+      POSTGRES_DB: litreview
+    ports:
+      - "5432:5432"
+    volumes:
+      - litreview-postgres-v1:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litreview -d litreview"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  litreview-postgres-v1:
