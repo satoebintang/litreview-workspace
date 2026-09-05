@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { claimEvidence, claims, extractionRevisionEvidence, extractionValues, extractionValueRevisions } from "@/db/schema";
+import { claimEvidence, claims, extractionRevisionEvidence, extractionValues, extractionValueRevisions, synthesisStatements, synthesisRevisions } from "@/db/schema";
 import { DomainError, isConstraintError } from "@/domain/errors";
 import {
   claimEvidenceInputSchema,
@@ -25,6 +25,12 @@ import {
   type UpdateExtractionFieldInput,
   type CreateExtractionOptionInput,
   type ReviseExtractionValueInput,
+  synthesisRevisionInputSchema,
+  synthesisWithdrawalSchema,
+  extractionComparisonFilterSchema,
+  type SynthesisRevisionInput,
+  type SynthesisWithdrawalInput,
+  type ExtractionComparisonFilter,
 } from "@/domain/validation";
 import type { ExtractionFieldType } from "@/domain/types";
 import {
@@ -40,6 +46,9 @@ import {
   ExtractionValueRepository,
   ExtractionRevisionRepository,
   ExtractionRevisionEvidenceRepository,
+  SynthesisStatementRepository,
+  SynthesisRevisionRepository,
+  SynthesisRevisionSupportRepository,
 } from "./repositories";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
@@ -54,6 +63,8 @@ function ensureId(id: string): string {
   return result.data;
 }
 
+type SqlExecutor = Pick<Database, "execute">;
+
 export function createReviewServices(db: Database) {
   const projectRepo = new ProjectRepository(db);
   const paperRepo = new PaperRepository(db);
@@ -67,6 +78,9 @@ export function createReviewServices(db: Database) {
   const extractionValueRepo = new ExtractionValueRepository(db);
   const extractionRevisionRepo = new ExtractionRevisionRepository(db);
   const extractionEvidenceRepo = new ExtractionRevisionEvidenceRepository(db);
+  const synthesisStatementRepo = new SynthesisStatementRepository(db);
+  const synthesisRevisionRepo = new SynthesisRevisionRepository(db);
+  const synthesisSupportRepo = new SynthesisRevisionSupportRepository(db);
 
   async function requireProject(projectId: string) {
     ensureId(projectId);
@@ -143,6 +157,114 @@ export function createReviewServices(db: Database) {
     }
     if (typeof input.value !== "string") throw new DomainError("VALIDATION_ERROR", "Single-select extraction values must reference an option");
     return { valueState: state, textValue: null, numberValue: null, booleanValue: null, optionId: input.value, researcherNote: note };
+  }
+
+  function mapEvidence(row: Record<string, unknown>) {
+    return {
+      id: String(row.id), projectId: String(row.project_id), paperId: String(row.paper_id),
+      sourceText: String(row.source_text), pageNumber: Number(row.page_number), note: row.note == null ? null : String(row.note),
+      createdAt: row.created_at as Date, updatedAt: row.updated_at as Date,
+    };
+  }
+
+  function mapPaper(row: Record<string, unknown>) {
+    return {
+      id: String(row.paper_id_value ?? row.paper_id ?? row.id), projectId: String(row.project_id), title: String(row.paper_title ?? row.title),
+      authors: (row.authors as string[]) ?? [], publicationYear: row.publication_year as number | null,
+      venue: row.venue as string | null, doi: row.doi as string | null, abstract: row.abstract as string | null,
+      bibliographicNote: row.bibliographic_note as string | null, createdAt: row.paper_created_at as Date ?? row.created_at as Date,
+      updatedAt: row.paper_updated_at as Date ?? row.updated_at as Date,
+    };
+  }
+
+  function mapField(row: Record<string, unknown>) {
+    return {
+      id: String(row.field_id_value ?? row.field_id), projectId: String(row.project_id), name: String(row.field_name ?? row.name),
+      description: row.field_description as string | null, fieldType: row.field_type_value ?? row.field_type as ExtractionFieldType,
+      required: Boolean(row.required), sortOrder: Number(row.sort_order), createdAt: row.field_created_at as Date,
+      updatedAt: row.field_updated_at as Date, archivedAt: row.field_archived_at as Date | null,
+    };
+  }
+
+  function mapExtractionRevision(row: Record<string, unknown>, evidence: ReturnType<typeof mapEvidence>[] = []) {
+    return {
+      id: String(row.revision_id ?? row.id), sequence: Number(row.revision_sequence ?? row.sequence), projectId: String(row.project_id),
+      paperId: String(row.paper_id), fieldId: String(row.field_id), extractionValueId: String(row.extraction_value_id),
+      fieldType: String(row.field_type) as ExtractionFieldType, valueState: String(row.value_state) as "present" | "not_reported" | "not_applicable" | "cleared",
+      textValue: row.text_value as string | null, numberValue: row.number_value as string | null, booleanValue: row.boolean_value as boolean | null,
+      optionId: row.option_id as string | null, researcherNote: (row.revision_note ?? row.researcher_note) as string | null,
+      createdAt: (row.revision_created_at ?? row.created_at) as Date, finalizedAt: row.revision_finalized_at ?? row.finalized_at as Date | null,
+      evidence,
+    };
+  }
+
+  function mapSynthesisRow(row: Record<string, unknown>) {
+    const statement = {
+      id: String(row.statement_id), projectId: String(row.project_id), createdAt: row.statement_created_at as Date,
+    };
+    const revision = {
+      id: String(row.revision_id), sequence: Number(row.sequence), projectId: String(row.project_id),
+      synthesisStatementId: String(row.synthesis_statement_id), state: String(row.state) as "active" | "withdrawn",
+      title: row.title as string | null, statementText: row.statement_text as string | null, researcherNote: row.researcher_note as string | null,
+      createdAt: row.created_at as Date, finalizedAt: row.finalized_at as Date | null,
+    };
+    return { statement, revision };
+  }
+
+  async function validateSynthesisSupports(projectId: string, extractionRevisionIds: string[], executor: SqlExecutor = db) {
+    extractionRevisionIds.forEach(ensureId);
+    if (!extractionRevisionIds.length) return [] as Record<string, unknown>[];
+    const rows = (await executor.execute(sql`
+      select r.id, r.project_id, r.paper_id, r.field_id, r.extraction_value_id, r.field_type, r.value_state,
+        r.text_value, r.number_value, r.boolean_value, r.option_id, r.researcher_note, r.created_at, r.finalized_at,
+        p.id as paper_id_value,
+        coalesce((select sd.decision from screening_decisions sd where sd.project_id=r.project_id and sd.paper_id=r.paper_id and sd.stage='title_abstract' order by sd.sequence desc limit 1), 'unscreened') as screening_state
+      from extraction_value_revisions r join papers p on p.project_id=r.project_id and p.id=r.paper_id
+      where r.project_id=${projectId} and r.id in (${sql.join(extractionRevisionIds.map((id) => sql`${id}::uuid`), sql`, `)})
+    `)) as unknown as Record<string, unknown>[];
+    if (rows.length !== extractionRevisionIds.length) throw new DomainError("CROSS_PROJECT_REFERENCE", "One or more extraction revisions do not belong to this project");
+    for (const row of rows) {
+      if (row.finalized_at == null) throw new DomainError("VALIDATION_ERROR", "Synthesis support must use finalized extraction revisions");
+      if (String(row.value_state) === "cleared") throw new DomainError("VALIDATION_ERROR", "Cleared extraction revisions cannot support new synthesis");
+      if (String(row.screening_state) !== "include") throw new DomainError("VALIDATION_ERROR", "New synthesis support is limited to currently included papers");
+    }
+    return rows;
+  }
+
+  function synthesisViewFromRows(projectId: string, statement: typeof synthesisStatements.$inferSelect, revision: typeof synthesisRevisions.$inferSelect, rawRows: Record<string, unknown>[], evidenceByRevision: Map<string, ReturnType<typeof mapEvidence>[]>) {
+    const supports = rawRows.map((row) => ({
+      projectId, synthesisRevisionId: revision.id, extractionRevisionId: String(row.extraction_revision_id), createdAt: row.support_created_at as Date,
+      extractionRevision: mapExtractionRevision(row, evidenceByRevision.get(String(row.revision_id)) ?? []), paper: mapPaper(row), field: mapField(row),
+      isCurrentExtractionRevision: !Boolean(row.has_newer_revision),
+    }));
+    return {
+      ...revision, statement, supports,
+      supportStatus: supports.length ? "supported" as const : "unsupported" as const,
+      supportingRevisionCount: supports.length,
+      supportingPaperCount: new Set(supports.map((support) => support.paper.id)).size,
+      supportingFieldCount: new Set(supports.map((support) => support.field.id)).size,
+    };
+  }
+
+  async function synthesisViewsForRevisions(projectId: string, statements: Map<string, typeof synthesisStatements.$inferSelect>, revisions: (typeof synthesisRevisions.$inferSelect)[]) {
+    const rawRows = (await synthesisSupportRepo.listWithProvenanceForRevisions(projectId, revisions.map((revision) => revision.id))) as unknown as Record<string, unknown>[];
+    const evidenceRows = (await synthesisSupportRepo.listEvidenceForRevisions(projectId, rawRows.map((row) => String(row.revision_id)))) as unknown as Record<string, unknown>[];
+    const evidenceByRevision = new Map<string, ReturnType<typeof mapEvidence>[]>();
+    for (const row of evidenceRows) {
+      const id = String(row.revision_id);
+      const list = evidenceByRevision.get(id) ?? [];
+      list.push(mapEvidence(row)); evidenceByRevision.set(id, list);
+    }
+    const rowsByRevision = new Map<string, Record<string, unknown>[]>();
+    for (const row of rawRows) {
+      const id = String(row.synthesis_revision_id);
+      rowsByRevision.set(id, [...(rowsByRevision.get(id) ?? []), row]);
+    }
+    return revisions.map((revision) => synthesisViewFromRows(projectId, statements.get(revision.synthesisStatementId)!, revision, rowsByRevision.get(revision.id) ?? [], evidenceByRevision));
+  }
+
+  async function synthesisView(projectId: string, statement: typeof synthesisStatements.$inferSelect, revision: typeof synthesisRevisions.$inferSelect) {
+    return (await synthesisViewsForRevisions(projectId, new Map([[statement.id, statement]]), [revision]))[0];
   }
 
   return {
@@ -368,6 +490,136 @@ export function createReviewServices(db: Database) {
         return { paper, completedRequired: completed, requiredCount: required.length, status, percentage: required.length ? Math.round((completed / required.length) * 100) : null };
       }));
       return { includedPaperCount: included.length, requiredFieldCount: required.length, papers: progress };
+    },
+
+    async createSynthesisStatement(projectId: string, input: SynthesisRevisionInput) {
+      await requireProject(projectId);
+      const values = validate(synthesisRevisionInputSchema, input);
+      const ids = values.extractionRevisionIds ?? [];
+      return db.transaction(async (tx) => {
+        const statementRows = await tx.insert(synthesisStatements).values({ projectId }).returning();
+        const statement = statementRows[0];
+        await synthesisStatementRepo.findForUpdate(tx, projectId, statement.id);
+        await validateSynthesisSupports(projectId, ids, tx);
+        const draft = await synthesisRevisionRepo.createDraft(tx, {
+          projectId, synthesisStatementId: statement.id, state: "active", title: values.title ?? null,
+          statementText: values.statementText, researcherNote: values.researcherNote ?? null,
+        });
+        await synthesisSupportRepo.createMany(tx, projectId, draft.id, ids);
+        const finalized = await synthesisRevisionRepo.finalize(tx, projectId, draft.id);
+        if (!finalized) throw new DomainError("DATABASE_CONSTRAINT", "Synthesis revision could not be finalized");
+        return { statement, revision: finalized };
+      });
+    },
+
+    async reviseSynthesisStatement(projectId: string, statementId: string, input: SynthesisRevisionInput) {
+      await requireProject(projectId); ensureId(statementId);
+      const values = validate(synthesisRevisionInputSchema, input);
+      const ids = values.extractionRevisionIds ?? [];
+      const result = await db.transaction(async (tx) => {
+        const statement = await synthesisStatementRepo.findForUpdate(tx, projectId, statementId);
+        if (!statement) throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis statement does not belong to this project");
+        await validateSynthesisSupports(projectId, ids, tx);
+        const draft = await synthesisRevisionRepo.createDraft(tx, {
+          projectId, synthesisStatementId: statementId, state: "active", title: values.title ?? null,
+          statementText: values.statementText, researcherNote: values.researcherNote ?? null,
+        });
+        await synthesisSupportRepo.createMany(tx, projectId, draft.id, ids);
+        const finalized = await synthesisRevisionRepo.finalize(tx, projectId, draft.id);
+        if (!finalized) throw new DomainError("DATABASE_CONSTRAINT", "Synthesis revision could not be finalized");
+        return { statement, revision: finalized };
+      });
+      return result;
+    },
+
+    async withdrawSynthesisStatement(projectId: string, statementId: string, input?: SynthesisWithdrawalInput) {
+      await requireProject(projectId); ensureId(statementId);
+      const values = validate(synthesisWithdrawalSchema, input ?? {});
+      const result = await db.transaction(async (tx) => {
+        const statement = await synthesisStatementRepo.findForUpdate(tx, projectId, statementId);
+        if (!statement) throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis statement does not belong to this project");
+        const currentRows = await tx.select().from(synthesisRevisions).where(and(eq(synthesisRevisions.projectId, projectId), eq(synthesisRevisions.synthesisStatementId, statementId), sql`${synthesisRevisions.finalizedAt} is not null`)).orderBy(sql`${synthesisRevisions.sequence} desc`).limit(1);
+        const current = currentRows[0];
+        if (current?.state === "withdrawn") return { statement, revision: current, idempotent: true };
+        const draft = await synthesisRevisionRepo.createDraft(tx, {
+          projectId, synthesisStatementId: statementId, state: "withdrawn", title: current?.title ?? null,
+          statementText: null, researcherNote: values.researcherNote ?? null,
+        });
+        const finalized = await synthesisRevisionRepo.finalize(tx, projectId, draft.id);
+        if (!finalized) throw new DomainError("DATABASE_CONSTRAINT", "Synthesis withdrawal could not be finalized");
+        return { statement, revision: finalized, idempotent: false };
+      });
+      return result;
+    },
+
+    async getCurrentSynthesis(projectId: string, statementId: string) {
+      await requireProject(projectId); ensureId(statementId);
+      const statement = await synthesisStatementRepo.findById(projectId, statementId);
+      if (!statement) throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis statement does not belong to this project");
+      const revision = await synthesisRevisionRepo.current(projectId, statementId);
+      return revision ? synthesisView(projectId, statement, revision) : null;
+    },
+
+    async getSynthesisHistory(projectId: string, statementId: string) {
+      await requireProject(projectId); ensureId(statementId);
+      const statement = await synthesisStatementRepo.findById(projectId, statementId);
+      if (!statement) throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis statement does not belong to this project");
+      const revisions = await synthesisRevisionRepo.history(projectId, statementId);
+      return synthesisViewsForRevisions(projectId, new Map([[statement.id, statement]]), revisions);
+    },
+
+    async getSynthesisProvenance(projectId: string, statementId: string, revisionId?: string) {
+      await requireProject(projectId); ensureId(statementId);
+      const statement = await synthesisStatementRepo.findById(projectId, statementId);
+      if (!statement) throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis statement does not belong to this project");
+      const revision = revisionId ? (ensureId(revisionId), (await synthesisRevisionRepo.history(projectId, statementId)).find((item) => item.id === revisionId) ?? null) : await synthesisRevisionRepo.current(projectId, statementId);
+      if (!revision) throw new DomainError("NOT_FOUND", "Synthesis revision was not found");
+      return synthesisView(projectId, statement, revision);
+    },
+
+    async listProjectSynthesis(projectId: string) {
+      await requireProject(projectId);
+      const rows = (await synthesisRevisionRepo.listCurrentWithStatements(projectId)) as unknown as Record<string, unknown>[];
+      const mapped = rows.map(mapSynthesisRow);
+      const statements = new Map(mapped.map(({ statement }) => [statement.id, statement]));
+      return synthesisViewsForRevisions(projectId, statements, mapped.map(({ revision }) => revision));
+    },
+
+    async listExtractionComparison(projectId: string, fieldId: string, input?: ExtractionComparisonFilter) {
+      const field = await requireExtractionField(projectId, fieldId, false);
+      const filters = validate(extractionComparisonFilterSchema, input ?? {});
+      const rawRows = (await synthesisSupportRepo.listComparison(projectId, field.id)) as unknown as Record<string, unknown>[];
+      const paperIds = filters.paperIds ? new Set(filters.paperIds) : null;
+      const rows = rawRows.filter((row) => {
+        const state = row.revision_id == null ? "not_extracted" : String(row.value_state);
+        if (paperIds && !paperIds.has(String(row.paper_id))) return false;
+        if (filters.valueState && state !== filters.valueState) return false;
+        if (filters.optionId && String(row.option_id) !== filters.optionId) return false;
+        if (filters.booleanValue !== undefined && row.boolean_value !== filters.booleanValue) return false;
+        const displayedValue = row.revision_id == null ? "" : String(row.text_value ?? row.number_value ?? (row.boolean_value == null ? (row.option_label ?? "") : row.boolean_value));
+        if (filters.search && !String(row.paper_title).toLowerCase().includes(filters.search.toLowerCase()) && !displayedValue.toLowerCase().includes(filters.search.toLowerCase())) return false;
+        return true;
+      });
+      const revisions = rows.filter((row) => row.revision_id != null);
+      const evidenceRows = (await synthesisSupportRepo.listEvidenceForRevisions(projectId, revisions.map((row) => String(row.revision_id)))) as unknown as Record<string, unknown>[];
+      const evidenceByRevision = new Map<string, ReturnType<typeof mapEvidence>[]>();
+      for (const evidenceRow of evidenceRows) {
+        const id = String(evidenceRow.revision_id); evidenceByRevision.set(id, [...(evidenceByRevision.get(id) ?? []), mapEvidence(evidenceRow)]);
+      }
+      return rows.map((row) => {
+        const revision = row.revision_id == null ? null : mapExtractionRevision(row, evidenceByRevision.get(String(row.revision_id)) ?? []);
+        const state = revision?.valueState ?? "not_extracted";
+        const displayValue = revision ? (revision.textValue ?? revision.numberValue ?? (revision.booleanValue == null ? (row.option_label as string | null) : String(revision.booleanValue))) : null;
+        return { paper: mapPaper(row), field, extractionRevision: revision, valueState: state, displayValue, supportStatus: revision && revision.valueState !== "cleared" && revision.evidence.length > 0 ? "grounded" as const : "ungrounded" as const, isSelectable: Boolean(revision && revision.valueState !== "cleared") };
+      });
+    },
+
+    async getExtractionFieldSummary(projectId: string, fieldId: string) {
+      const field = await requireExtractionField(projectId, fieldId, false);
+      const rows = await this.listExtractionComparison(projectId, field.id);
+      const counts: Record<string, number> = {};
+      for (const row of rows) counts[row.valueState] = (counts[row.valueState] ?? 0) + 1;
+      return { field, totalIncludedPapers: rows.length, counts };
     },
 
     async addPaper(projectId: string, input: CreatePaperInput) {

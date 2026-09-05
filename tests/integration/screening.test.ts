@@ -14,7 +14,7 @@ describe("Slice 2 screening invariants", () => {
   beforeAll(async () => { await migrate(db, { migrationsFolder: "./drizzle" }); });
   beforeEach(async () => { projectId = (await services.createProject({ title: `Screening project ${crypto.randomUUID()}` })).id; });
   afterAll(async () => {
-    await client.unsafe(`TRUNCATE TABLE extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, screening_decisions, screening_criteria, claim_evidence, evidence, claims, papers, projects`);
+    await client.unsafe(`TRUNCATE TABLE synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, screening_decisions, screening_criteria, claim_evidence, evidence, claims, papers, projects`);
     await client.end();
   });
 

@@ -77,6 +77,30 @@ export const reviseExtractionValueSchema = z.object({
   evidenceIds: z.array(idSchema).default([]),
 });
 
+const synthesisText = z.string().trim().min(1);
+export const synthesisRevisionInputSchema = z.object({
+  title: synthesisText.max(500).nullable().optional(),
+  statementText: synthesisText.max(10000),
+  researcherNote: synthesisText.max(10000).nullable().optional(),
+  extractionRevisionIds: z.array(idSchema).default([]),
+}).superRefine((value, ctx) => {
+  if (new Set(value.extractionRevisionIds).size !== value.extractionRevisionIds.length) {
+    ctx.addIssue({ code: "custom", path: ["extractionRevisionIds"], message: "Support cannot contain duplicate extraction revisions" });
+  }
+});
+
+export const synthesisWithdrawalSchema = z.object({
+  researcherNote: synthesisText.max(10000).nullable().optional(),
+});
+
+export const extractionComparisonFilterSchema = z.object({
+  paperIds: z.array(idSchema).optional(),
+  valueState: z.enum(["present", "not_reported", "not_applicable", "cleared", "not_extracted"]).optional(),
+  search: z.string().trim().max(500).optional(),
+  optionId: idSchema.optional(),
+  booleanValue: z.boolean().optional(),
+});
+
 export type CreateProjectInput = z.input<typeof createProjectSchema>;
 export type CreatePaperInput = z.input<typeof createPaperSchema>;
 export type RecordEvidenceInput = z.input<typeof recordEvidenceSchema>;
@@ -87,3 +111,6 @@ export type CreateExtractionFieldInput = z.input<typeof createExtractionFieldSch
 export type UpdateExtractionFieldInput = z.input<typeof updateExtractionFieldSchema>;
 export type CreateExtractionOptionInput = z.input<typeof createExtractionOptionSchema>;
 export type ReviseExtractionValueInput = z.input<typeof reviseExtractionValueSchema>;
+export type SynthesisRevisionInput = z.input<typeof synthesisRevisionInputSchema>;
+export type SynthesisWithdrawalInput = z.input<typeof synthesisWithdrawalSchema>;
+export type ExtractionComparisonFilter = z.input<typeof extractionComparisonFilterSchema>;

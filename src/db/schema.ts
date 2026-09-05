@@ -338,4 +338,76 @@ export const extractionRevisionEvidence = pgTable(
   }),
 );
 
-export const schema = { projects, papers, evidence, claims, claimEvidence, screeningCriteria, screeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence };
+export const synthesisStatements = pgTable(
+  "synthesis_statements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("synthesis_statements_project_id_id_unique").on(table.projectId, table.id),
+    projectCreatedAt: index("synthesis_statements_project_created_at_idx").on(table.projectId, table.createdAt),
+  }),
+);
+
+export const synthesisRevisions = pgTable(
+  "synthesis_revisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    projectId: uuid("project_id").notNull(),
+    synthesisStatementId: uuid("synthesis_statement_id").notNull(),
+    state: text("state").notNull().default("active"),
+    title: text("title"),
+    statementText: text("statement_text"),
+    researcherNote: text("researcher_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+  },
+  (table) => ({
+    projectIdentity: unique("synthesis_revisions_project_id_id_unique").on(table.projectId, table.id),
+    statementIdentity: unique("synthesis_revisions_project_statement_id_id_unique").on(table.projectId, table.synthesisStatementId, table.id),
+    statementSequence: index("synthesis_revisions_project_statement_sequence_idx").on(table.projectId, table.synthesisStatementId, table.sequence),
+    projectSequence: index("synthesis_revisions_project_sequence_idx").on(table.projectId, table.sequence),
+    statementOwnership: foreignKey({
+      columns: [table.projectId, table.synthesisStatementId],
+      foreignColumns: [synthesisStatements.projectId, synthesisStatements.id],
+      name: "synthesis_revisions_project_statement_fk",
+    }).onDelete("restrict"),
+    stateValid: check("synthesis_revisions_state_valid", sql`${table.state} in ('active', 'withdrawn')`),
+    titleNonblank: check("synthesis_revisions_title_nonblank", sql`${table.title} is null or btrim(${table.title}) <> ''`),
+    statementShape: check("synthesis_revisions_statement_shape", sql`(
+      (${table.state} = 'active' and ${table.statementText} is not null and btrim(${table.statementText}) <> '')
+      or (${table.state} = 'withdrawn' and ${table.statementText} is null)
+    )`),
+    noteNonblank: check("synthesis_revisions_note_nonblank", sql`${table.researcherNote} is null or btrim(${table.researcherNote}) <> ''`),
+  }),
+);
+
+export const synthesisRevisionSupports = pgTable(
+  "synthesis_revision_supports",
+  {
+    projectId: uuid("project_id").notNull(),
+    synthesisRevisionId: uuid("synthesis_revision_id").notNull(),
+    extractionRevisionId: uuid("extraction_revision_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    identity: primaryKey({ columns: [table.projectId, table.synthesisRevisionId, table.extractionRevisionId] }),
+    synthesisRevisionOwnership: foreignKey({
+      columns: [table.projectId, table.synthesisRevisionId],
+      foreignColumns: [synthesisRevisions.projectId, synthesisRevisions.id],
+      name: "synthesis_revision_supports_project_synthesis_revision_fk",
+    }).onDelete("restrict"),
+    extractionRevisionOwnership: foreignKey({
+      columns: [table.projectId, table.extractionRevisionId],
+      foreignColumns: [extractionValueRevisions.projectId, extractionValueRevisions.id],
+      name: "synthesis_revision_supports_project_extraction_revision_fk",
+    }).onDelete("restrict"),
+    synthesisRevisionLookup: index("synthesis_revision_supports_project_synthesis_revision_idx").on(table.projectId, table.synthesisRevisionId),
+    extractionRevisionLookup: index("synthesis_revision_supports_project_extraction_revision_idx").on(table.projectId, table.extractionRevisionId),
+  }),
+);
+
+export const schema = { projects, papers, evidence, claims, claimEvidence, screeningCriteria, screeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports };

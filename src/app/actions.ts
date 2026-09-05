@@ -240,3 +240,46 @@ export async function unlinkExtractionEvidenceAction(form: FormData) {
   }
   redirect(`/projects/${projectId}/extraction/${paperId}?saved=evidence`);
 }
+
+function synthesisRevisionInput(form: FormData) {
+  return {
+    title: optional(form, "title"),
+    statementText: text(form, "statementText"),
+    researcherNote: optional(form, "researcherNote"),
+    extractionRevisionIds: form.getAll("extractionRevisionIds").filter((id): id is string => typeof id === "string" && id.length > 0),
+  };
+}
+
+export async function createSynthesisStatementAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  let result;
+  try {
+    result = await reviewServices.createSynthesisStatement(projectId, synthesisRevisionInput(form));
+  } catch (error) {
+    fail(`/projects/${projectId}/synthesis`, error);
+  }
+  redirect(`/projects/${projectId}/synthesis/${result.statement.id}?saved=created`);
+}
+
+export async function reviseSynthesisStatementAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const statementId = text(form, "statementId");
+  let result;
+  try {
+    result = await reviewServices.reviseSynthesisStatement(projectId, statementId, synthesisRevisionInput(form));
+  } catch (error) {
+    fail(`/projects/${projectId}/synthesis/${statementId}`, error);
+  }
+  redirect(`/projects/${projectId}/synthesis/${statementId}?saved=revised&revision=${result.revision.id}`);
+}
+
+export async function withdrawSynthesisStatementAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const statementId = text(form, "statementId");
+  try {
+    await reviewServices.withdrawSynthesisStatement(projectId, statementId, { researcherNote: optional(form, "researcherNote") });
+  } catch (error) {
+    fail(`/projects/${projectId}/synthesis/${statementId}`, error);
+  }
+  redirect(`/projects/${projectId}/synthesis/${statementId}?saved=withdrawn`);
+}

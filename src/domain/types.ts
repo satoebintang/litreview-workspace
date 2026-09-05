@@ -11,6 +11,8 @@ export type ExtractionFieldType = "short_text" | "long_text" | "number" | "boole
 export type ExtractionValueState = "present" | "not_reported" | "not_applicable" | "cleared";
 
 export type SupportStatus = "supported" | "unsupported";
+export type SynthesisState = "active" | "withdrawn";
+export type SynthesisSupportStatus = "supported" | "unsupported";
 
 export interface Project {
   id: ProjectId;
@@ -165,4 +167,67 @@ export interface ExtractionValueCurrent extends ExtractionValue {
   field: ExtractionField;
   currentRevision: ExtractionRevisionWithEvidence | null;
   supportStatus: ExtractionSupportStatus;
+}
+
+export interface SynthesisStatement {
+  id: string;
+  projectId: ProjectId;
+  createdAt: Date;
+}
+
+export interface SynthesisRevision {
+  id: string;
+  sequence: number;
+  projectId: ProjectId;
+  synthesisStatementId: string;
+  state: SynthesisState;
+  title: string | null;
+  statementText: string | null;
+  researcherNote: string | null;
+  createdAt: Date;
+  finalizedAt: Date | null;
+}
+
+export interface SynthesisRevisionSupport {
+  projectId: ProjectId;
+  synthesisRevisionId: string;
+  extractionRevisionId: string;
+  createdAt: Date;
+}
+
+export interface SynthesisSupport extends SynthesisRevisionSupport {
+  extractionRevision: ExtractionRevisionWithEvidence;
+  paper: Paper;
+  field: ExtractionField;
+  isCurrentExtractionRevision: boolean;
+}
+
+export interface SynthesisRevisionView extends SynthesisRevision {
+  supports: SynthesisSupport[];
+  supportStatus: SynthesisSupportStatus;
+  supportingRevisionCount: number;
+  supportingPaperCount: number;
+  supportingFieldCount: number;
+}
+
+export interface SynthesisProvenance extends SynthesisRevisionView {
+  statement: SynthesisStatement;
+}
+
+export type ComparisonValueState = ExtractionValueState | "not_extracted";
+
+export interface ExtractionComparisonRow {
+  paper: Paper;
+  field: ExtractionField;
+  extractionRevision: ExtractionRevisionWithEvidence | null;
+  valueState: ComparisonValueState;
+  displayValue: string | null;
+  supportStatus: ExtractionSupportStatus;
+  isSelectable: boolean;
+}
+
+export interface ExtractionFieldSummary {
+  field: ExtractionField;
+  totalIncludedPapers: number;
+  counts: Record<string, number>;
 }
