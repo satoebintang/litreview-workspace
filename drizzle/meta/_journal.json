@@ -15,6 +15,20 @@
       "when": 1788536999243,
       "tag": "0001_add_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788575099137,
+      "tag": "0002_wide_firebird",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788575200000,
+      "tag": "0003_screening_guardrails",
+      "breakpoints": true
     }
   ]
 }

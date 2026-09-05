@@ -37,7 +37,20 @@ export const claimEvidenceInputSchema = z.object({
   evidenceId: idSchema,
 });
 
+export const createScreeningCriterionSchema = z.object({
+  type: z.enum(["inclusion", "exclusion"]),
+  text: z.string().trim().min(1).max(1000),
+});
+
+export const recordScreeningDecisionSchema = z.discriminatedUnion("decision", [
+  z.object({ decision: z.literal("include"), note: optionalText }),
+  z.object({ decision: z.literal("maybe"), note: optionalText }),
+  z.object({ decision: z.literal("exclude"), exclusionCriterionId: idSchema, note: optionalText }),
+]);
+
 export type CreateProjectInput = z.input<typeof createProjectSchema>;
 export type CreatePaperInput = z.input<typeof createPaperSchema>;
 export type RecordEvidenceInput = z.input<typeof recordEvidenceSchema>;
 export type CreateClaimInput = z.input<typeof createClaimSchema>;
+export type CreateScreeningCriterionInput = z.input<typeof createScreeningCriterionSchema>;
+export type RecordScreeningDecisionInput = z.input<typeof recordScreeningDecisionSchema>;

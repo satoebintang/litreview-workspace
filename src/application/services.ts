@@ -9,10 +9,14 @@ import {
   createProjectSchema,
   idSchema,
   recordEvidenceSchema,
+  createScreeningCriterionSchema,
+  recordScreeningDecisionSchema,
   type CreateClaimInput,
   type CreatePaperInput,
   type CreateProjectInput,
   type RecordEvidenceInput,
+  type CreateScreeningCriterionInput,
+  type RecordScreeningDecisionInput,
 } from "@/domain/validation";
 import {
   ClaimEvidenceRepository,
@@ -20,6 +24,8 @@ import {
   EvidenceRepository,
   PaperRepository,
   ProjectRepository,
+  ScreeningCriterionRepository,
+  ScreeningDecisionRepository,
 } from "./repositories";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
@@ -40,6 +46,8 @@ export function createReviewServices(db: Database) {
   const evidenceRepo = new EvidenceRepository(db);
   const claimRepo = new ClaimRepository(db);
   const linkRepo = new ClaimEvidenceRepository(db);
+  const criterionRepo = new ScreeningCriterionRepository(db);
+  const decisionRepo = new ScreeningDecisionRepository(db);
 
   async function requireProject(projectId: string) {
     ensureId(projectId);
@@ -72,6 +80,14 @@ export function createReviewServices(db: Database) {
     return claim;
   }
 
+  async function requireCriterion(projectId: string, criterionId: string) {
+    await requireProject(projectId);
+    ensureId(criterionId);
+    const criterion = await criterionRepo.findById(projectId, criterionId);
+    if (!criterion) throw new DomainError("CROSS_PROJECT_REFERENCE", "Criterion does not belong to this project");
+    return criterion;
+  }
+
   return {
     async createProject(input: CreateProjectInput) {
       const values = validate(createProjectSchema, input);
@@ -82,6 +98,71 @@ export function createReviewServices(db: Database) {
     listPapers(projectId: string) { return requireProject(projectId).then(() => paperRepo.list(projectId)); },
     listEvidence(projectId: string) { return requireProject(projectId).then(() => evidenceRepo.list(projectId)); },
     listClaims(projectId: string) { return requireProject(projectId).then(() => claimRepo.list(projectId)); },
+    async listScreeningCriteria(projectId: string, includeArchived = false) {
+      await requireProject(projectId);
+      return criterionRepo.list(projectId, includeArchived);
+    },
+
+    async createScreeningCriterion(projectId: string, input: CreateScreeningCriterionInput) {
+      await requireProject(projectId);
+      const values = validate(createScreeningCriterionSchema, input);
+      return criterionRepo.create({ projectId, type: values.type, text: values.text });
+    },
+
+    async archiveScreeningCriterion(projectId: string, criterionId: string) {
+      const criterion = await requireCriterion(projectId, criterionId);
+      if (criterion.archivedAt) return criterion;
+      const archived = await criterionRepo.archive(projectId, criterionId);
+      if (archived.length === 0) throw new DomainError("NOT_FOUND", "Criterion was not found");
+      return archived[0];
+    },
+
+    async getPaperScreening(projectId: string, paperId: string) {
+      const paper = await requirePaper(projectId, paperId);
+      const [criteria, currentDecision, decisions] = await Promise.all([
+        criterionRepo.list(projectId), decisionRepo.currentForPaper(projectId, paperId), decisionRepo.listForPaper(projectId, paperId),
+      ]);
+      const history = await Promise.all(decisions.map(async (decision) => ({
+        ...decision,
+        exclusionCriterion: decision.exclusionCriterionId ? await criterionRepo.findById(projectId, decision.exclusionCriterionId) : null,
+      })));
+      return {
+        paper,
+        criteria,
+        currentState: currentDecision ? ({ include: "included", exclude: "excluded", maybe: "maybe" }[currentDecision.decision]) : "unscreened" as const,
+        currentDecision,
+        history,
+      };
+    },
+
+    async listScreeningPapers(projectId: string, state?: "unscreened" | "included" | "excluded" | "maybe") {
+      await requireProject(projectId);
+      const papersWithState = await decisionRepo.listPapersWithCurrentState(projectId);
+      return state ? papersWithState.filter((paper) => paper.screeningState === state) : papersWithState;
+    },
+
+    async recordScreeningDecision(projectId: string, paperId: string, input: RecordScreeningDecisionInput) {
+      await requirePaper(projectId, paperId);
+      const values = validate(recordScreeningDecisionSchema, input);
+      let exclusionCriterionId: string | null = null;
+      let exclusionCriterionType: "exclusion" | null = null;
+      if (values.decision === "exclude") {
+        const criterion = await requireCriterion(projectId, values.exclusionCriterionId);
+        if (criterion.type !== "exclusion") throw new DomainError("VALIDATION_ERROR", "Exclude decisions require an exclusion criterion");
+        if (criterion.archivedAt) throw new DomainError("VALIDATION_ERROR", "Archived criteria cannot be used for new decisions");
+        exclusionCriterionId = criterion.id;
+        exclusionCriterionType = "exclusion";
+      }
+      try {
+        return await decisionRepo.create({
+          projectId, paperId, stage: "title_abstract", decision: values.decision,
+          exclusionCriterionId, exclusionCriterionType, note: values.note ?? null,
+        });
+      } catch (error) {
+        if (isConstraintError(error)) throw new DomainError("CROSS_PROJECT_REFERENCE", "Screening references an invalid project record");
+        throw error;
+      }
+    },
 
     async addPaper(projectId: string, input: CreatePaperInput) {
       await requireProject(projectId);
@@ -125,8 +206,9 @@ export function createReviewServices(db: Database) {
     async deletePaper(projectId: string, paperId: string) {
       await requirePaper(projectId, paperId);
       if (await evidenceRepo.countForPaper(projectId, paperId)) throw new DomainError("PROTECTED_DELETE", "Paper cannot be deleted while evidence exists");
+      if (await decisionRepo.countForPaper(projectId, paperId)) throw new DomainError("PROTECTED_DELETE", "Paper cannot be deleted after screening decisions exist");
       try { return await paperRepo.delete(projectId, paperId); }
-      catch (error) { if (isConstraintError(error)) throw new DomainError("PROTECTED_DELETE", "Paper cannot be deleted while evidence exists"); throw error; }
+      catch (error) { if (isConstraintError(error)) throw new DomainError("PROTECTED_DELETE", "Paper cannot be deleted after evidence or screening history exists"); throw error; }
     },
 
     async deleteEvidence(projectId: string, evidenceId: string) {

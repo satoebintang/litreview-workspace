@@ -107,3 +107,42 @@ export async function unlinkEvidenceAction(form: FormData) {
   }
   redirect(`/projects/${projectId}/claims/${claimId}`);
 }
+
+export async function createScreeningCriterionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  try {
+    await reviewServices.createScreeningCriterion(projectId, {
+      type: text(form, "type") as "inclusion" | "exclusion",
+      text: text(form, "text"),
+    });
+  } catch (error) {
+    fail(`/projects/${projectId}/screening`, error);
+  }
+  redirect(`/projects/${projectId}/screening?saved=criterion`);
+}
+
+export async function archiveScreeningCriterionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  try {
+    await reviewServices.archiveScreeningCriterion(projectId, text(form, "criterionId"));
+  } catch (error) {
+    fail(`/projects/${projectId}/screening`, error);
+  }
+  redirect(`/projects/${projectId}/screening?saved=criterion`);
+}
+
+export async function recordScreeningDecisionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  const decision = text(form, "decision");
+  try {
+    await reviewServices.recordScreeningDecision(projectId, paperId,
+      decision === "exclude"
+        ? { decision: "exclude", exclusionCriterionId: text(form, "exclusionCriterionId"), note: optional(form, "note") }
+        : { decision: decision as "include" | "maybe", note: optional(form, "note") },
+    );
+  } catch (error) {
+    fail(`/projects/${projectId}/screening/${paperId}`, error);
+  }
+  redirect(`/projects/${projectId}/screening/${paperId}?saved=decision`);
+}

@@ -5,3 +5,4 @@ playwright-report/
 coverage/
 .env
 tsconfig.tsbuildinfo
+.ai/

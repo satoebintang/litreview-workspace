@@ -1,6 +1,6 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { claimEvidence, claims, evidence, papers, projects } from "@/db/schema";
+import { claimEvidence, claims, evidence, papers, projects, screeningCriteria, screeningDecisions } from "@/db/schema";
 
 export class ProjectRepository {
   constructor(private readonly db: Database) {}
@@ -132,5 +132,106 @@ export class ClaimEvidenceRepository {
       eq(claimEvidence.claimId, claimId),
       eq(claimEvidence.evidenceId, evidenceId),
     )).returning({ claimId: claimEvidence.claimId });
+  }
+}
+
+export class ScreeningCriterionRepository {
+  constructor(private readonly db: Database) {}
+
+  async create(values: typeof screeningCriteria.$inferInsert) {
+    const [criterion] = await this.db.insert(screeningCriteria).values(values).returning();
+    return criterion;
+  }
+
+  async findById(projectId: string, id: string) {
+    const [criterion] = await this.db.select().from(screeningCriteria).where(and(
+      eq(screeningCriteria.projectId, projectId), eq(screeningCriteria.id, id),
+    )).limit(1);
+    return criterion ?? null;
+  }
+
+  async list(projectId: string, includeArchived = false) {
+    return this.db.select().from(screeningCriteria).where(and(
+      eq(screeningCriteria.projectId, projectId),
+      includeArchived ? undefined : sql`${screeningCriteria.archivedAt} is null`,
+    )).orderBy(screeningCriteria.sortOrder);
+  }
+
+  async archive(projectId: string, id: string) {
+    return this.db.update(screeningCriteria).set({ archivedAt: new Date() }).where(and(
+      eq(screeningCriteria.projectId, projectId), eq(screeningCriteria.id, id),
+    )).returning();
+  }
+}
+
+export class ScreeningDecisionRepository {
+  constructor(private readonly db: Database) {}
+
+  async create(values: typeof screeningDecisions.$inferInsert) {
+    const [decision] = await this.db.insert(screeningDecisions).values(values).returning();
+    return decision;
+  }
+
+  async currentForPaper(projectId: string, paperId: string) {
+    const [decision] = await this.db.select().from(screeningDecisions).where(and(
+      eq(screeningDecisions.projectId, projectId),
+      eq(screeningDecisions.paperId, paperId),
+      eq(screeningDecisions.stage, "title_abstract"),
+    )).orderBy(desc(screeningDecisions.sequence)).limit(1);
+    return decision ?? null;
+  }
+
+  async listForPaper(projectId: string, paperId: string) {
+    return this.db.select().from(screeningDecisions).where(and(
+      eq(screeningDecisions.projectId, projectId), eq(screeningDecisions.paperId, paperId),
+      eq(screeningDecisions.stage, "title_abstract"),
+    )).orderBy(screeningDecisions.sequence);
+  }
+
+  async countForPaper(projectId: string, paperId: string) {
+    const rows = await this.db.select({ id: screeningDecisions.id }).from(screeningDecisions).where(and(
+      eq(screeningDecisions.projectId, projectId), eq(screeningDecisions.paperId, paperId),
+    )).limit(1);
+    return rows.length;
+  }
+
+  async listPapersWithCurrentState(projectId: string) {
+    const rows = await this.db.execute(sql`
+      select
+        p.id, p.project_id, p.title, p.authors, p.publication_year, p.venue, p.doi,
+        p.abstract, p.bibliographic_note, p.created_at, p.updated_at,
+        d.id as decision_id, d.sequence as decision_sequence, d.stage as decision_stage,
+        d.decision as decision_value, d.exclusion_criterion_id, d.exclusion_criterion_type,
+        d.note as decision_note, d.created_at as decision_created_at
+      from papers p
+      left join lateral (
+        select * from screening_decisions sd
+        where sd.project_id = p.project_id and sd.paper_id = p.id and sd.stage = 'title_abstract'
+        order by sd.sequence desc limit 1
+      ) d on true
+      where p.project_id = ${projectId}
+      order by p.created_at asc, p.id asc
+    `);
+    return rows.map((row) => {
+      const item = row as Record<string, unknown>;
+      const decision = item.decision_id ? {
+        id: String(item.decision_id), sequence: Number(item.decision_sequence), projectId: String(item.project_id),
+        paperId: String(item.id), stage: item.decision_stage as "title_abstract",
+        decision: item.decision_value as "include" | "exclude" | "maybe",
+        exclusionCriterionId: item.exclusion_criterion_id ? String(item.exclusion_criterion_id) : null,
+        exclusionCriterionType: item.exclusion_criterion_type as "exclusion" | null,
+        note: item.decision_note ? String(item.decision_note) : null,
+        createdAt: item.decision_created_at as Date,
+      } : null;
+      const state = decision ? ({ include: "included", exclude: "excluded", maybe: "maybe" }[decision.decision]) : "unscreened";
+      return {
+        id: String(item.id), projectId: String(item.project_id), title: String(item.title),
+        authors: (item.authors as string[]) ?? [], publicationYear: item.publication_year as number | null,
+        venue: item.venue as string | null, doi: item.doi as string | null,
+        abstract: item.abstract as string | null, bibliographicNote: item.bibliographic_note as string | null,
+        createdAt: item.created_at as Date, updatedAt: item.updated_at as Date,
+        screeningState: state as "unscreened" | "included" | "excluded" | "maybe", currentDecision: decision,
+      };
+    });
   }
 }

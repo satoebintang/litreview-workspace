@@ -97,6 +97,19 @@ input:focus, textarea:focus, select:focus { border-color: var(--forest); box-sha
 .status { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 4px 9px; font-size: 11px; font-weight: 700; }
 .status.supported { color: var(--forest-dark); background: var(--mint); }
 .status.unsupported { color: var(--amber); background: var(--amber-bg); }
+.status.screening-unscreened { color: var(--muted); background: #eef1ef; }
+.status.screening-included { color: var(--forest-dark); background: var(--mint); }
+.status.screening-excluded { color: #8b3c32; background: #fff0ed; }
+.status.screening-maybe { color: var(--amber); background: var(--amber-bg); }
+.screening-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
+.screening-stat { display: flex; justify-content: space-between; align-items: baseline; padding: 15px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.screening-stat.active { border-color: var(--forest); box-shadow: 0 0 0 2px rgba(23,91,72,.1); }
+.screening-stat span { color: var(--muted); font-size: 12px; text-transform: capitalize; }
+.screening-stat strong { font-family: Newsreader, Georgia, serif; font-size: 28px; font-weight: 500; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 18px; }
+.active-filter { color: #fff !important; background: var(--forest) !important; }
+.abstract-text { white-space: pre-wrap; line-height: 1.75; }
+.screening-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); }
 .error-banner { margin-bottom: 24px; padding: 12px 14px; color: #823a31; border: 1px solid #efc8c3; border-radius: 8px; background: #fff5f3; font-size: 13px; }
 .success-note { margin-bottom: 20px; padding: 12px 14px; color: var(--forest-dark); border: 1px solid #bed9ca; border-radius: 8px; background: var(--mint); font-size: 13px; }
 .quote { margin: 0 0 10px; padding-left: 14px; border-left: 3px solid #b6d4c4; font-family: Newsreader, Georgia, serif; font-size: 20px; line-height: 1.4; }
@@ -109,6 +122,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--forest); box-sha
 .footer-note { margin-top: 30px; color: var(--muted); font-size: 12px; }
 @media (max-width: 760px) {
   .hero-grid, .workspace-grid { grid-template-columns: 1fr; gap: 20px; }
+  .screening-stats { grid-template-columns: repeat(2, 1fr); }
   .section-card.full { grid-column: auto; }
   .workspace-header { display: block; }
   .workspace-header .button { margin-top: 18px; }

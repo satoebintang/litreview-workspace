@@ -25,7 +25,7 @@ describe("Slice 1 provenance invariants", () => {
   });
 
   afterAll(async () => {
-    await client.unsafe(`TRUNCATE TABLE claim_evidence, evidence, claims, papers, projects`);
+    await client.unsafe(`TRUNCATE TABLE screening_decisions, screening_criteria, claim_evidence, evidence, claims, papers, projects`);
     await client.end();
   });
 
