@@ -2,6 +2,7 @@ export type ProjectId = string;
 export type PaperId = string;
 export type EvidenceId = string;
 export type ClaimId = string;
+export type ClaimRevisionId = string;
 export type ScreeningCriterionId = string;
 export type ScreeningDecisionId = string;
 export type ScreeningState = "unscreened" | "included" | "excluded" | "maybe";
@@ -11,6 +12,9 @@ export type ExtractionFieldType = "short_text" | "long_text" | "number" | "boole
 export type ExtractionValueState = "present" | "not_reported" | "not_applicable" | "cleared";
 
 export type SupportStatus = "supported" | "unsupported";
+export type ClaimLifecycle = "active" | "withdrawn";
+export type ClaimSupportKind = "evidence" | "extractionRevision" | "synthesisRevision";
+export type ClaimRevisionSupportStatus = "supported" | "unsupported";
 export type SynthesisState = "active" | "withdrawn";
 export type SynthesisSupportStatus = "supported" | "unsupported";
 
@@ -51,9 +55,84 @@ export interface Evidence {
 export interface Claim {
   id: ClaimId;
   projectId: ProjectId;
-  claimText: string;
   createdAt: Date;
-  updatedAt: Date;
+}
+
+export interface ClaimRevision {
+  id: ClaimRevisionId;
+  sequence: number;
+  projectId: ProjectId;
+  claimId: ClaimId;
+  lifecycle: ClaimLifecycle;
+  claimText: string | null;
+  researcherNote: string | null;
+  createdAt: Date;
+  finalizedAt: Date | null;
+}
+
+export interface ClaimRevisionEvidenceSupport {
+  projectId: ProjectId;
+  claimRevisionId: ClaimRevisionId;
+  evidenceId: EvidenceId;
+  createdAt: Date;
+  evidence: EvidenceWithPaper;
+}
+
+export interface ClaimRevisionExtractionSupport {
+  projectId: ProjectId;
+  claimRevisionId: ClaimRevisionId;
+  extractionRevisionId: string;
+  createdAt: Date;
+  extractionRevision: ExtractionRevisionWithEvidence;
+  paper: Paper;
+  field: ExtractionField;
+  isCurrentExtractionRevision: boolean;
+  paperScreeningState: ScreeningState;
+}
+
+export interface ClaimRevisionSynthesisSupport {
+  projectId: ProjectId;
+  claimRevisionId: ClaimRevisionId;
+  synthesisRevisionId: string;
+  createdAt: Date;
+  synthesisRevision: SynthesisRevisionView;
+  statement: SynthesisStatement;
+  isCurrentSynthesisRevision: boolean;
+  statementLifecycle: SynthesisState;
+}
+
+export interface CitationCandidate {
+  paper: Paper;
+  pathCount: number;
+  supportKinds: ClaimSupportKind[];
+  paths?: string[];
+}
+
+export interface ClaimRevisionView extends ClaimRevision {
+  supportStatus: ClaimRevisionSupportStatus;
+  supports: {
+    evidence: ClaimRevisionEvidenceSupport[];
+    extractionRevisions: ClaimRevisionExtractionSupport[];
+    synthesisRevisions: ClaimRevisionSynthesisSupport[];
+  };
+  totalSupportCount: number;
+  directEvidenceCount: number;
+  extractionRevisionCount: number;
+  synthesisRevisionCount: number;
+  distinctPaperCount: number;
+  citationCandidateCount: number;
+  citationCandidates: CitationCandidate[];
+}
+
+export type ClaimHistoryItem = ClaimRevisionView;
+
+export interface ClaimWorkspaceItem {
+  claim: Claim;
+  currentRevision: ClaimRevisionView;
+  lifecycle: ClaimLifecycle;
+  supportStatus: ClaimRevisionSupportStatus;
+  citationCandidateCount: number;
+  distinctPaperCount: number;
 }
 
 export interface ClaimEvidenceLink {

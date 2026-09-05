@@ -30,11 +30,49 @@ export const recordEvidenceSchema = z.object({
 
 export const createClaimSchema = z.object({
   claimText: z.string().trim().min(1),
+  researcherNote: optionalText,
 });
 
 export const claimEvidenceInputSchema = z.object({
   claimId: idSchema,
   evidenceId: idSchema,
+});
+
+const claimSupportSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("evidence"), evidenceId: idSchema }),
+  z.object({ kind: z.literal("extractionRevision"), extractionRevisionId: idSchema }),
+  z.object({ kind: z.literal("synthesisRevision"), synthesisRevisionId: idSchema }),
+]);
+
+export const claimRevisionSnapshotSchema = z.object({
+  lifecycle: z.enum(["active", "withdrawn"]).default("active"),
+  claimText: z.string().trim().min(1).max(10000).nullable().optional(),
+  researcherNote: optionalText,
+  supports: z.array(claimSupportSchema).default([]),
+}).superRefine((value, ctx) => {
+  if (value.lifecycle === "active" && (!value.claimText || value.claimText.trim().length === 0)) {
+    ctx.addIssue({ code: "custom", path: ["claimText"], message: "Active claims require nonblank text" });
+  }
+  if (value.lifecycle === "withdrawn" && (value.claimText != null || value.supports.length > 0)) {
+    ctx.addIssue({ code: "custom", path: ["supports"], message: "Withdrawn claims cannot have claim text or support" });
+  }
+  const keys = value.supports.map((support) => {
+    if (support.kind === "evidence") return `evidence:${support.evidenceId}`;
+    if (support.kind === "extractionRevision") return `extractionRevision:${support.extractionRevisionId}`;
+    return `synthesisRevision:${support.synthesisRevisionId}`;
+  });
+  if (new Set(keys).size !== keys.length) {
+    ctx.addIssue({ code: "custom", path: ["supports"], message: "Support cannot contain duplicate exact targets" });
+  }
+});
+
+export const createClaimRevisionSchema = claimRevisionSnapshotSchema.extend({
+  expectedCurrentRevisionId: idSchema.nullable().optional(),
+});
+
+export const withdrawClaimSchema = z.object({
+  researcherNote: optionalText,
+  expectedCurrentRevisionId: idSchema.nullable().optional(),
 });
 
 export const createScreeningCriterionSchema = z.object({
@@ -105,6 +143,10 @@ export type CreateProjectInput = z.input<typeof createProjectSchema>;
 export type CreatePaperInput = z.input<typeof createPaperSchema>;
 export type RecordEvidenceInput = z.input<typeof recordEvidenceSchema>;
 export type CreateClaimInput = z.input<typeof createClaimSchema>;
+export type ClaimSupportInput = z.input<typeof claimSupportSchema>;
+export type ClaimRevisionSnapshotInput = z.input<typeof claimRevisionSnapshotSchema>;
+export type CreateClaimRevisionInput = z.input<typeof createClaimRevisionSchema>;
+export type WithdrawClaimInput = z.input<typeof withdrawClaimSchema>;
 export type CreateScreeningCriterionInput = z.input<typeof createScreeningCriterionSchema>;
 export type RecordScreeningDecisionInput = z.input<typeof recordScreeningDecisionSchema>;
 export type CreateExtractionFieldInput = z.input<typeof createExtractionFieldSchema>;

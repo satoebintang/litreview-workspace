@@ -2,107 +2,114 @@
 
 <!-- BEGIN SHARED-CODE-MEMORY-POLICY -->
 
-## Shared code-memory policy
+## Repository memory
 
-### Project identity
+Canonical Graphiti group:
 
-The canonical Graphiti group ID for this repository is:
-
-`
+```text
 repo-local-litreview-workspace
-`
+```
 
-Always use this exact `group_id` for Graphiti reads and writes related
-to this repository.
+Always use this exact `group_id` for project-specific Graphiti reads/writes. Never use the default `main` group.
 
-Do not use Graphiti's default `main` group for project-specific memory.
+The ID is also stored in `.graphiti-group-id`.
 
-The canonical group ID is also stored in:
+### Sources of truth
 
-`
-.graphiti-group-id
-`
+Priority:
 
-### Source of truth
+1. Source code, tests, config, and observed runtime behavior
+2. Git history for version history
+3. codebase-memory-mcp (CBM) for current repository structure
+4. Graphiti for durable historical/engineering context
 
-Source code, tests, configuration, and observed runtime behavior are the
-ground truth for the current implementation.
+Memory tools supplement the repository; they do not override it.
 
-Git history, when available, is authoritative for version history.
+### CBM
 
-Graphiti and codebase-memory-mcp supplement these sources; neither replaces
-them.
+Use codebase-memory-mcp for current structural questions, including:
 
-### codebase-memory-mcp
+* symbols/definitions
+* callers/callees
+* imports/dependencies
+* code paths/routes
+* repository structure
+* impact analysis
 
-Use codebase-memory-mcp primarily for the current structural state of the
-repository, including:
-
-- symbols and definitions
-- callers and callees
-- imports and dependencies
-- code paths
-- routes
-- repository structure
-- impact analysis
-- structural code discovery
-
-Prefer codebase-memory-mcp over broad grep/glob/file-search when its graph
-can answer the structural question.
+Prefer CBM over broad grep/glob searches when its graph can answer the question.
 
 ### Graphiti
 
-Use Graphiti for durable engineering context that is not reliably
-recoverable from the current source tree, including:
+Use Graphiti for confirmed, durable, non-obvious context not reliably recoverable from source, such as:
 
-- architectural decisions and rationale
-- important constraints
-- confirmed debugging findings
-- root causes of incidents or defects
-- rejected approaches and why they were rejected
-- migration decisions and transitional state
-- non-obvious integration behavior
-- durable operational knowledge likely to matter in future sessions
+* architectural decisions and rationale
+* important constraints
+* debugging/root-cause findings
+* rejected approaches
+* migration decisions
+* integration quirks
+* durable operational lessons
 
-For this repository, always explicitly use:
+Do not store routine conversation, speculation, obvious source facts, transient progress, secrets, or information already represented well by source/CBM.
 
-`
-group_id = repo-local-litreview-workspace
-`
+A Graphiti write should be:
 
-Do not store routine conversation, temporary speculation, obvious
-source-code facts, or information already represented adequately by
-codebase-memory-mcp.
+* confirmed
+* useful in future sessions
+* non-obvious from current source
+* relevant to future implementation, debugging, maintenance, or design
 
-### Preferred workflow
+### Engineering workflow
 
-For non-trivial engineering work:
+For non-trivial work:
 
-1. Search Graphiti in `repo-local-litreview-workspace` for relevant historical decisions,
-   constraints, and prior findings.
-2. Query codebase-memory-mcp for the current structural implementation.
-3. Read only the necessary source files.
+1. Search Graphiti group `repo-local-litreview-workspace` for prior decisions/constraints/findings.
+2. Query CBM for the current implementation.
+3. Read only necessary source files.
 4. Make and test the change.
-5. Persist only confirmed, durable, non-obvious findings to Graphiti.
+5. Store only qualifying durable findings in Graphiti.
 
-### Memory-write discipline
+### Graphiti write verification
 
-A Graphiti write should generally satisfy all of these conditions:
+`add_memory` is asynchronous; success only means the episode was queued.
 
-- confirmed rather than speculative
-- useful beyond the current conversation
-- not obvious from reading the current source tree
-- likely to affect future implementation, debugging, maintenance, or design
+After writing:
 
-When those conditions are not met, do not write memory.
+1. Use `get_episodes` to confirm the episode.
+2. Wait for ingestion, then check `search_memory_facts`.
+3. If the episode exists but facts do not, inspect Graphiti worker/LLM logs before retrying.
+4. Do not manually create arbitrary Neo4j relationships; fix ingestion and re-ingest.
 
-### Graphiti ingestion verification
-
-- add_memory is asynchronous. Its successful response only means the episode was queued.
-- Always use group_id=repo-local-litreview-workspace for both writes and reads.
-- After add_memory, verify with get_episodes first, then wait and query search_memory_facts.
-- No relevant facts found does not mean no episode exists. Compare episode, node, and fact results.
-- If the episode exists but facts remain absent, inspect Graphiti worker/LLM logs before retrying.
-- Do not manually create arbitrary Neo4j relationships; repair the ingestion worker or re-ingest after fixing it.
+Always use `group_id=repo-local-litreview-workspace` for verification reads.
 
 <!-- END SHARED-CODE-MEMORY-POLICY -->
+
+## Checkpoints and handoffs
+
+Also follow the global instructions in:
+
+```text
+C:\Users\BSSN-769X\.codex\AGENTS.md
+```
+
+Especially the **Checkpoints and handoffs**, **CBM and source discovery**, and **Graphiti** sections. Do not modify that file from this repository.
+
+Create or refresh a checkpoint when:
+
+* explicitly requested
+* a substantial phase ends with work remaining
+* switching agents, sessions, or worktrees
+* usage limits are approaching
+* a long session stops or needs context reset
+
+At a checkpoint:
+
+1. Update `.ai/handoff.md` per global rules.
+2. Reindex with CBM and verify project, generation, index status, and relevant coverage. Read any reported partial/missed ranges directly.
+3. Search the canonical Graphiti group before writing memory.
+4. Persist only qualifying durable Graphiti knowledge.
+5. Verify Graphiti ingestion as described above.
+
+Do not checkpoint routine completed work unless a global trigger applies.
+
+When the objective is fully complete, perform the global final verification and remove the completed temporary handoff.

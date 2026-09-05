@@ -14,7 +14,7 @@ describe("Slice 3 extraction provenance", () => {
   beforeAll(async () => { await migrate(db, { migrationsFolder: "./drizzle" }); });
   beforeEach(async () => { projectId = (await services.createProject({ title: `Extraction project ${crypto.randomUUID()}` })).id; });
   afterAll(async () => {
-    await client.unsafe(`TRUNCATE TABLE synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, screening_decisions, screening_criteria, claim_evidence, evidence, claims, papers, projects`);
+    await client.unsafe(`TRUNCATE TABLE synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, screening_decisions, screening_criteria, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, evidence, claims, papers, projects`);
     await client.end();
   });
 

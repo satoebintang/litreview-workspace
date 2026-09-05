@@ -32,9 +32,9 @@ test.describe("Slice 1 provenance workflow", () => {
     await page.getByLabel("Evidence passage").selectOption(await evidenceOption.getAttribute("value") as string);
     await page.getByRole("button", { name: "Link evidence" }).click();
     await expect(page.getByText("supported", { exact: true })).toBeVisible();
-    await expect(page.getByText("Students who sleep longer show improved academic performance.")).toBeVisible();
+    await expect(page.getByText("Students who sleep longer show improved academic performance.").first()).toBeVisible();
     await expect(page.getByText("Page 12", { exact: true })).toBeVisible();
-    await expect(page.getByText("Sleep duration and grades", { exact: true })).toBeVisible();
+    await expect(page.getByText("Sleep duration and grades", { exact: true }).first()).toBeVisible();
 
     await page.getByRole("button", { name: "Unlink" }).click();
     await expect(page.getByText("unsupported", { exact: true })).toBeVisible();

@@ -101,6 +101,28 @@ input:focus, textarea:focus, select:focus { border-color: var(--forest); box-sha
 .status.screening-included { color: var(--forest-dark); background: var(--mint); }
 .status.screening-excluded { color: #8b3c32; background: #fff0ed; }
 .status.screening-maybe { color: var(--amber); background: var(--amber-bg); }
+.status.withdrawn { color: #8b3c32; background: #fff0ed; }
+.status.stale { color: #8b3c32; background: #fff0ed; }
+.claim-stats { margin-top: 6px; }
+.claim-list-title { max-width: 650px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.claim-list-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.claim-assertion { margin-bottom: 18px; font-family: Newsreader, Georgia, serif; font-size: 31px; line-height: 1.25; }
+.support-summary { display: flex; flex-wrap: wrap; gap: 8px 20px; padding-top: 17px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.support-summary strong { color: var(--forest-dark); font-family: Newsreader, Georgia, serif; font-size: 22px; font-weight: 500; }
+.support-sections { display: grid; gap: 13px; }
+.support-item { padding: 18px; }
+.support-kind { margin-bottom: 7px; color: var(--forest); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.extraction-value-display { margin: 8px 0; font-family: Newsreader, Georgia, serif; font-size: 22px; }
+.support-warning { margin-top: 10px; padding: 9px 11px; color: var(--amber); border: 1px solid #edd9a7; background: var(--amber-bg); font-size: 12px; }
+.nested-support { margin-top: 9px; padding: 10px 12px; border-left: 2px solid #d6e5dc; background: #f7faf8; }
+.nested-support .status { margin-left: 7px; vertical-align: middle; }
+.path-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.path-list span { padding: 4px 8px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; background: #f8faf8; font-size: 11px; }
+.support-picker { display: grid; gap: 15px; margin: 20px 0; }
+.support-picker fieldset { min-width: 0; margin: 0; padding: 11px 14px 4px; border: 1px solid var(--line); border-radius: 9px; }
+.support-picker legend { padding: 0 5px; font-size: 13px; font-weight: 700; }
+.support-picker .checkbox-row:last-child { border-bottom: 0; }
+.history-item { background: #fcfdfc; }
 .screening-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
 .screening-stat { display: flex; justify-content: space-between; align-items: baseline; padding: 15px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 .screening-stat.active { border-color: var(--forest); box-shadow: 0 0 0 2px rgba(23,91,72,.1); }
@@ -174,4 +196,9 @@ input:focus, textarea:focus, select:focus { border-color: var(--forest); box-sha
   .extraction-form .field:nth-child(5), .extraction-form .evidence-picker, .extraction-form .button { grid-column: auto; }
   .extraction-value-header { display: block; }
   .extraction-value-header .status { margin-top: 10px; }
+  .claim-list-actions { align-items: flex-end; flex-direction: column; gap: 7px; }
+  .claim-list-title { white-space: normal; }
+  .claim-assertion { font-size: 26px; }
+  .support-summary { gap: 7px 14px; }
 }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

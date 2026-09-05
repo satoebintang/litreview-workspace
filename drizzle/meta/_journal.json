@@ -43,6 +43,13 @@
       "when": 1788599076364,
       "tag": "0005_synthesis",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788610924561,
+      "tag": "0006_claim_revisions",
+      "breakpoints": true
     }
   ]
 }
