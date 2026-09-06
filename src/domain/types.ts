@@ -25,6 +25,7 @@ export type SynthesisSupportStatus = "supported" | "unsupported";
 export type ManuscriptSectionType = "introduction" | "methods" | "results" | "discussion" | "limitations" | "conclusion" | "custom";
 export type ManuscriptPlacementEventType = "placed" | "replaced" | "removed";
 export type ManuscriptSectionItemType = "claim" | "prose";
+export type CitationStyle = "numeric" | "author_year";
 export type ManuscriptWarningCode = "unsupported_claim_revision" | "superseded_claim_revision" | "withdrawn_parent_claim" | "no_citation_candidates" | "incomplete_bibliography";
 
 export interface Project {
@@ -141,6 +142,7 @@ export interface Manuscript {
   projectId: ProjectId;
   title: string;
   isDefault: boolean;
+  citationStyle: CitationStyle;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -263,6 +265,7 @@ export interface ManuscriptWarning {
   claimId?: ClaimId;
   claimRevisionId?: ClaimRevisionId;
   paperId?: PaperId;
+  metadataField?: "authors" | "publication_year" | "venue";
 }
 
 export interface ManuscriptCounts {

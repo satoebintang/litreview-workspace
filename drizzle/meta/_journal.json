@@ -64,6 +64,13 @@
       "when": 1788663540567,
       "tag": "0008_manuscript_prose_blocks",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788678082388,
+      "tag": "0009_citation_formatting",
+      "breakpoints": true
     }
   ]
 }

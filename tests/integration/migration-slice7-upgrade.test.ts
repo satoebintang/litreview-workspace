@@ -13,13 +13,14 @@ async function runStatements(client: postgres.Sql, content: string) {
   for (const statement of content.split("--> statement-breakpoint").map((value) => value.trim()).filter(Boolean)) await client.unsafe(statement);
 }
 
-describe("Slice 7 additive upgrade from Slice 6", () => {
+describe("Slice 8 additive upgrade from Slice 7", () => {
   let client: postgres.Sql;
   let projectId: string;
   let manuscriptId: string;
   let sectionId: string;
   let activePlacementIds: string[];
   let removedPlacementId: string;
+  let manuscriptBefore: readonly unknown[];
 
   beforeAll(async () => {
     const admin = postgres(BASE_URL, { max: 1 });
@@ -56,8 +57,10 @@ describe("Slice 7 additive upgrade from Slice 6", () => {
     await client`update manuscript_claim_placements set removed_at=now() where id=${removedPlacementId}`;
     activePlacementIds = [firstId, secondId];
     const eventsBefore = await client`select placement_id, event_type, sequence from manuscript_claim_placement_events order by sequence`;
+    manuscriptBefore = await client`select id, project_id, title, is_default, created_at, updated_at from manuscripts where id=${manuscriptId}`;
 
     await runStatements(client, fs.readFileSync(path.join(drizzleDir, "0008_manuscript_prose_blocks.sql"), "utf8"));
+    await runStatements(client, fs.readFileSync(path.join(drizzleDir, "0009_citation_formatting.sql"), "utf8"));
 
     const activeItems = await client`select id, sort_order from manuscript_section_items where project_id=${projectId} order by sort_order, id`;
     expect(activeItems.map((row) => row.id)).toEqual([secondId, firstId]);
@@ -73,11 +76,14 @@ describe("Slice 7 additive upgrade from Slice 6", () => {
     await admin.end();
   });
 
-  it("preserves active identities, historical removals, events, and drops legacy ordering", async () => {
+  it("preserves active identities, historical removals, events, drops legacy ordering, and defaults style", async () => {
     const placements = await client`select id, claim_revision_id, removed_at from manuscript_claim_placements where project_id=${projectId} order by id`;
     expect(placements.filter((row) => activePlacementIds.includes(row.id)).map((row) => row.claim_revision_id)).toHaveLength(2);
     expect(placements.find((row) => row.id === removedPlacementId)?.removed_at).not.toBeNull();
     expect(await client`select column_name from information_schema.columns where table_name='manuscript_claim_placements' and column_name='sort_order'`).toHaveLength(0);
     expect(await client`select count(*)::int as count from manuscript_section_item_claims where project_id=${projectId}`).toEqual([{ count: 2 }]);
+    expect(await client`select id, project_id, title, is_default, created_at, updated_at from manuscripts where id=${manuscriptId}`).toEqual(manuscriptBefore);
+    expect(await client`select citation_style from manuscripts where id=${manuscriptId}`).toEqual([{ citation_style: "numeric" }]);
+    await expect(client`update manuscripts set citation_style='csl' where id=${manuscriptId}`).rejects.toBeTruthy();
   });
 });

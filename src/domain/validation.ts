@@ -140,6 +140,11 @@ export const extractionComparisonFilterSchema = z.object({
 });
 
 const manuscriptSectionTypeSchema = z.enum(["introduction", "methods", "results", "discussion", "limitations", "conclusion", "custom"]);
+export const citationStyleSchema = z.enum(["numeric", "author_year"]);
+
+export const setManuscriptCitationStyleSchema = z.object({
+  style: citationStyleSchema,
+});
 
 /** Manuscript titles are organizational metadata; the default service may
  * create one without caller input and receives the default title here. */
@@ -220,6 +225,7 @@ export type SynthesisRevisionInput = z.input<typeof synthesisRevisionInputSchema
 export type SynthesisWithdrawalInput = z.input<typeof synthesisWithdrawalSchema>;
 export type ExtractionComparisonFilter = z.input<typeof extractionComparisonFilterSchema>;
 export type CreateManuscriptInput = z.input<typeof createManuscriptSchema>;
+export type SetManuscriptCitationStyleInput = z.input<typeof setManuscriptCitationStyleSchema>;
 export type CreateManuscriptSectionInput = z.input<typeof createManuscriptSectionSchema>;
 export type RenameManuscriptSectionInput = z.input<typeof renameManuscriptSectionSchema>;
 export type ReorderManuscriptSectionsInput = z.input<typeof reorderManuscriptSectionsSchema>;

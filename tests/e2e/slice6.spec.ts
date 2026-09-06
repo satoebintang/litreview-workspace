@@ -62,6 +62,26 @@ test.describe("Slice 7 manuscript workspace", () => {
     await expect(page.getByText(/citation numbers: \[1\]/)).toBeVisible();
     await expect(page.getByText(/citation numbers: \[2\]/)).toBeVisible();
 
+    await expect(page.getByLabel("Citation style")).toHaveValue("numeric");
+    await page.getByLabel("Citation style").selectOption("author_year");
+    await page.getByRole("button", { name: "Apply style" }).click();
+    await expect(page.getByText("(First study, n.d.)", { exact: true })).toBeVisible();
+    await expect(page.getByText("(Second study, n.d.)", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Warnings" })).toBeVisible();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("link", { name: "Export Markdown" }).click();
+    const download = await downloadPromise;
+    const stream = await download.createReadStream();
+    let markdown = "";
+    if (stream) for await (const chunk of stream) markdown += chunk.toString();
+    expect(markdown).toContain("# Manuscript");
+    expect(markdown).toContain("First claim (First study, n.d.)");
+    expect(markdown).toContain("- First study (n.d.)");
+
+    await page.getByLabel("Citation style").selectOption("numeric");
+    await page.getByRole("button", { name: "Apply style" }).click();
+    await expect(page.getByText(/citation numbers: \[1\]/)).toBeVisible();
+
     // Prose is plain text and can be interleaved with existing Claim items.
     const introProse = page.getByLabel("New prose for Introduction");
     await introProse.fill("Opening context.\n\nWith intentional whitespace.");

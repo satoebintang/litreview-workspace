@@ -498,6 +498,7 @@ export const manuscripts = pgTable(
     projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
     title: text("title").notNull().default("Manuscript"),
     isDefault: boolean("is_default").notNull().default(false),
+    citationStyle: text("citation_style").notNull().default("numeric"),
     ...timestamps,
   },
   (table) => ({
@@ -507,6 +508,7 @@ export const manuscripts = pgTable(
       .on(table.projectId)
       .where(sql`${table.isDefault} = true`),
     titleNonblank: check("manuscripts_title_nonblank", sql`btrim(${table.title}) <> ''`),
+    citationStyleValid: check("manuscripts_citation_style_valid", sql`${table.citationStyle} in ('numeric', 'author_year')`),
   }),
 );
 

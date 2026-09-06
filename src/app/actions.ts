@@ -463,3 +463,10 @@ export async function reorderManuscriptSectionItemsAction(form: FormData) {
   catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
   redirect(`/projects/${projectId}/manuscript?saved=reordered`);
 }
+
+export async function setManuscriptCitationStyleAction(form: FormData) {
+  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId");
+  try { await manuscriptServices.setManuscriptCitationStyle(projectId, manuscriptId, text(form, "citationStyle")); }
+  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
+  redirect(`/projects/${projectId}/manuscript?saved=citation-style`);
+}

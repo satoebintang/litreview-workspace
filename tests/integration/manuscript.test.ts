@@ -62,6 +62,7 @@ describe("Slice 7 manuscript workspace", () => {
     ]);
     expect(new Set([first.id, second.id, third.id]).size).toBe(1);
     expect(first.projectId).toBe(projectId);
+    expect(first.citationStyle).toBe("numeric");
 
     const rows = await client.unsafe("select id, project_id, is_default from manuscripts where project_id = $1", [projectId]);
     expect(rows).toHaveLength(1);
@@ -303,5 +304,35 @@ describe("Slice 7 manuscript workspace", () => {
     expect(placementColumns).toHaveLength(0);
     const itemColumns = await client.unsafe("select column_name from information_schema.columns where table_name='manuscript_section_items' and column_name='sort_order'");
     expect(itemColumns).toHaveLength(1);
+  });
+
+  it("persists citation style without changing canonical identity or numbering", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Formatting" });
+    const paper = await includedPaper(projectId, "Opaque author source", { authors: ["Alice Smith"], publicationYear: 2024, venue: "Journal" });
+    const claim = await claimWithDirectEvidence(projectId, paper, "Exact placed claim");
+    const placement = await call("placeClaimRevision", projectId, manuscript.id, section.id, claim.revision.id);
+
+    const numeric = await call("getFormattedManuscript", projectId, manuscript.id);
+    const numericItem = itemsOf(numeric).find((item) => item.id === placement.id);
+    const numericPaperIds = bibliographyOf(numeric).map((entry) => entry.paper?.id ?? entry.paperId);
+    const numericNumbers = bibliographyOf(numeric).map((entry) => entry.citationNumber);
+    expect(numeric.manuscript.citationStyle).toBe("numeric");
+    expect(numericItem.renderedCitationMarker).toBe("[1]");
+
+    await call("setManuscriptCitationStyle", projectId, manuscript.id, "author_year");
+    const authorYear = await call("getFormattedManuscript", projectId, manuscript.id);
+    const authorYearItem = itemsOf(authorYear).find((item) => item.id === placement.id);
+    expect(authorYear.manuscript.citationStyle).toBe("author_year");
+    expect(authorYearItem.renderedCitationMarker).toBe("(Alice Smith, 2024)");
+    expect(bibliographyOf(authorYear).map((entry) => entry.paper?.id ?? entry.paperId)).toEqual(numericPaperIds);
+    expect(bibliographyOf(authorYear).map((entry) => entry.citationNumber)).toEqual(numericNumbers);
+    expect(authorYearItem.placementId).toBe(placement.id);
+    expect(authorYearItem.claimRevisionId).toBe(claim.revision.id);
+
+    await call("setManuscriptCitationStyle", projectId, manuscript.id, "numeric");
+    const restored = await call("getFormattedManuscript", projectId, manuscript.id);
+    expect(itemsOf(restored).find((item) => item.id === placement.id).renderedCitationMarker).toBe("[1]");
+    await expect(call("setManuscriptCitationStyle", projectId, manuscript.id, "csl" as any)).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
 });
