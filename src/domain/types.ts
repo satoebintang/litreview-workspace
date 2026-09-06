@@ -5,6 +5,7 @@ export type ClaimId = string;
 export type ClaimRevisionId = string;
 export type ManuscriptId = string;
 export type ManuscriptSectionId = string;
+export type ManuscriptSectionItemId = string;
 export type ManuscriptClaimPlacementId = string;
 export type ManuscriptPlacementEventId = string;
 export type ScreeningCriterionId = string;
@@ -23,6 +24,7 @@ export type SynthesisState = "active" | "withdrawn";
 export type SynthesisSupportStatus = "supported" | "unsupported";
 export type ManuscriptSectionType = "introduction" | "methods" | "results" | "discussion" | "limitations" | "conclusion" | "custom";
 export type ManuscriptPlacementEventType = "placed" | "replaced" | "removed";
+export type ManuscriptSectionItemType = "claim" | "prose";
 export type ManuscriptWarningCode = "unsupported_claim_revision" | "superseded_claim_revision" | "withdrawn_parent_claim" | "no_citation_candidates" | "incomplete_bibliography";
 
 export interface Project {
@@ -164,10 +166,25 @@ export interface ManuscriptClaimPlacement {
   sectionId: ManuscriptSectionId;
   claimId: ClaimId;
   claimRevisionId: ClaimRevisionId;
+  createdAt: Date;
+  removedAt: Date | null;
+}
+
+export interface ManuscriptSectionItem {
+  id: ManuscriptSectionItemId;
+  projectId: ProjectId;
+  manuscriptId: ManuscriptId;
+  sectionId: ManuscriptSectionId;
+  itemType: ManuscriptSectionItemType;
   sortOrder: number;
   createdAt: Date;
-  updatedAt?: Date;
   removedAt: Date | null;
+}
+
+export interface ManuscriptProseBlock extends ManuscriptSectionItem {
+  itemType: "prose";
+  text: string;
+  updatedAt: Date;
 }
 
 export interface ManuscriptPlacementEvent {
@@ -189,6 +206,7 @@ export interface ManuscriptCitationCandidate extends CitationCandidate {
   citationNumber: number;
   firstOccurrence: {
     sectionId: ManuscriptSectionId;
+    sectionItemId: ManuscriptSectionItemId;
     placementId: ManuscriptClaimPlacementId;
     claimRevisionId: ClaimRevisionId;
   };
@@ -207,15 +225,30 @@ export interface ManuscriptClaimPlacementView extends ManuscriptClaimPlacement {
   isCurrentClaimRevision: boolean;
   isSuperseded: boolean;
   citationCandidates: ManuscriptClaimCitationCandidate[];
-  /** Full exact-revision provenance, when requested by the projection. */
-  provenance: ClaimRevisionView;
+  citationNumbers: number[];
 }
+
+export interface ManuscriptClaimItemView extends ManuscriptSectionItem {
+  itemType: "claim";
+  placement: ManuscriptClaimPlacementView;
+  citationCandidates: ManuscriptClaimCitationCandidate[];
+  citationNumbers: number[];
+}
+
+export interface ManuscriptProseItemView extends ManuscriptSectionItem {
+  itemType: "prose";
+  text: string;
+  updatedAt: Date;
+}
+
+export type ManuscriptSectionItemView = ManuscriptClaimItemView | ManuscriptProseItemView;
 
 export interface ManuscriptBibliographyCandidate {
   paper: Paper;
   citationNumber: number;
   firstOccurrence: {
     sectionId: ManuscriptSectionId;
+    sectionItemId: ManuscriptSectionItemId;
     placementId: ManuscriptClaimPlacementId;
     claimRevisionId: ClaimRevisionId;
   };
@@ -225,6 +258,7 @@ export interface ManuscriptWarning {
   code: ManuscriptWarningCode;
   message: string;
   sectionId?: ManuscriptSectionId;
+  sectionItemId?: ManuscriptSectionItemId;
   placementId?: ManuscriptClaimPlacementId;
   claimId?: ClaimId;
   claimRevisionId?: ClaimRevisionId;
@@ -233,6 +267,9 @@ export interface ManuscriptWarning {
 
 export interface ManuscriptCounts {
   sectionCount: number;
+  activeItemCount: number;
+  proseBlockCount: number;
+  claimItemCount: number;
   placedClaimCount: number;
   unsupportedPlacedClaimCount: number;
   supersededPlacedClaimCount: number;
@@ -241,7 +278,7 @@ export interface ManuscriptCounts {
 }
 
 export interface ManuscriptSectionView extends ManuscriptSection {
-  placements: ManuscriptClaimPlacementView[];
+  items: ManuscriptSectionItemView[];
 }
 
 export interface ManuscriptView extends Manuscript {

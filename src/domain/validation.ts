@@ -168,6 +168,7 @@ export const placeClaimRevisionSchema = z.object({
   sectionId: idSchema,
   claimId: idSchema,
   claimRevisionId: idSchema,
+  position: z.number().int().min(0).optional(),
 });
 
 export const replacePlacedClaimRevisionSchema = z.object({
@@ -183,10 +184,23 @@ export const removeClaimPlacementSchema = z.object({
   expectedCurrentClaimRevisionId: idSchema.optional(),
 });
 
-export const reorderClaimPlacementsSchema = z.object({
+export const reorderSectionItemsSchema = z.object({
   sectionId: idSchema,
-  placementIds: z.array(idSchema),
+  itemIds: z.array(idSchema),
 });
+
+export const createProseBlockSchema = z.object({
+  sectionId: idSchema,
+  text: z.string().refine((value) => value.trim().length > 0, "Prose text is required").max(50000),
+  position: z.number().int().min(0).optional(),
+});
+
+export const updateProseBlockSchema = z.object({
+  proseBlockId: idSchema,
+  text: z.string().refine((value) => value.trim().length > 0, "Prose text is required").max(50000),
+});
+
+export const removeProseBlockSchema = z.object({ proseBlockId: idSchema });
 
 export type CreateProjectInput = z.input<typeof createProjectSchema>;
 export type CreatePaperInput = z.input<typeof createPaperSchema>;
@@ -213,4 +227,7 @@ export type ArchiveManuscriptSectionInput = z.input<typeof archiveManuscriptSect
 export type PlaceClaimRevisionInput = z.input<typeof placeClaimRevisionSchema>;
 export type ReplacePlacedClaimRevisionInput = z.input<typeof replacePlacedClaimRevisionSchema>;
 export type RemoveClaimPlacementInput = z.input<typeof removeClaimPlacementSchema>;
-export type ReorderClaimPlacementsInput = z.input<typeof reorderClaimPlacementsSchema>;
+export type ReorderSectionItemsInput = z.input<typeof reorderSectionItemsSchema>;
+export type CreateProseBlockInput = z.input<typeof createProseBlockSchema>;
+export type UpdateProseBlockInput = z.input<typeof updateProseBlockSchema>;
+export type RemoveProseBlockInput = z.input<typeof removeProseBlockSchema>;

@@ -372,10 +372,13 @@ const manuscriptServices = reviewServices as typeof reviewServices & {
   renameSection: (projectId: string, manuscriptId: string, sectionId: string, title: string) => Promise<unknown>;
   reorderSections: (projectId: string, manuscriptId: string, ids: string[]) => Promise<unknown>;
   archiveSection: (projectId: string, manuscriptId: string, sectionId: string) => Promise<unknown>;
-  placeClaimRevision: (projectId: string, manuscriptId: string, sectionId: string, revisionId: string) => Promise<unknown>;
+  placeClaimRevision: (projectId: string, manuscriptId: string, sectionId: string, revisionId: string, position?: number) => Promise<unknown>;
   replacePlacedClaimRevision: (projectId: string, manuscriptId: string, placementId: string, revisionId: string, expected?: string) => Promise<unknown>;
   removeClaimPlacement: (projectId: string, manuscriptId: string, placementId: string) => Promise<unknown>;
-  reorderClaimPlacements: (projectId: string, manuscriptId: string, sectionId: string, ids: string[]) => Promise<unknown>;
+  createProseBlock: (projectId: string, manuscriptId: string, sectionId: string, input: { text: string; position?: number }) => Promise<unknown>;
+  updateProseBlock: (projectId: string, manuscriptId: string, proseBlockId: string, input: { text: string }) => Promise<unknown>;
+  removeProseBlock: (projectId: string, manuscriptId: string, proseBlockId: string) => Promise<unknown>;
+  reorderSectionItems: (projectId: string, manuscriptId: string, sectionId: string, ids: string[]) => Promise<unknown>;
 };
 
 function many(form: FormData, key: string) { return form.getAll(key).filter((value): value is string => typeof value === "string" && value.trim().length > 0).map((value) => value.trim()); }
@@ -410,7 +413,9 @@ export async function archiveManuscriptSectionAction(form: FormData) {
 
 export async function placeClaimRevisionAction(form: FormData) {
   const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const sectionId = text(form, "sectionId");
-  try { await manuscriptServices.placeClaimRevision(projectId, manuscriptId, sectionId, text(form, "claimRevisionId")); }
+  const rawPosition = text(form, "position");
+  const position = rawPosition === "" ? undefined : Number(rawPosition);
+  try { await manuscriptServices.placeClaimRevision(projectId, manuscriptId, sectionId, text(form, "claimRevisionId"), position); }
   catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
   redirect(`/projects/${projectId}/manuscript?saved=placed`);
 }
@@ -429,9 +434,32 @@ export async function removeClaimPlacementAction(form: FormData) {
   redirect(`/projects/${projectId}/manuscript?saved=removed`);
 }
 
-export async function reorderClaimPlacementsAction(form: FormData) {
+export async function createManuscriptProseBlockAction(form: FormData) {
   const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const sectionId = text(form, "sectionId");
-  try { await manuscriptServices.reorderClaimPlacements(projectId, manuscriptId, sectionId, many(form, "placementIds")); }
+  const rawPosition = text(form, "position");
+  const position = rawPosition === "" ? undefined : Number(rawPosition);
+  try { await manuscriptServices.createProseBlock(projectId, manuscriptId, sectionId, { text: verbatimText(form, "text"), position }); }
+  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
+  redirect(`/projects/${projectId}/manuscript?saved=prose`);
+}
+
+export async function updateManuscriptProseBlockAction(form: FormData) {
+  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const proseBlockId = text(form, "proseBlockId");
+  try { await manuscriptServices.updateProseBlock(projectId, manuscriptId, proseBlockId, { text: verbatimText(form, "text") }); }
+  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
+  redirect(`/projects/${projectId}/manuscript?saved=prose`);
+}
+
+export async function removeManuscriptProseBlockAction(form: FormData) {
+  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const proseBlockId = text(form, "proseBlockId");
+  try { await manuscriptServices.removeProseBlock(projectId, manuscriptId, proseBlockId); }
+  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
+  redirect(`/projects/${projectId}/manuscript?saved=removed-prose`);
+}
+
+export async function reorderManuscriptSectionItemsAction(form: FormData) {
+  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const sectionId = text(form, "sectionId");
+  try { await manuscriptServices.reorderSectionItems(projectId, manuscriptId, sectionId, many(form, "itemIds")); }
   catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
   redirect(`/projects/${projectId}/manuscript?saved=reordered`);
 }

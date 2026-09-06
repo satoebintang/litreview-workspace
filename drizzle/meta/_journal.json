@@ -57,6 +57,13 @@
       "when": 1788619113295,
       "tag": "0007_manuscript_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788663540567,
+      "tag": "0008_manuscript_prose_blocks",
+      "breakpoints": true
     }
   ]
 }

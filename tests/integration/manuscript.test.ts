@@ -22,11 +22,11 @@ async function call(name: string, ...args: unknown[]) {
   return operation.apply(services, args);
 }
 
-describe("Slice 6 manuscript workspace", () => {
+describe("Slice 7 manuscript workspace", () => {
   beforeAll(async () => { await migrate(db, { migrationsFolder: "./drizzle" }); });
   beforeEach(async () => { projectId = (await services.createProject({ title: `Manuscript project ${crypto.randomUUID()}` })).id; });
   afterAll(async () => {
-    await client.unsafe("TRUNCATE TABLE manuscript_claim_placement_events, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, screening_decisions, screening_criteria, evidence, claims, papers, projects");
+    await client.unsafe("TRUNCATE TABLE manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, screening_decisions, screening_criteria, evidence, claims, papers, projects");
     await client.end();
   });
 
@@ -49,7 +49,8 @@ describe("Slice 6 manuscript workspace", () => {
   }
 
   function sectionsOf(view: any): any[] { return view?.sections ?? view?.manuscript?.sections ?? []; }
-  function placementsOf(view: any): any[] { return sectionsOf(view).flatMap((section) => section.placements ?? []); }
+  function placementsOf(view: any): any[] { return sectionsOf(view).flatMap((section) => (section.items ?? []).filter((item: any) => (item.itemType ?? item.type) === "claim").map((item: any) => { const placement = item.placement ?? item.claimPlacement ?? item.claim ?? item; return { ...placement, citationNumbers: item.citationNumbers ?? placement.citationNumbers, citationPaperIds: item.citationPaperIds ?? placement.citationPaperIds }; })); }
+  function itemsOf(view: any): any[] { return sectionsOf(view).flatMap((section) => section.items ?? []); }
   function bibliographyOf(view: any): any[] { return view?.bibliographyCandidates ?? view?.bibliography ?? view?.manuscript?.bibliographyCandidates ?? []; }
   function warningsOf(view: any): any[] { return view?.warnings ?? view?.manuscript?.warnings ?? []; }
 
@@ -168,7 +169,7 @@ describe("Slice 6 manuscript workspace", () => {
     const historicalRows = await client.unsafe("select removed_at from manuscript_claim_placements where id = $1", [placement.id]);
     expect(historicalRows[0].removed_at).not.toBeNull();
     await expect(call("replacePlacedClaimRevision", projectId, manuscript.id, placement.id, claim.revision.id)).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
-    await expect(call("reorderClaimPlacements", projectId, manuscript.id, section.id, [placement.id])).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    await expect(call("reorderSectionItems", projectId, manuscript.id, section.id, [placement.id])).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     const history = await call("getManuscriptPlacementHistory", projectId, manuscript.id, placement.id);
     expect(history.map((event: any) => event.eventType ?? event.event_type ?? event.type)).toEqual(["placed", "removed"]);
   });
@@ -243,5 +244,64 @@ describe("Slice 6 manuscript workspace", () => {
     expect(claimAfter.revision).toEqual(claimBefore.revision);
     const history = await call("getManuscriptPlacementHistory", projectId, manuscript.id, placement.id);
     expect(history).toHaveLength(1);
+  });
+
+  it("composes mutable plain-text prose with exact Claim items and reorders them together", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Mixed composition" });
+    const paper = await includedPaper(projectId, "Mixed source");
+    const claim = await claimWithDirectEvidence(projectId, paper, "A claim between prose blocks");
+    const placement = await call("placeClaimRevision", projectId, manuscript.id, section.id, claim.revision.id);
+    const before = "  Opening paragraph.\n\n  With intentional spacing.  ";
+    const prose = await call("createProseBlock", projectId, manuscript.id, section.id, { text: before, position: 0 });
+    const after = await call("createProseBlock", projectId, manuscript.id, section.id, { text: "Closing paragraph.", position: 2 });
+
+    let view = await call("getManuscript", projectId, manuscript.id);
+    let items = itemsOf(view).filter((item) => item.sectionId === section.id);
+    expect(items.map((item) => item.itemType ?? item.type)).toEqual(["prose", "claim", "prose"]);
+    expect(items[0].text ?? items[0].proseBlock?.text).toBe(before);
+    const claimItem = items.find((item) => (item.itemType ?? item.type) === "claim");
+    expect((claimItem.placement ?? claimItem.claimPlacement).id).toBe(placement.id);
+    expect((claimItem.placement ?? claimItem.claimPlacement).claimRevisionId).toBe(claim.revision.id);
+    expect((claimItem.placement ?? claimItem.claimPlacement).citationNumbers).toEqual([1]);
+
+    await call("updateProseBlock", projectId, manuscript.id, prose.id ?? prose.sectionItemId, { text: "  Edited opening.\nStill plain text.  " });
+    await call("reorderSectionItems", projectId, manuscript.id, section.id, [placement.id, after.id ?? after.sectionItemId, prose.id ?? prose.sectionItemId]);
+    view = await call("getManuscript", projectId, manuscript.id);
+    items = itemsOf(view).filter((item) => item.sectionId === section.id);
+    expect(items.map((item) => item.itemType ?? item.type)).toEqual(["claim", "prose", "prose"]);
+    expect((items[0].placement ?? items[0].claimPlacement).claimRevisionId).toBe(claim.revision.id);
+    expect(items[2].text ?? items[2].proseBlock?.text).toContain("Edited opening");
+    expect(bibliographyOf(view).map((candidate) => candidate.paper?.id ?? candidate.paperId)).toEqual([paper.id]);
+  });
+
+  it("removes prose independently and removes Claim placement/item markers atomically", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Removal parity" });
+    const paper = await includedPaper(projectId, "Parity source");
+    const claim = await claimWithDirectEvidence(projectId, paper, "A parity assertion");
+    const placement = await call("placeClaimRevision", projectId, manuscript.id, section.id, claim.revision.id);
+    const prose = await call("createProseBlock", projectId, manuscript.id, section.id, { text: "Temporary prose" });
+    await call("removeProseBlock", projectId, manuscript.id, prose.id ?? prose.sectionItemId);
+    let view = await call("getManuscript", projectId, manuscript.id);
+    expect(itemsOf(view).some((item) => item.id === (prose.id ?? prose.sectionItemId))).toBe(false);
+
+    await call("removeClaimPlacement", projectId, manuscript.id, placement.id);
+    view = await call("getManuscript", projectId, manuscript.id);
+    expect(itemsOf(view).some((item) => item.id === placement.id)).toBe(false);
+    const rows = await client.unsafe("select p.removed_at as placement_removed_at, i.removed_at as item_removed_at from manuscript_claim_placements p join manuscript_section_items i on i.id=p.id where p.id=$1", [placement.id]);
+    expect(rows[0].placement_removed_at).not.toBeNull();
+    expect(rows[0].item_removed_at).not.toBeNull();
+    expect(new Date(rows[0].placement_removed_at).getTime()).toBe(new Date(rows[0].item_removed_at).getTime());
+    const history = await call("getManuscriptPlacementHistory", projectId, manuscript.id, placement.id);
+    expect(history.map((event: any) => event.eventType ?? event.event_type ?? event.type)).toEqual(["placed", "removed"]);
+    await call("archiveSection", projectId, manuscript.id, section.id);
+  });
+
+  it("does not retain a second ClaimPlacement ordering authority", async () => {
+    const placementColumns = await client.unsafe("select column_name from information_schema.columns where table_name='manuscript_claim_placements' and column_name='sort_order'");
+    expect(placementColumns).toHaveLength(0);
+    const itemColumns = await client.unsafe("select column_name from information_schema.columns where table_name='manuscript_section_items' and column_name='sort_order'");
+    expect(itemColumns).toHaveLength(1);
   });
 });
