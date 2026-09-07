@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { extractionRevisionEvidence, extractionValues, extractionValueRevisions, synthesisStatements, synthesisRevisions } from "@/db/schema";
+import { extractionRevisionEvidence, extractionValues, extractionValueRevisions, synthesisStatements, synthesisRevisions, retrievedRecordMatches } from "@/db/schema";
 import { DomainError, isConstraintError } from "@/domain/errors";
 import {
   claimEvidenceInputSchema,
@@ -56,6 +56,7 @@ import {
   ClaimRevisionSupportRepository,
 } from "./repositories";
 import { createManuscriptServices } from "./manuscript-services";
+import { createAcquisitionServices } from "./acquisition-services";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
   const result = schema.safeParse(input);
@@ -406,7 +407,7 @@ export function createReviewServices(db: Database) {
   const services = {
     async createProject(input: CreateProjectInput) {
       const values = validate(createProjectSchema, input);
-      return projectRepo.create({ title: values.title, description: values.description ?? null, researchQuestion: values.researchQuestion ?? null });
+      return projectRepo.create({ title: values.title, description: values.description ?? null });
     },
 
     getProject(projectId: string) { return requireProject(projectId); },
@@ -913,6 +914,8 @@ export function createReviewServices(db: Database) {
       await requirePaper(projectId, paperId);
       if (await evidenceRepo.countForPaper(projectId, paperId)) throw new DomainError("PROTECTED_DELETE", "Paper cannot be deleted while evidence exists");
       if (await decisionRepo.countForPaper(projectId, paperId)) throw new DomainError("PROTECTED_DELETE", "Paper cannot be deleted after screening decisions exist");
+      const acquisitionLinks = await db.select({ id: retrievedRecordMatches.id }).from(retrievedRecordMatches).where(and(eq(retrievedRecordMatches.projectId, projectId), eq(retrievedRecordMatches.paperId, paperId))).limit(1);
+      if (acquisitionLinks.length) throw new DomainError("PROTECTED_DELETE", "Paper cannot be deleted after acquisition history exists");
       try { return await paperRepo.delete(projectId, paperId); }
       catch (error) { if (isConstraintError(error)) throw new DomainError("PROTECTED_DELETE", "Paper cannot be deleted after evidence or screening history exists"); throw error; }
     },
@@ -937,5 +940,5 @@ export function createReviewServices(db: Database) {
       return { claim: result.claim, supportStatus: result.currentRevision.supportStatus, evidence: result.currentRevision.supports.evidence.map((item) => item.evidence) };
     },
   };
-  return Object.assign(services, createManuscriptServices(db));
+  return Object.assign(services, createManuscriptServices(db), createAcquisitionServices(db));
 }

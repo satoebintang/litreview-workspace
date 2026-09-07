@@ -146,6 +146,65 @@ export const setManuscriptCitationStyleSchema = z.object({
   style: citationStyleSchema,
 });
 
+export const createResearchQuestionSchema = z.object({
+  identifier: z.string().trim().min(1).max(100),
+  label: z.string().trim().min(1).max(10000),
+});
+
+export const updateResearchQuestionSchema = z.object({
+  identifier: z.string().trim().min(1).max(100).optional(),
+  label: z.string().trim().min(1).max(10000).optional(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+export const createSearchStrategySchema = z.object({
+  searchSourceId: idSchema,
+  name: z.string().trim().min(1).max(500),
+  queryText: z.string().refine((value) => value.trim().length > 0, "Query is required").max(10000),
+  filtersText: z.string().max(10000).nullable().optional(),
+  notes: optionalText,
+});
+
+export const updateSearchStrategySchema = z.object({
+  name: z.string().trim().min(1).max(500).optional(),
+  queryText: z.string().refine((value) => value.trim().length > 0, "Query is required").max(10000).optional(),
+  filtersText: z.string().max(10000).nullable().optional(),
+  notes: optionalText,
+});
+
+export const createSearchRunSchema = z.object({
+  searchSourceId: idSchema,
+  sourceKeySnapshot: z.string().trim().min(1).max(200),
+  sourceDisplayNameSnapshot: z.string().trim().min(1).max(500),
+  strategyId: idSchema,
+  queryText: z.string().refine((value) => value.trim().length > 0, "Query is required").max(10000),
+  filtersTextSnapshot: z.string().max(10000).nullable().optional(),
+  reportedResultCount: z.number().int().min(0),
+  executedAt: z.coerce.date(),
+  notes: optionalText,
+});
+
+export const createRetrievedRecordSchema = z.object({
+  searchRunId: idSchema,
+  searchSourceId: idSchema,
+  sourceRecordId: z.string().trim().min(1).max(2000).nullable().optional(),
+  title: z.string().trim().min(1).max(1000),
+  authors: z.array(z.string().trim().min(1).max(500)).default([]),
+  abstract: optionalText,
+  doi: optionalText,
+  url: optionalText,
+  publicationYear: z.number().int().min(1000).max(3000).nullable().optional(),
+  venue: optionalText,
+  retrievedAt: z.coerce.date(),
+  rawCitation: optionalText,
+});
+
+export const createRetrievedRecordMatchSchema = z.object({
+  retrievedRecordId: idSchema,
+  paperId: idSchema,
+  action: z.enum(["linked", "unlinked"]),
+});
+
 /** Manuscript titles are organizational metadata; the default service may
  * create one without caller input and receives the default title here. */
 export const createManuscriptSchema = z.object({
@@ -226,6 +285,13 @@ export type SynthesisWithdrawalInput = z.input<typeof synthesisWithdrawalSchema>
 export type ExtractionComparisonFilter = z.input<typeof extractionComparisonFilterSchema>;
 export type CreateManuscriptInput = z.input<typeof createManuscriptSchema>;
 export type SetManuscriptCitationStyleInput = z.input<typeof setManuscriptCitationStyleSchema>;
+export type CreateResearchQuestionInput = z.input<typeof createResearchQuestionSchema>;
+export type UpdateResearchQuestionInput = z.input<typeof updateResearchQuestionSchema>;
+export type CreateSearchStrategyInput = z.input<typeof createSearchStrategySchema>;
+export type UpdateSearchStrategyInput = z.input<typeof updateSearchStrategySchema>;
+export type CreateSearchRunInput = z.input<typeof createSearchRunSchema>;
+export type CreateRetrievedRecordInput = z.input<typeof createRetrievedRecordSchema>;
+export type CreateRetrievedRecordMatchInput = z.input<typeof createRetrievedRecordMatchSchema>;
 export type CreateManuscriptSectionInput = z.input<typeof createManuscriptSectionSchema>;
 export type RenameManuscriptSectionInput = z.input<typeof renameManuscriptSectionSchema>;
 export type ReorderManuscriptSectionsInput = z.input<typeof reorderManuscriptSectionsSchema>;

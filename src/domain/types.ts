@@ -10,6 +10,12 @@ export type ManuscriptClaimPlacementId = string;
 export type ManuscriptPlacementEventId = string;
 export type ScreeningCriterionId = string;
 export type ScreeningDecisionId = string;
+export type ResearchQuestionId = string;
+export type SearchSourceId = string;
+export type SearchStrategyId = string;
+export type SearchRunId = string;
+export type RetrievedRecordId = string;
+export type RetrievedRecordMatchId = string;
 export type ScreeningState = "unscreened" | "included" | "excluded" | "maybe";
 export type ScreeningDecisionValue = "include" | "exclude" | "maybe";
 export type ScreeningCriterionType = "inclusion" | "exclusion";
@@ -26,15 +32,96 @@ export type ManuscriptSectionType = "introduction" | "methods" | "results" | "di
 export type ManuscriptPlacementEventType = "placed" | "replaced" | "removed";
 export type ManuscriptSectionItemType = "claim" | "prose";
 export type CitationStyle = "numeric" | "author_year";
+export type SearchRunStatus = "completed" | "failed";
+export type RetrievedRecordMatchAction = "linked" | "unlinked";
 export type ManuscriptWarningCode = "unsupported_claim_revision" | "superseded_claim_revision" | "withdrawn_parent_claim" | "no_citation_candidates" | "incomplete_bibliography";
 
 export interface Project {
   id: ProjectId;
   title: string;
   description: string | null;
-  researchQuestion: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface ResearchQuestion {
+  id: ResearchQuestionId;
+  projectId: ProjectId;
+  identifier: string;
+  label: string;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+  archivedAt: Date | null;
+}
+
+export interface SearchSource {
+  id: SearchSourceId;
+  projectId: ProjectId;
+  sourceKey: string;
+  displayName: string;
+  baseUrl: string | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  archivedAt: Date | null;
+}
+
+export interface SearchStrategy {
+  id: SearchStrategyId;
+  projectId: ProjectId;
+  searchSourceId: SearchSourceId;
+  name: string;
+  queryText: string;
+  filtersText: string | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  archivedAt: Date | null;
+}
+
+export interface SearchRun {
+  id: SearchRunId;
+  sequence: number;
+  projectId: ProjectId;
+  searchSourceId: SearchSourceId;
+  sourceKeySnapshot: string;
+  sourceDisplayNameSnapshot: string;
+  strategyId: SearchStrategyId;
+  queryText: string;
+  filtersTextSnapshot: string | null;
+  reportedResultCount: number;
+  executedAt: Date;
+  notes: string | null;
+  createdAt: Date;
+}
+
+export interface RetrievedRecord {
+  id: RetrievedRecordId;
+  projectId: ProjectId;
+  searchRunId: SearchRunId;
+  searchSourceId: SearchSourceId;
+  sourceRecordId: string | null;
+  title: string;
+  authors: string[];
+  abstract: string | null;
+  doi: string | null;
+  url: string | null;
+  publicationYear: number | null;
+  venue: string | null;
+  retrievedAt: Date;
+  rawCitation: string | null;
+  createdAt: Date;
+}
+
+export interface RetrievedRecordMatch {
+  id: RetrievedRecordMatchId;
+  sequence: number;
+  projectId: ProjectId;
+  retrievedRecordId: RetrievedRecordId;
+  paperId: PaperId;
+  action: RetrievedRecordMatchAction;
+  createdAt: Date;
 }
 
 export interface Paper {

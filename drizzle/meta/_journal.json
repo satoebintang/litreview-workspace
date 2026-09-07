@@ -71,6 +71,13 @@
       "when": 1788678082388,
       "tag": "0009_citation_formatting",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788783595707,
+      "tag": "0010_review_protocol_search",
+      "breakpoints": true
     }
   ]
 }
