@@ -546,3 +546,58 @@ export async function relinkRetrievedRecordAction(form: FormData) {
   catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}`, error); }
   redirect(`/projects/${projectId}/protocol/runs/${runId}?saved=relinked`);
 }
+
+function deduplicationPairPath(projectId: string, leftRecordId: string, rightRecordId: string) {
+  return `/projects/${projectId}/deduplication/${encodeURIComponent(leftRecordId)}/${encodeURIComponent(rightRecordId)}`;
+}
+
+export async function confirmSameWorkAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const leftRecordId = text(form, "leftRecordId");
+  const rightRecordId = text(form, "rightRecordId");
+  const path = deduplicationPairPath(projectId, leftRecordId, rightRecordId);
+  try {
+    await reviewServices.confirmSameWork(projectId, leftRecordId, rightRecordId, optional(form, "note"));
+  } catch (error) { fail(path, error); }
+  redirect(`${path}?saved=same_work`);
+}
+
+export async function confirmSameWorkAndResolveAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const leftRecordId = text(form, "leftRecordId");
+  const rightRecordId = text(form, "rightRecordId");
+  const path = deduplicationPairPath(projectId, leftRecordId, rightRecordId);
+  const resolutionType = text(form, "resolutionType");
+  const resolution = resolutionType === "existing"
+    ? { paperId: text(form, "paperId") }
+    : { createFromRecordId: text(form, "createFromRecordId"), overrides: { title: optional(form, "title") } };
+  try {
+    await reviewServices.confirmSameWorkAndResolve(projectId, leftRecordId, rightRecordId, resolution, optional(form, "note"));
+  } catch (error) { fail(path, error); }
+  redirect(`${path}?saved=same_work_resolved`);
+}
+
+export async function decideDifferentWorkAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const leftRecordId = text(form, "leftRecordId");
+  const rightRecordId = text(form, "rightRecordId");
+  const path = deduplicationPairPath(projectId, leftRecordId, rightRecordId);
+  try {
+    await reviewServices.decideDifferentWork(projectId, leftRecordId, rightRecordId, optional(form, "note"));
+  } catch (error) { fail(path, error); }
+  redirect(`${path}?saved=different_work`);
+}
+
+export async function correctDifferentWorkAndResolveAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const leftRecordId = text(form, "leftRecordId");
+  const rightRecordId = text(form, "rightRecordId");
+  const path = deduplicationPairPath(projectId, leftRecordId, rightRecordId);
+  try {
+    await reviewServices.correctDifferentWorkAndResolve(projectId, leftRecordId, rightRecordId, {
+      relinkRecordId: text(form, "relinkRecordId"),
+      toPaperId: text(form, "toPaperId"),
+    }, optional(form, "note"));
+  } catch (error) { fail(path, error); }
+  redirect(`${path}?saved=different_work_resolved`);
+}

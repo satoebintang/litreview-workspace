@@ -909,4 +909,36 @@ export const retrievedRecordMatches = pgTable(
   }),
 );
 
-export const schema = { projects, papers, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches };
+export const retrievedRecordDeduplicationDecisions = pgTable(
+  "retrieved_record_deduplication_decisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    projectId: uuid("project_id").notNull(),
+    leftRetrievedRecordId: uuid("left_retrieved_record_id").notNull(),
+    rightRetrievedRecordId: uuid("right_retrieved_record_id").notNull(),
+    decision: text("decision").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("retrieved_record_deduplication_decisions_project_id_id_unique").on(table.projectId, table.id),
+    leftRecordOwnership: foreignKey({
+      columns: [table.projectId, table.leftRetrievedRecordId],
+      foreignColumns: [retrievedRecords.projectId, retrievedRecords.id],
+      name: "retrieved_record_deduplication_decisions_project_left_record_fk",
+    }).onDelete("restrict"),
+    rightRecordOwnership: foreignKey({
+      columns: [table.projectId, table.rightRetrievedRecordId],
+      foreignColumns: [retrievedRecords.projectId, retrievedRecords.id],
+      name: "retrieved_record_deduplication_decisions_project_right_record_fk",
+    }).onDelete("restrict"),
+    pairSequence: index("retrieved_record_deduplication_decisions_project_pair_sequence_idx").on(table.projectId, table.leftRetrievedRecordId, table.rightRetrievedRecordId, table.sequence),
+    rightRecordSequence: index("retrieved_record_deduplication_decisions_project_right_record_sequence_idx").on(table.projectId, table.rightRetrievedRecordId, table.sequence),
+    decisionValid: check("retrieved_record_deduplication_decisions_decision_valid", sql`${table.decision} in ('same_work', 'different_work')`),
+    noteNonblank: check("retrieved_record_deduplication_decisions_note_nonblank", sql`${table.note} is null or btrim(${table.note}) <> ''`),
+    orderedDistinctPair: check("retrieved_record_deduplication_decisions_ordered_distinct_pair", sql`${table.leftRetrievedRecordId} < ${table.rightRetrievedRecordId}`),
+  }),
+);
+
+export const schema = { projects, papers, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };

@@ -48,7 +48,8 @@ export default async function ProtocolPage({ params, searchParams }: {
       <div className="workspace-header"><div><p className="eyebrow">Review protocol</p><h1>Protocol &amp; search</h1><p>{project.title} · preserve the exact history of every search.</p></div><Link className="button secondary" href={`/projects/${projectId}/screening`}>Open screening criteria →</Link></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">Protocol updated.</div>}
 
-      <div className="workspace-grid">
+       <div className="workspace-grid">
+         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}><Link className="button ghost" href={`/projects/${projectId}/deduplication`}>Deduplication queue →</Link><Link className="button ghost" href={`/projects/${projectId}/review-flow`}>Review flow →</Link></div>
         <section className="card section-card"><div className="section-heading"><h2>Research questions</h2><span className="count">{questions.length} ordered</span></div>
           <p className="hint">Use stable identifiers such as RQ1 and RQ2. Order is part of the protocol.</p>
           <form action={createResearchQuestionAction}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="research-question-identifier">Identifier</label><input id="research-question-identifier" name="identifier" required placeholder="RQ2" /></div><div className="field"><label htmlFor="research-question-label">Question</label><textarea id="research-question-label" name="label" required placeholder="What does this review ask?" /></div><button className="button" type="submit">Add research question</button></form>

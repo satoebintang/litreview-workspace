@@ -21,9 +21,11 @@ test.describe("Slice 2 screening workflow", () => {
     await page.getByLabel("Type").selectOption("inclusion");
     await page.getByLabel("Criterion").fill("Studies security attacks against ML systems");
     await page.getByRole("button", { name: "Add criterion" }).click();
+    await expect(page.getByText("Studies security attacks against ML systems", { exact: true })).toBeVisible();
     await page.getByLabel("Type").selectOption("exclusion");
     await page.getByLabel("Criterion").fill("Wrong population");
     await page.getByRole("button", { name: "Add criterion" }).click();
+    await expect(page.getByText("Wrong population", { exact: true })).toBeVisible();
 
     await page.getByRole("link", { name: "Start screening" }).click();
     await expect(page.getByRole("heading", { name: "Adversarial Machine Learning in IoT" })).toBeVisible();

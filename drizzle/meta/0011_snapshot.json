@@ -1,0 +1,4964 @@
+{
+  "id": "57b8579e-2fb1-4fcf-8504-3360e02dcbe5",
+  "prevId": "35e14ceb-3683-4f5a-913e-5ce05eb86428",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.claim_revision_evidence_supports": {
+      "name": "claim_revision_evidence_supports",
+      "schema": "",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_revision_id": {
+          "name": "claim_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evidence_id": {
+          "name": "evidence_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "claim_revision_evidence_supports_project_revision_idx": {
+          "name": "claim_revision_evidence_supports_project_revision_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "claim_revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "claim_revision_evidence_supports_project_evidence_idx": {
+          "name": "claim_revision_evidence_supports_project_evidence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "evidence_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claim_revision_evidence_supports_project_revision_fk": {
+          "name": "claim_revision_evidence_supports_project_revision_fk",
+          "tableFrom": "claim_revision_evidence_supports",
+          "tableTo": "claim_revisions",
+          "columnsFrom": [
+            "project_id",
+            "claim_revision_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "claim_revision_evidence_supports_project_evidence_fk": {
+          "name": "claim_revision_evidence_supports_project_evidence_fk",
+          "tableFrom": "claim_revision_evidence_supports",
+          "tableTo": "evidence",
+          "columnsFrom": [
+            "project_id",
+            "evidence_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "claim_revision_evidence_supports_project_id_claim_revision_id_evidence_id_pk": {
+          "name": "claim_revision_evidence_supports_project_id_claim_revision_id_evidence_id_pk",
+          "columns": [
+            "project_id",
+            "claim_revision_id",
+            "evidence_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.claim_revision_extraction_supports": {
+      "name": "claim_revision_extraction_supports",
+      "schema": "",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_revision_id": {
+          "name": "claim_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extraction_revision_id": {
+          "name": "extraction_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "claim_revision_extraction_supports_project_revision_idx": {
+          "name": "claim_revision_extraction_supports_project_revision_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "claim_revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "claim_revision_extraction_supports_project_extraction_revision_idx": {
+          "name": "claim_revision_extraction_supports_project_extraction_revision_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "extraction_revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claim_revision_extraction_supports_project_revision_fk": {
+          "name": "claim_revision_extraction_supports_project_revision_fk",
+          "tableFrom": "claim_revision_extraction_supports",
+          "tableTo": "claim_revisions",
+          "columnsFrom": [
+            "project_id",
+            "claim_revision_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "claim_revision_extraction_supports_project_extraction_revision_fk": {
+          "name": "claim_revision_extraction_supports_project_extraction_revision_fk",
+          "tableFrom": "claim_revision_extraction_supports",
+          "tableTo": "extraction_value_revisions",
+          "columnsFrom": [
+            "project_id",
+            "extraction_revision_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "claim_revision_extraction_supports_project_id_claim_revision_id_extraction_revision_id_pk": {
+          "name": "claim_revision_extraction_supports_project_id_claim_revision_id_extraction_revision_id_pk",
+          "columns": [
+            "project_id",
+            "claim_revision_id",
+            "extraction_revision_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.claim_revision_synthesis_supports": {
+      "name": "claim_revision_synthesis_supports",
+      "schema": "",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_revision_id": {
+          "name": "claim_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "synthesis_revision_id": {
+          "name": "synthesis_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "claim_revision_synthesis_supports_project_revision_idx": {
+          "name": "claim_revision_synthesis_supports_project_revision_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "claim_revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "claim_revision_synthesis_supports_project_synthesis_revision_idx": {
+          "name": "claim_revision_synthesis_supports_project_synthesis_revision_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "synthesis_revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claim_revision_synthesis_supports_project_revision_fk": {
+          "name": "claim_revision_synthesis_supports_project_revision_fk",
+          "tableFrom": "claim_revision_synthesis_supports",
+          "tableTo": "claim_revisions",
+          "columnsFrom": [
+            "project_id",
+            "claim_revision_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "claim_revision_synthesis_supports_project_synthesis_revision_fk": {
+          "name": "claim_revision_synthesis_supports_project_synthesis_revision_fk",
+          "tableFrom": "claim_revision_synthesis_supports",
+          "tableTo": "synthesis_revisions",
+          "columnsFrom": [
+            "project_id",
+            "synthesis_revision_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "claim_revision_synthesis_supports_project_id_claim_revision_id_synthesis_revision_id_pk": {
+          "name": "claim_revision_synthesis_supports_project_id_claim_revision_id_synthesis_revision_id_pk",
+          "columns": [
+            "project_id",
+            "claim_revision_id",
+            "synthesis_revision_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.claim_revisions": {
+      "name": "claim_revisions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "claim_revisions_sequence_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "claim_text": {
+          "name": "claim_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "researcher_note": {
+          "name": "researcher_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finalized_at": {
+          "name": "finalized_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "claim_revisions_project_claim_sequence_idx": {
+          "name": "claim_revisions_project_claim_sequence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "claim_revisions_project_sequence_idx": {
+          "name": "claim_revisions_project_sequence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claim_revisions_project_claim_fk": {
+          "name": "claim_revisions_project_claim_fk",
+          "tableFrom": "claim_revisions",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "project_id",
+            "claim_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "claim_revisions_project_id_id_unique": {
+          "name": "claim_revisions_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "claim_revisions_project_claim_id_id_unique": {
+          "name": "claim_revisions_project_claim_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "claim_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "claim_revisions_state_valid": {
+          "name": "claim_revisions_state_valid",
+          "value": "\"claim_revisions\".\"state\" in ('active', 'withdrawn')"
+        },
+        "claim_revisions_claim_text_shape": {
+          "name": "claim_revisions_claim_text_shape",
+          "value": "(\n      (\"claim_revisions\".\"state\" = 'active' and \"claim_revisions\".\"claim_text\" is not null and btrim(\"claim_revisions\".\"claim_text\") <> '')\n      or (\"claim_revisions\".\"state\" = 'withdrawn' and \"claim_revisions\".\"claim_text\" is null)\n    )"
+        },
+        "claim_revisions_note_nonblank": {
+          "name": "claim_revisions_note_nonblank",
+          "value": "\"claim_revisions\".\"researcher_note\" is null or btrim(\"claim_revisions\".\"researcher_note\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.claims": {
+      "name": "claims",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "claims_project_created_at_idx": {
+          "name": "claims_project_created_at_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "claims_project_id_projects_id_fk": {
+          "name": "claims_project_id_projects_id_fk",
+          "tableFrom": "claims",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "claims_project_id_id_unique": {
+          "name": "claims_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.evidence": {
+      "name": "evidence",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paper_id": {
+          "name": "paper_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_text": {
+          "name": "source_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "page_number": {
+          "name": "page_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "evidence_project_paper_created_at_idx": {
+          "name": "evidence_project_paper_created_at_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "paper_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "evidence_project_id_projects_id_fk": {
+          "name": "evidence_project_id_projects_id_fk",
+          "tableFrom": "evidence",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "evidence_project_paper_fk": {
+          "name": "evidence_project_paper_fk",
+          "tableFrom": "evidence",
+          "tableTo": "papers",
+          "columnsFrom": [
+            "project_id",
+            "paper_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "evidence_project_id_id_unique": {
+          "name": "evidence_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "evidence_project_paper_id_unique": {
+          "name": "evidence_project_paper_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "paper_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "evidence_source_text_nonblank": {
+          "name": "evidence_source_text_nonblank",
+          "value": "btrim(\"evidence\".\"source_text\") <> ''"
+        },
+        "evidence_page_positive": {
+          "name": "evidence_page_positive",
+          "value": "\"evidence\".\"page_number\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.extraction_fields": {
+      "name": "extraction_fields",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "field_type": {
+          "name": "field_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "required": {
+          "name": "required",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "extraction_fields_project_order_idx": {
+          "name": "extraction_fields_project_order_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sort_order",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "extraction_fields_project_id_projects_id_fk": {
+          "name": "extraction_fields_project_id_projects_id_fk",
+          "tableFrom": "extraction_fields",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "extraction_fields_project_id_id_unique": {
+          "name": "extraction_fields_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "extraction_fields_type_valid": {
+          "name": "extraction_fields_type_valid",
+          "value": "\"extraction_fields\".\"field_type\" in ('short_text', 'long_text', 'number', 'boolean', 'single_select')"
+        },
+        "extraction_fields_name_nonblank": {
+          "name": "extraction_fields_name_nonblank",
+          "value": "btrim(\"extraction_fields\".\"name\") <> ''"
+        },
+        "extraction_fields_description_nonblank": {
+          "name": "extraction_fields_description_nonblank",
+          "value": "\"extraction_fields\".\"description\" is null or btrim(\"extraction_fields\".\"description\") <> ''"
+        },
+        "extraction_fields_sort_order_valid": {
+          "name": "extraction_fields_sort_order_valid",
+          "value": "\"extraction_fields\".\"sort_order\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.extraction_options": {
+      "name": "extraction_options",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_id": {
+          "name": "field_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "extraction_options_field_order_idx": {
+          "name": "extraction_options_field_order_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "field_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sort_order",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "extraction_options_project_field_fk": {
+          "name": "extraction_options_project_field_fk",
+          "tableFrom": "extraction_options",
+          "tableTo": "extraction_fields",
+          "columnsFrom": [
+            "project_id",
+            "field_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "extraction_options_project_id_id_unique": {
+          "name": "extraction_options_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "extraction_options_project_field_id_unique": {
+          "name": "extraction_options_project_field_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "field_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "extraction_options_label_nonblank": {
+          "name": "extraction_options_label_nonblank",
+          "value": "btrim(\"extraction_options\".\"label\") <> ''"
+        },
+        "extraction_options_sort_order_valid": {
+          "name": "extraction_options_sort_order_valid",
+          "value": "\"extraction_options\".\"sort_order\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.extraction_revision_evidence": {
+      "name": "extraction_revision_evidence",
+      "schema": "",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paper_id": {
+          "name": "paper_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision_id": {
+          "name": "revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evidence_id": {
+          "name": "evidence_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "extraction_revision_evidence_revision_idx": {
+          "name": "extraction_revision_evidence_revision_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "extraction_revision_evidence_evidence_idx": {
+          "name": "extraction_revision_evidence_evidence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "paper_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "evidence_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "extraction_revision_evidence_revision_fk": {
+          "name": "extraction_revision_evidence_revision_fk",
+          "tableFrom": "extraction_revision_evidence",
+          "tableTo": "extraction_value_revisions",
+          "columnsFrom": [
+            "project_id",
+            "paper_id",
+            "revision_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "paper_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "extraction_revision_evidence_evidence_fk": {
+          "name": "extraction_revision_evidence_evidence_fk",
+          "tableFrom": "extraction_revision_evidence",
+          "tableTo": "evidence",
+          "columnsFrom": [
+            "project_id",
+            "paper_id",
+            "evidence_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "paper_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "extraction_revision_evidence_project_id_revision_id_evidence_id_pk": {
+          "name": "extraction_revision_evidence_project_id_revision_id_evidence_id_pk",
+          "columns": [
+            "project_id",
+            "revision_id",
+            "evidence_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.extraction_value_revisions": {
+      "name": "extraction_value_revisions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "extraction_value_revisions_sequence_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paper_id": {
+          "name": "paper_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_id": {
+          "name": "field_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extraction_value_id": {
+          "name": "extraction_value_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_type": {
+          "name": "field_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value_state": {
+          "name": "value_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text_value": {
+          "name": "text_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "number_value": {
+          "name": "number_value",
+          "type": "numeric(30, 10)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "boolean_value": {
+          "name": "boolean_value",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "option_id": {
+          "name": "option_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "researcher_note": {
+          "name": "researcher_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finalized_at": {
+          "name": "finalized_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "extraction_value_revisions_current_idx": {
+          "name": "extraction_value_revisions_current_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "paper_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "field_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "extraction_value_revisions_value_fk": {
+          "name": "extraction_value_revisions_value_fk",
+          "tableFrom": "extraction_value_revisions",
+          "tableTo": "extraction_values",
+          "columnsFrom": [
+            "project_id",
+            "paper_id",
+            "extraction_value_id",
+            "field_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "paper_id",
+            "id",
+            "field_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "extraction_value_revisions_field_fk": {
+          "name": "extraction_value_revisions_field_fk",
+          "tableFrom": "extraction_value_revisions",
+          "tableTo": "extraction_fields",
+          "columnsFrom": [
+            "project_id",
+            "field_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "extraction_value_revisions_option_fk": {
+          "name": "extraction_value_revisions_option_fk",
+          "tableFrom": "extraction_value_revisions",
+          "tableTo": "extraction_options",
+          "columnsFrom": [
+            "project_id",
+            "field_id",
+            "option_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "field_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "extraction_value_revisions_project_id_id_unique": {
+          "name": "extraction_value_revisions_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "extraction_value_revisions_project_paper_id_unique": {
+          "name": "extraction_value_revisions_project_paper_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "paper_id",
+            "id"
+          ]
+        },
+        "extraction_value_revisions_project_value_id_unique": {
+          "name": "extraction_value_revisions_project_value_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "extraction_value_id",
+            "id"
+          ]
+        },
+        "extraction_value_revisions_project_paper_value_id_unique": {
+          "name": "extraction_value_revisions_project_paper_value_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "paper_id",
+            "extraction_value_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "extraction_value_revisions_state_valid": {
+          "name": "extraction_value_revisions_state_valid",
+          "value": "\"extraction_value_revisions\".\"value_state\" in ('present', 'not_reported', 'not_applicable', 'cleared')"
+        },
+        "extraction_value_revisions_type_valid": {
+          "name": "extraction_value_revisions_type_valid",
+          "value": "\"extraction_value_revisions\".\"field_type\" in ('short_text', 'long_text', 'number', 'boolean', 'single_select')"
+        },
+        "extraction_value_revisions_value_shape": {
+          "name": "extraction_value_revisions_value_shape",
+          "value": "(\n      (\"extraction_value_revisions\".\"value_state\" <> 'present' and \"extraction_value_revisions\".\"text_value\" is null and \"extraction_value_revisions\".\"number_value\" is null and \"extraction_value_revisions\".\"boolean_value\" is null and \"extraction_value_revisions\".\"option_id\" is null)\n      or (\"extraction_value_revisions\".\"value_state\" = 'present' and (\n        (\"extraction_value_revisions\".\"field_type\" in ('short_text', 'long_text') and \"extraction_value_revisions\".\"text_value\" is not null and \"extraction_value_revisions\".\"number_value\" is null and \"extraction_value_revisions\".\"boolean_value\" is null and \"extraction_value_revisions\".\"option_id\" is null)\n        or (\"extraction_value_revisions\".\"field_type\" = 'number' and \"extraction_value_revisions\".\"text_value\" is null and \"extraction_value_revisions\".\"number_value\" is not null and \"extraction_value_revisions\".\"boolean_value\" is null and \"extraction_value_revisions\".\"option_id\" is null)\n        or (\"extraction_value_revisions\".\"field_type\" = 'boolean' and \"extraction_value_revisions\".\"text_value\" is null and \"extraction_value_revisions\".\"number_value\" is null and \"extraction_value_revisions\".\"boolean_value\" is not null and \"extraction_value_revisions\".\"option_id\" is null)\n        or (\"extraction_value_revisions\".\"field_type\" = 'single_select' and \"extraction_value_revisions\".\"text_value\" is null and \"extraction_value_revisions\".\"number_value\" is null and \"extraction_value_revisions\".\"boolean_value\" is null and \"extraction_value_revisions\".\"option_id\" is not null)\n      ))\n    )"
+        },
+        "extraction_value_revisions_note_nonblank": {
+          "name": "extraction_value_revisions_note_nonblank",
+          "value": "\"extraction_value_revisions\".\"researcher_note\" is null or btrim(\"extraction_value_revisions\".\"researcher_note\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.extraction_values": {
+      "name": "extraction_values",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paper_id": {
+          "name": "paper_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_id": {
+          "name": "field_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "extraction_values_project_paper_field_idx": {
+          "name": "extraction_values_project_paper_field_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "paper_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "field_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "extraction_values_project_paper_fk": {
+          "name": "extraction_values_project_paper_fk",
+          "tableFrom": "extraction_values",
+          "tableTo": "papers",
+          "columnsFrom": [
+            "project_id",
+            "paper_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "extraction_values_project_field_fk": {
+          "name": "extraction_values_project_field_fk",
+          "tableFrom": "extraction_values",
+          "tableTo": "extraction_fields",
+          "columnsFrom": [
+            "project_id",
+            "field_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "extraction_values_project_id_id_unique": {
+          "name": "extraction_values_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "extraction_values_project_paper_field_unique": {
+          "name": "extraction_values_project_paper_field_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "paper_id",
+            "field_id"
+          ]
+        },
+        "extraction_values_project_paper_id_unique": {
+          "name": "extraction_values_project_paper_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "paper_id",
+            "id"
+          ]
+        },
+        "extraction_values_project_paper_field_id_unique": {
+          "name": "extraction_values_project_paper_field_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "paper_id",
+            "id",
+            "field_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.manuscript_claim_placement_events": {
+      "name": "manuscript_claim_placement_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "manuscript_claim_placement_events_sequence_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "manuscript_id": {
+          "name": "manuscript_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "section_id": {
+          "name": "section_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "placement_id": {
+          "name": "placement_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_claim_revision_id": {
+          "name": "from_claim_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "to_claim_revision_id": {
+          "name": "to_claim_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "manuscript_claim_placement_events_project_placement_idx": {
+          "name": "manuscript_claim_placement_events_project_placement_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "placement_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "manuscript_claim_placement_events_project_id_projects_id_fk": {
+          "name": "manuscript_claim_placement_events_project_id_projects_id_fk",
+          "tableFrom": "manuscript_claim_placement_events",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_claim_placement_events_project_placement_fk": {
+          "name": "manuscript_claim_placement_events_project_placement_fk",
+          "tableFrom": "manuscript_claim_placement_events",
+          "tableTo": "manuscript_claim_placements",
+          "columnsFrom": [
+            "project_id",
+            "placement_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_claim_placement_events_project_manuscript_fk": {
+          "name": "manuscript_claim_placement_events_project_manuscript_fk",
+          "tableFrom": "manuscript_claim_placement_events",
+          "tableTo": "manuscripts",
+          "columnsFrom": [
+            "project_id",
+            "manuscript_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_claim_placement_events_project_manuscript_section_fk": {
+          "name": "manuscript_claim_placement_events_project_manuscript_section_fk",
+          "tableFrom": "manuscript_claim_placement_events",
+          "tableTo": "manuscript_sections",
+          "columnsFrom": [
+            "project_id",
+            "manuscript_id",
+            "section_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "manuscript_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_claim_placement_events_project_claim_fk": {
+          "name": "manuscript_claim_placement_events_project_claim_fk",
+          "tableFrom": "manuscript_claim_placement_events",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "project_id",
+            "claim_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_claim_placement_events_project_from_revision_fk": {
+          "name": "manuscript_claim_placement_events_project_from_revision_fk",
+          "tableFrom": "manuscript_claim_placement_events",
+          "tableTo": "claim_revisions",
+          "columnsFrom": [
+            "project_id",
+            "claim_id",
+            "from_claim_revision_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "claim_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_claim_placement_events_project_to_revision_fk": {
+          "name": "manuscript_claim_placement_events_project_to_revision_fk",
+          "tableFrom": "manuscript_claim_placement_events",
+          "tableTo": "claim_revisions",
+          "columnsFrom": [
+            "project_id",
+            "claim_id",
+            "to_claim_revision_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "claim_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "manuscript_claim_placement_events_placement_sequence_uq": {
+          "name": "manuscript_claim_placement_events_placement_sequence_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "placement_id",
+            "sequence"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "manuscript_claim_placement_events_event_type_valid": {
+          "name": "manuscript_claim_placement_events_event_type_valid",
+          "value": "\"manuscript_claim_placement_events\".\"event_type\" in ('placed', 'replaced', 'removed')"
+        },
+        "manuscript_claim_placement_events_shape_valid": {
+          "name": "manuscript_claim_placement_events_shape_valid",
+          "value": "(\n      (\"manuscript_claim_placement_events\".\"event_type\" = 'placed' and \"manuscript_claim_placement_events\".\"from_claim_revision_id\" is null and \"manuscript_claim_placement_events\".\"to_claim_revision_id\" is not null)\n      or (\"manuscript_claim_placement_events\".\"event_type\" = 'replaced' and \"manuscript_claim_placement_events\".\"from_claim_revision_id\" is not null and \"manuscript_claim_placement_events\".\"to_claim_revision_id\" is not null and \"manuscript_claim_placement_events\".\"from_claim_revision_id\" <> \"manuscript_claim_placement_events\".\"to_claim_revision_id\")\n      or (\"manuscript_claim_placement_events\".\"event_type\" = 'removed' and \"manuscript_claim_placement_events\".\"from_claim_revision_id\" is not null and \"manuscript_claim_placement_events\".\"to_claim_revision_id\" is null)\n    )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.manuscript_claim_placements": {
+      "name": "manuscript_claim_placements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "manuscript_id": {
+          "name": "manuscript_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "section_id": {
+          "name": "section_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_revision_id": {
+          "name": "claim_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "manuscript_claim_placements_active_revision_unique": {
+          "name": "manuscript_claim_placements_active_revision_unique",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "section_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "claim_revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"manuscript_claim_placements\".\"removed_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "manuscript_claim_placements_project_id_projects_id_fk": {
+          "name": "manuscript_claim_placements_project_id_projects_id_fk",
+          "tableFrom": "manuscript_claim_placements",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_claim_placements_project_manuscript_section_fk": {
+          "name": "manuscript_claim_placements_project_manuscript_section_fk",
+          "tableFrom": "manuscript_claim_placements",
+          "tableTo": "manuscript_sections",
+          "columnsFrom": [
+            "project_id",
+            "manuscript_id",
+            "section_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "manuscript_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_claim_placements_project_claim_revision_fk": {
+          "name": "manuscript_claim_placements_project_claim_revision_fk",
+          "tableFrom": "manuscript_claim_placements",
+          "tableTo": "claim_revisions",
+          "columnsFrom": [
+            "project_id",
+            "claim_id",
+            "claim_revision_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "claim_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "manuscript_claim_placements_project_id_id_unique": {
+          "name": "manuscript_claim_placements_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "manuscript_claim_placements_project_section_id_id_unique": {
+          "name": "manuscript_claim_placements_project_section_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "section_id",
+            "id"
+          ]
+        },
+        "manuscript_claim_placements_project_manuscript_id_id_unique": {
+          "name": "manuscript_claim_placements_project_manuscript_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "manuscript_id",
+            "id"
+          ]
+        },
+        "manuscript_claim_placements_claim_revision_uq": {
+          "name": "manuscript_claim_placements_claim_revision_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "claim_id",
+            "claim_revision_id",
+            "id"
+          ]
+        },
+        "manuscript_claim_placements_project_manuscript_section_id_unique": {
+          "name": "manuscript_claim_placements_project_manuscript_section_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "manuscript_id",
+            "section_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.manuscript_prose_blocks": {
+      "name": "manuscript_prose_blocks",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "manuscript_id": {
+          "name": "manuscript_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "section_id": {
+          "name": "section_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "section_item_id": {
+          "name": "section_item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_type": {
+          "name": "item_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'prose'"
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "manuscript_prose_blocks_project_id_projects_id_fk": {
+          "name": "manuscript_prose_blocks_project_id_projects_id_fk",
+          "tableFrom": "manuscript_prose_blocks",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_prose_blocks_parent_fk": {
+          "name": "manuscript_prose_blocks_parent_fk",
+          "tableFrom": "manuscript_prose_blocks",
+          "tableTo": "manuscript_section_items",
+          "columnsFrom": [
+            "project_id",
+            "manuscript_id",
+            "section_id",
+            "section_item_id",
+            "item_type"
+          ],
+          "columnsTo": [
+            "project_id",
+            "manuscript_id",
+            "section_id",
+            "id",
+            "item_type"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "manuscript_prose_blocks_section_item_unique": {
+          "name": "manuscript_prose_blocks_section_item_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "section_item_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "manuscript_prose_blocks_item_type_valid": {
+          "name": "manuscript_prose_blocks_item_type_valid",
+          "value": "\"manuscript_prose_blocks\".\"item_type\" = 'prose'"
+        },
+        "manuscript_prose_blocks_text_nonblank": {
+          "name": "manuscript_prose_blocks_text_nonblank",
+          "value": "btrim(\"manuscript_prose_blocks\".\"text\") <> ''"
+        },
+        "manuscript_prose_blocks_text_length_valid": {
+          "name": "manuscript_prose_blocks_text_length_valid",
+          "value": "char_length(\"manuscript_prose_blocks\".\"text\") <= 50000"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.manuscript_section_item_claims": {
+      "name": "manuscript_section_item_claims",
+      "schema": "",
+      "columns": {
+        "section_item_id": {
+          "name": "section_item_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "manuscript_id": {
+          "name": "manuscript_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "section_id": {
+          "name": "section_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_type": {
+          "name": "item_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'claim'"
+        },
+        "placement_id": {
+          "name": "placement_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "manuscript_section_item_claims_project_id_projects_id_fk": {
+          "name": "manuscript_section_item_claims_project_id_projects_id_fk",
+          "tableFrom": "manuscript_section_item_claims",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_section_item_claims_parent_fk": {
+          "name": "manuscript_section_item_claims_parent_fk",
+          "tableFrom": "manuscript_section_item_claims",
+          "tableTo": "manuscript_section_items",
+          "columnsFrom": [
+            "project_id",
+            "manuscript_id",
+            "section_id",
+            "section_item_id",
+            "item_type"
+          ],
+          "columnsTo": [
+            "project_id",
+            "manuscript_id",
+            "section_id",
+            "id",
+            "item_type"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_section_item_claims_placement_fk": {
+          "name": "manuscript_section_item_claims_placement_fk",
+          "tableFrom": "manuscript_section_item_claims",
+          "tableTo": "manuscript_claim_placements",
+          "columnsFrom": [
+            "project_id",
+            "manuscript_id",
+            "section_id",
+            "placement_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "manuscript_id",
+            "section_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "manuscript_section_item_claims_id_matches_placement": {
+          "name": "manuscript_section_item_claims_id_matches_placement",
+          "value": "\"manuscript_section_item_claims\".\"section_item_id\" = \"manuscript_section_item_claims\".\"placement_id\""
+        },
+        "manuscript_section_item_claims_item_type_valid": {
+          "name": "manuscript_section_item_claims_item_type_valid",
+          "value": "\"manuscript_section_item_claims\".\"item_type\" = 'claim'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.manuscript_section_items": {
+      "name": "manuscript_section_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "manuscript_id": {
+          "name": "manuscript_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "section_id": {
+          "name": "section_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_type": {
+          "name": "item_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "manuscript_section_items_project_manuscript_section_order_idx": {
+          "name": "manuscript_section_items_project_manuscript_section_order_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "manuscript_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "section_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sort_order",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "manuscript_section_items_project_id_projects_id_fk": {
+          "name": "manuscript_section_items_project_id_projects_id_fk",
+          "tableFrom": "manuscript_section_items",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_section_items_project_manuscript_section_fk": {
+          "name": "manuscript_section_items_project_manuscript_section_fk",
+          "tableFrom": "manuscript_section_items",
+          "tableTo": "manuscript_sections",
+          "columnsFrom": [
+            "project_id",
+            "manuscript_id",
+            "section_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "manuscript_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "manuscript_section_items_project_id_id_unique": {
+          "name": "manuscript_section_items_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "manuscript_section_items_project_id_id_type_unique": {
+          "name": "manuscript_section_items_project_id_id_type_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id",
+            "item_type"
+          ]
+        },
+        "manuscript_section_items_project_manuscript_section_id_unique": {
+          "name": "manuscript_section_items_project_manuscript_section_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "manuscript_id",
+            "section_id",
+            "id"
+          ]
+        },
+        "manuscript_section_items_project_manuscript_section_id_type_unique": {
+          "name": "manuscript_section_items_project_manuscript_section_id_type_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "manuscript_id",
+            "section_id",
+            "id",
+            "item_type"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "manuscript_section_items_item_type_valid": {
+          "name": "manuscript_section_items_item_type_valid",
+          "value": "\"manuscript_section_items\".\"item_type\" in ('claim', 'prose')"
+        },
+        "manuscript_section_items_sort_order_valid": {
+          "name": "manuscript_section_items_sort_order_valid",
+          "value": "\"manuscript_section_items\".\"sort_order\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.manuscript_sections": {
+      "name": "manuscript_sections",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "manuscript_id": {
+          "name": "manuscript_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "section_type": {
+          "name": "section_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'custom'"
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "manuscript_sections_project_manuscript_order_idx": {
+          "name": "manuscript_sections_project_manuscript_order_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "manuscript_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sort_order",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "manuscript_sections_project_id_projects_id_fk": {
+          "name": "manuscript_sections_project_id_projects_id_fk",
+          "tableFrom": "manuscript_sections",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "manuscript_sections_project_manuscript_fk": {
+          "name": "manuscript_sections_project_manuscript_fk",
+          "tableFrom": "manuscript_sections",
+          "tableTo": "manuscripts",
+          "columnsFrom": [
+            "project_id",
+            "manuscript_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "manuscript_sections_project_id_id_unique": {
+          "name": "manuscript_sections_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "manuscript_sections_project_manuscript_id_id_unique": {
+          "name": "manuscript_sections_project_manuscript_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "manuscript_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "manuscript_sections_section_type_valid": {
+          "name": "manuscript_sections_section_type_valid",
+          "value": "\"manuscript_sections\".\"section_type\" in ('introduction', 'methods', 'results', 'discussion', 'limitations', 'conclusion', 'custom')"
+        },
+        "manuscript_sections_title_nonblank": {
+          "name": "manuscript_sections_title_nonblank",
+          "value": "btrim(\"manuscript_sections\".\"title\") <> ''"
+        },
+        "manuscript_sections_sort_order_valid": {
+          "name": "manuscript_sections_sort_order_valid",
+          "value": "\"manuscript_sections\".\"sort_order\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.manuscripts": {
+      "name": "manuscripts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Manuscript'"
+        },
+        "is_default": {
+          "name": "is_default",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "citation_style": {
+          "name": "citation_style",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'numeric'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "manuscripts_project_created_at_idx": {
+          "name": "manuscripts_project_created_at_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "manuscripts_project_default_unique": {
+          "name": "manuscripts_project_default_unique",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"manuscripts\".\"is_default\" = true",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "manuscripts_project_id_projects_id_fk": {
+          "name": "manuscripts_project_id_projects_id_fk",
+          "tableFrom": "manuscripts",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "manuscripts_project_id_id_unique": {
+          "name": "manuscripts_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "manuscripts_title_nonblank": {
+          "name": "manuscripts_title_nonblank",
+          "value": "btrim(\"manuscripts\".\"title\") <> ''"
+        },
+        "manuscripts_citation_style_valid": {
+          "name": "manuscripts_citation_style_valid",
+          "value": "\"manuscripts\".\"citation_style\" in ('numeric', 'author_year')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.papers": {
+      "name": "papers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authors": {
+          "name": "authors",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "publication_year": {
+          "name": "publication_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "venue": {
+          "name": "venue",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "doi": {
+          "name": "doi",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "abstract": {
+          "name": "abstract",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bibliographic_note": {
+          "name": "bibliographic_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "papers_project_created_at_idx": {
+          "name": "papers_project_created_at_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "papers_project_doi_comparison_idx": {
+          "name": "papers_project_doi_comparison_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(regexp_replace(regexp_replace(btrim(\"doi\"), '^https?://(dx\\.)?doi\\.org/', '', 'i'), '^doi:[[:space:]]*', '', 'i'))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"papers\".\"doi\" is not null and btrim(\"papers\".\"doi\") <> ''",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "papers_project_title_comparison_idx": {
+          "name": "papers_project_title_comparison_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(regexp_replace(btrim(\"title\"), '[[:space:]]+', ' ', 'g'))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "publication_year",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"papers\".\"title\" is not null and btrim(\"papers\".\"title\") <> ''",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "papers_project_id_projects_id_fk": {
+          "name": "papers_project_id_projects_id_fk",
+          "tableFrom": "papers",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "papers_project_id_id_unique": {
+          "name": "papers_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "papers_title_nonblank": {
+          "name": "papers_title_nonblank",
+          "value": "btrim(\"papers\".\"title\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.projects": {
+      "name": "projects",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "projects_title_nonblank": {
+          "name": "projects_title_nonblank",
+          "value": "btrim(\"projects\".\"title\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.research_questions": {
+      "name": "research_questions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "research_questions_project_order_idx": {
+          "name": "research_questions_project_order_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sort_order",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "research_questions_project_id_projects_id_fk": {
+          "name": "research_questions_project_id_projects_id_fk",
+          "tableFrom": "research_questions",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "research_questions_project_id_id_unique": {
+          "name": "research_questions_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "research_questions_project_identifier_unique": {
+          "name": "research_questions_project_identifier_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "identifier"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "research_questions_identifier_nonblank": {
+          "name": "research_questions_identifier_nonblank",
+          "value": "btrim(\"research_questions\".\"identifier\") <> ''"
+        },
+        "research_questions_label_nonblank": {
+          "name": "research_questions_label_nonblank",
+          "value": "btrim(\"research_questions\".\"label\") <> ''"
+        },
+        "research_questions_sort_order_valid": {
+          "name": "research_questions_sort_order_valid",
+          "value": "\"research_questions\".\"sort_order\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.retrieved_record_deduplication_decisions": {
+      "name": "retrieved_record_deduplication_decisions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "retrieved_record_deduplication_decisions_sequence_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "left_retrieved_record_id": {
+          "name": "left_retrieved_record_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "right_retrieved_record_id": {
+          "name": "right_retrieved_record_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision": {
+          "name": "decision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "retrieved_record_deduplication_decisions_project_pair_sequence_idx": {
+          "name": "retrieved_record_deduplication_decisions_project_pair_sequence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "left_retrieved_record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "right_retrieved_record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "retrieved_record_deduplication_decisions_project_right_record_sequence_idx": {
+          "name": "retrieved_record_deduplication_decisions_project_right_record_sequence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "right_retrieved_record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "retrieved_record_deduplication_decisions_project_left_record_fk": {
+          "name": "retrieved_record_deduplication_decisions_project_left_record_fk",
+          "tableFrom": "retrieved_record_deduplication_decisions",
+          "tableTo": "retrieved_records",
+          "columnsFrom": [
+            "project_id",
+            "left_retrieved_record_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "retrieved_record_deduplication_decisions_project_right_record_fk": {
+          "name": "retrieved_record_deduplication_decisions_project_right_record_fk",
+          "tableFrom": "retrieved_record_deduplication_decisions",
+          "tableTo": "retrieved_records",
+          "columnsFrom": [
+            "project_id",
+            "right_retrieved_record_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "retrieved_record_deduplication_decisions_project_id_id_unique": {
+          "name": "retrieved_record_deduplication_decisions_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "retrieved_record_deduplication_decisions_decision_valid": {
+          "name": "retrieved_record_deduplication_decisions_decision_valid",
+          "value": "\"retrieved_record_deduplication_decisions\".\"decision\" in ('same_work', 'different_work')"
+        },
+        "retrieved_record_deduplication_decisions_note_nonblank": {
+          "name": "retrieved_record_deduplication_decisions_note_nonblank",
+          "value": "\"retrieved_record_deduplication_decisions\".\"note\" is null or btrim(\"retrieved_record_deduplication_decisions\".\"note\") <> ''"
+        },
+        "retrieved_record_deduplication_decisions_ordered_distinct_pair": {
+          "name": "retrieved_record_deduplication_decisions_ordered_distinct_pair",
+          "value": "\"retrieved_record_deduplication_decisions\".\"left_retrieved_record_id\" < \"retrieved_record_deduplication_decisions\".\"right_retrieved_record_id\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.retrieved_record_matches": {
+      "name": "retrieved_record_matches",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "retrieved_record_matches_sequence_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "retrieved_record_id": {
+          "name": "retrieved_record_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paper_id": {
+          "name": "paper_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "retrieved_record_matches_project_record_sequence_idx": {
+          "name": "retrieved_record_matches_project_record_sequence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "retrieved_record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "retrieved_record_matches_project_record_fk": {
+          "name": "retrieved_record_matches_project_record_fk",
+          "tableFrom": "retrieved_record_matches",
+          "tableTo": "retrieved_records",
+          "columnsFrom": [
+            "project_id",
+            "retrieved_record_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "retrieved_record_matches_project_paper_fk": {
+          "name": "retrieved_record_matches_project_paper_fk",
+          "tableFrom": "retrieved_record_matches",
+          "tableTo": "papers",
+          "columnsFrom": [
+            "project_id",
+            "paper_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "retrieved_record_matches_project_id_id_unique": {
+          "name": "retrieved_record_matches_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "retrieved_record_matches_action_valid": {
+          "name": "retrieved_record_matches_action_valid",
+          "value": "\"retrieved_record_matches\".\"action\" in ('linked', 'unlinked')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.retrieved_records": {
+      "name": "retrieved_records",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "search_run_id": {
+          "name": "search_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "search_source_id": {
+          "name": "search_source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_record_id": {
+          "name": "source_record_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authors": {
+          "name": "authors",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "abstract": {
+          "name": "abstract",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "doi": {
+          "name": "doi",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "publication_year": {
+          "name": "publication_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "venue": {
+          "name": "venue",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw_citation": {
+          "name": "raw_citation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retrieved_at": {
+          "name": "retrieved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "retrieved_records_project_run_source_record_unique": {
+          "name": "retrieved_records_project_run_source_record_unique",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "search_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "search_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"retrieved_records\".\"source_record_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "retrieved_records_project_doi_comparison_idx": {
+          "name": "retrieved_records_project_doi_comparison_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(regexp_replace(regexp_replace(btrim(\"doi\"), '^https?://(dx\\.)?doi\\.org/', '', 'i'), '^doi:[[:space:]]*', '', 'i'))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"retrieved_records\".\"doi\" is not null and btrim(\"retrieved_records\".\"doi\") <> ''",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "retrieved_records_project_title_comparison_idx": {
+          "name": "retrieved_records_project_title_comparison_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(regexp_replace(btrim(\"title\"), '[[:space:]]+', ' ', 'g'))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "publication_year",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"retrieved_records\".\"title\" is not null and btrim(\"retrieved_records\".\"title\") <> ''",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "retrieved_records_project_search_run_fk": {
+          "name": "retrieved_records_project_search_run_fk",
+          "tableFrom": "retrieved_records",
+          "tableTo": "search_runs",
+          "columnsFrom": [
+            "project_id",
+            "search_run_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "retrieved_records_project_source_fk": {
+          "name": "retrieved_records_project_source_fk",
+          "tableFrom": "retrieved_records",
+          "tableTo": "search_sources",
+          "columnsFrom": [
+            "project_id",
+            "search_source_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "retrieved_records_project_run_source_fk": {
+          "name": "retrieved_records_project_run_source_fk",
+          "tableFrom": "retrieved_records",
+          "tableTo": "search_runs",
+          "columnsFrom": [
+            "project_id",
+            "search_run_id",
+            "search_source_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id",
+            "search_source_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "retrieved_records_project_id_id_unique": {
+          "name": "retrieved_records_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "retrieved_records_source_record_id_nonblank": {
+          "name": "retrieved_records_source_record_id_nonblank",
+          "value": "\"retrieved_records\".\"source_record_id\" is null or btrim(\"retrieved_records\".\"source_record_id\") <> ''"
+        },
+        "retrieved_records_title_nonblank": {
+          "name": "retrieved_records_title_nonblank",
+          "value": "btrim(\"retrieved_records\".\"title\") <> ''"
+        },
+        "retrieved_records_publication_year_valid": {
+          "name": "retrieved_records_publication_year_valid",
+          "value": "\"retrieved_records\".\"publication_year\" is null or (\"retrieved_records\".\"publication_year\" >= 1000 and \"retrieved_records\".\"publication_year\" <= 3000)"
+        },
+        "retrieved_records_venue_nonblank": {
+          "name": "retrieved_records_venue_nonblank",
+          "value": "\"retrieved_records\".\"venue\" is null or btrim(\"retrieved_records\".\"venue\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.screening_criteria": {
+      "name": "screening_criteria",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "screening_criteria_sort_order_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "screening_criteria_project_order_idx": {
+          "name": "screening_criteria_project_order_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sort_order",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "screening_criteria_project_id_projects_id_fk": {
+          "name": "screening_criteria_project_id_projects_id_fk",
+          "tableFrom": "screening_criteria",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "screening_criteria_project_id_id_unique": {
+          "name": "screening_criteria_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "screening_criteria_project_id_id_type_unique": {
+          "name": "screening_criteria_project_id_id_type_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id",
+            "type"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "screening_criteria_type_valid": {
+          "name": "screening_criteria_type_valid",
+          "value": "\"screening_criteria\".\"type\" in ('inclusion', 'exclusion')"
+        },
+        "screening_criteria_text_nonblank": {
+          "name": "screening_criteria_text_nonblank",
+          "value": "btrim(\"screening_criteria\".\"text\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.screening_decisions": {
+      "name": "screening_decisions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "screening_decisions_sequence_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paper_id": {
+          "name": "paper_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stage": {
+          "name": "stage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'title_abstract'"
+        },
+        "decision": {
+          "name": "decision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exclusion_criterion_id": {
+          "name": "exclusion_criterion_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "exclusion_criterion_type": {
+          "name": "exclusion_criterion_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "screening_decisions_project_paper_sequence_idx": {
+          "name": "screening_decisions_project_paper_sequence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "paper_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "screening_decisions_project_stage_sequence_idx": {
+          "name": "screening_decisions_project_stage_sequence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "stage",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "screening_decisions_project_id_projects_id_fk": {
+          "name": "screening_decisions_project_id_projects_id_fk",
+          "tableFrom": "screening_decisions",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "screening_decisions_project_paper_fk": {
+          "name": "screening_decisions_project_paper_fk",
+          "tableFrom": "screening_decisions",
+          "tableTo": "papers",
+          "columnsFrom": [
+            "project_id",
+            "paper_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "screening_decisions_project_criterion_fk": {
+          "name": "screening_decisions_project_criterion_fk",
+          "tableFrom": "screening_decisions",
+          "tableTo": "screening_criteria",
+          "columnsFrom": [
+            "project_id",
+            "exclusion_criterion_id",
+            "exclusion_criterion_type"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id",
+            "type"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "screening_decisions_project_id_id_unique": {
+          "name": "screening_decisions_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "screening_decisions_stage_valid": {
+          "name": "screening_decisions_stage_valid",
+          "value": "\"screening_decisions\".\"stage\" = 'title_abstract'"
+        },
+        "screening_decisions_decision_valid": {
+          "name": "screening_decisions_decision_valid",
+          "value": "\"screening_decisions\".\"decision\" in ('include', 'exclude', 'maybe')"
+        },
+        "screening_decisions_exclusion_shape": {
+          "name": "screening_decisions_exclusion_shape",
+          "value": "(\n      (\"screening_decisions\".\"decision\" = 'exclude' and \"screening_decisions\".\"exclusion_criterion_id\" is not null and \"screening_decisions\".\"exclusion_criterion_type\" = 'exclusion')\n      or (\"screening_decisions\".\"decision\" in ('include', 'maybe') and \"screening_decisions\".\"exclusion_criterion_id\" is null and \"screening_decisions\".\"exclusion_criterion_type\" is null)\n    )"
+        },
+        "screening_decisions_note_nonblank": {
+          "name": "screening_decisions_note_nonblank",
+          "value": "\"screening_decisions\".\"note\" is null or btrim(\"screening_decisions\".\"note\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.search_runs": {
+      "name": "search_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "search_runs_sequence_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "search_source_id": {
+          "name": "search_source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_key_snapshot": {
+          "name": "source_key_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_display_name_snapshot": {
+          "name": "source_display_name_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "strategy_id": {
+          "name": "strategy_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "query_text": {
+          "name": "query_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filters_text_snapshot": {
+          "name": "filters_text_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reported_result_count": {
+          "name": "reported_result_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "executed_at": {
+          "name": "executed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "search_runs_project_sequence_idx": {
+          "name": "search_runs_project_sequence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "search_runs_project_source_sequence_idx": {
+          "name": "search_runs_project_source_sequence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "search_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "search_runs_project_source_fk": {
+          "name": "search_runs_project_source_fk",
+          "tableFrom": "search_runs",
+          "tableTo": "search_sources",
+          "columnsFrom": [
+            "project_id",
+            "search_source_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "search_runs_project_strategy_fk": {
+          "name": "search_runs_project_strategy_fk",
+          "tableFrom": "search_runs",
+          "tableTo": "search_strategies",
+          "columnsFrom": [
+            "project_id",
+            "strategy_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "search_runs_project_id_id_unique": {
+          "name": "search_runs_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "search_runs_project_id_id_source_unique": {
+          "name": "search_runs_project_id_id_source_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id",
+            "search_source_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "search_runs_source_key_snapshot_nonblank": {
+          "name": "search_runs_source_key_snapshot_nonblank",
+          "value": "btrim(\"search_runs\".\"source_key_snapshot\") <> ''"
+        },
+        "search_runs_source_display_name_snapshot_nonblank": {
+          "name": "search_runs_source_display_name_snapshot_nonblank",
+          "value": "btrim(\"search_runs\".\"source_display_name_snapshot\") <> ''"
+        },
+        "search_runs_query_text_nonblank": {
+          "name": "search_runs_query_text_nonblank",
+          "value": "btrim(\"search_runs\".\"query_text\") <> ''"
+        },
+        "search_runs_reported_result_count_valid": {
+          "name": "search_runs_reported_result_count_valid",
+          "value": "\"search_runs\".\"reported_result_count\" >= 0"
+        },
+        "search_runs_filters_text_snapshot_nonblank": {
+          "name": "search_runs_filters_text_snapshot_nonblank",
+          "value": "\"search_runs\".\"filters_text_snapshot\" is null or btrim(\"search_runs\".\"filters_text_snapshot\") <> ''"
+        },
+        "search_runs_notes_nonblank": {
+          "name": "search_runs_notes_nonblank",
+          "value": "\"search_runs\".\"notes\" is null or btrim(\"search_runs\".\"notes\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.search_sources": {
+      "name": "search_sources",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_key": {
+          "name": "source_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base_url": {
+          "name": "base_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "search_sources_project_id_projects_id_fk": {
+          "name": "search_sources_project_id_projects_id_fk",
+          "tableFrom": "search_sources",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "search_sources_project_id_id_unique": {
+          "name": "search_sources_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "search_sources_project_source_key_unique": {
+          "name": "search_sources_project_source_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "source_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "search_sources_source_key_nonblank": {
+          "name": "search_sources_source_key_nonblank",
+          "value": "btrim(\"search_sources\".\"source_key\") <> ''"
+        },
+        "search_sources_display_name_nonblank": {
+          "name": "search_sources_display_name_nonblank",
+          "value": "btrim(\"search_sources\".\"display_name\") <> ''"
+        },
+        "search_sources_base_url_nonblank": {
+          "name": "search_sources_base_url_nonblank",
+          "value": "\"search_sources\".\"base_url\" is null or btrim(\"search_sources\".\"base_url\") <> ''"
+        },
+        "search_sources_notes_nonblank": {
+          "name": "search_sources_notes_nonblank",
+          "value": "\"search_sources\".\"notes\" is null or btrim(\"search_sources\".\"notes\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.search_strategies": {
+      "name": "search_strategies",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "search_source_id": {
+          "name": "search_source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "query_text": {
+          "name": "query_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filters_text": {
+          "name": "filters_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "search_strategies_project_created_at_idx": {
+          "name": "search_strategies_project_created_at_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "search_strategies_project_id_projects_id_fk": {
+          "name": "search_strategies_project_id_projects_id_fk",
+          "tableFrom": "search_strategies",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "search_strategies_project_source_fk": {
+          "name": "search_strategies_project_source_fk",
+          "tableFrom": "search_strategies",
+          "tableTo": "search_sources",
+          "columnsFrom": [
+            "project_id",
+            "search_source_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "search_strategies_project_id_id_unique": {
+          "name": "search_strategies_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "search_strategies_name_nonblank": {
+          "name": "search_strategies_name_nonblank",
+          "value": "btrim(\"search_strategies\".\"name\") <> ''"
+        },
+        "search_strategies_query_text_nonblank": {
+          "name": "search_strategies_query_text_nonblank",
+          "value": "btrim(\"search_strategies\".\"query_text\") <> ''"
+        },
+        "search_strategies_filters_text_nonblank": {
+          "name": "search_strategies_filters_text_nonblank",
+          "value": "\"search_strategies\".\"filters_text\" is null or btrim(\"search_strategies\".\"filters_text\") <> ''"
+        },
+        "search_strategies_notes_nonblank": {
+          "name": "search_strategies_notes_nonblank",
+          "value": "\"search_strategies\".\"notes\" is null or btrim(\"search_strategies\".\"notes\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.synthesis_revision_supports": {
+      "name": "synthesis_revision_supports",
+      "schema": "",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "synthesis_revision_id": {
+          "name": "synthesis_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extraction_revision_id": {
+          "name": "extraction_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "synthesis_revision_supports_project_synthesis_revision_idx": {
+          "name": "synthesis_revision_supports_project_synthesis_revision_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "synthesis_revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "synthesis_revision_supports_project_extraction_revision_idx": {
+          "name": "synthesis_revision_supports_project_extraction_revision_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "extraction_revision_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "synthesis_revision_supports_project_synthesis_revision_fk": {
+          "name": "synthesis_revision_supports_project_synthesis_revision_fk",
+          "tableFrom": "synthesis_revision_supports",
+          "tableTo": "synthesis_revisions",
+          "columnsFrom": [
+            "project_id",
+            "synthesis_revision_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "synthesis_revision_supports_project_extraction_revision_fk": {
+          "name": "synthesis_revision_supports_project_extraction_revision_fk",
+          "tableFrom": "synthesis_revision_supports",
+          "tableTo": "extraction_value_revisions",
+          "columnsFrom": [
+            "project_id",
+            "extraction_revision_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "synthesis_revision_supports_project_id_synthesis_revision_id_extraction_revision_id_pk": {
+          "name": "synthesis_revision_supports_project_id_synthesis_revision_id_extraction_revision_id_pk",
+          "columns": [
+            "project_id",
+            "synthesis_revision_id",
+            "extraction_revision_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.synthesis_revisions": {
+      "name": "synthesis_revisions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "synthesis_revisions_sequence_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "synthesis_statement_id": {
+          "name": "synthesis_statement_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "statement_text": {
+          "name": "statement_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "researcher_note": {
+          "name": "researcher_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finalized_at": {
+          "name": "finalized_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "synthesis_revisions_project_statement_sequence_idx": {
+          "name": "synthesis_revisions_project_statement_sequence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "synthesis_statement_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "synthesis_revisions_project_sequence_idx": {
+          "name": "synthesis_revisions_project_sequence_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "synthesis_revisions_project_statement_fk": {
+          "name": "synthesis_revisions_project_statement_fk",
+          "tableFrom": "synthesis_revisions",
+          "tableTo": "synthesis_statements",
+          "columnsFrom": [
+            "project_id",
+            "synthesis_statement_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "synthesis_revisions_project_id_id_unique": {
+          "name": "synthesis_revisions_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        },
+        "synthesis_revisions_project_statement_id_id_unique": {
+          "name": "synthesis_revisions_project_statement_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "synthesis_statement_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "synthesis_revisions_state_valid": {
+          "name": "synthesis_revisions_state_valid",
+          "value": "\"synthesis_revisions\".\"state\" in ('active', 'withdrawn')"
+        },
+        "synthesis_revisions_title_nonblank": {
+          "name": "synthesis_revisions_title_nonblank",
+          "value": "\"synthesis_revisions\".\"title\" is null or btrim(\"synthesis_revisions\".\"title\") <> ''"
+        },
+        "synthesis_revisions_statement_shape": {
+          "name": "synthesis_revisions_statement_shape",
+          "value": "(\n      (\"synthesis_revisions\".\"state\" = 'active' and \"synthesis_revisions\".\"statement_text\" is not null and btrim(\"synthesis_revisions\".\"statement_text\") <> '')\n      or (\"synthesis_revisions\".\"state\" = 'withdrawn' and \"synthesis_revisions\".\"statement_text\" is null)\n    )"
+        },
+        "synthesis_revisions_note_nonblank": {
+          "name": "synthesis_revisions_note_nonblank",
+          "value": "\"synthesis_revisions\".\"researcher_note\" is null or btrim(\"synthesis_revisions\".\"researcher_note\") <> ''"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.synthesis_statements": {
+      "name": "synthesis_statements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "synthesis_statements_project_created_at_idx": {
+          "name": "synthesis_statements_project_created_at_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "synthesis_statements_project_id_projects_id_fk": {
+          "name": "synthesis_statements_project_id_projects_id_fk",
+          "tableFrom": "synthesis_statements",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "synthesis_statements_project_id_id_unique": {
+          "name": "synthesis_statements_project_id_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "project_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
