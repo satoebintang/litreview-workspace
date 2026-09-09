@@ -14,13 +14,14 @@ describe("Slice 3 extraction provenance", () => {
   beforeAll(async () => { await migrate(db, { migrationsFolder: "./drizzle" }); });
   beforeEach(async () => { projectId = (await services.createProject({ title: `Extraction project ${crypto.randomUUID()}` })).id; });
   afterAll(async () => {
-    await client.unsafe(`TRUNCATE TABLE retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, full_text_screening_decisions, full_text_screening_criteria, screening_decisions, screening_criteria, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, evidence, claims, papers, projects`);
+    await client.unsafe(`TRUNCATE TABLE retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, evidence, claims, papers, projects`);
     await client.end();
   });
 
   async function includedPaper() {
     const paper = await services.addPaper(projectId, { title: "Study" });
     await services.recordScreeningDecision(projectId, paper.id, { decision: "include" });
+    await services.recordFullTextRetrievalAttempt(projectId, paper.id, { outcome: "retrieved", attemptedAt: new Date() });
     await services.recordFullTextScreeningDecision(projectId, paper.id, { decision: "include" });
     return paper;
   }

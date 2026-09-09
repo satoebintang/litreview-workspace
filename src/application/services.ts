@@ -37,8 +37,10 @@ import {
   type ExtractionComparisonFilter,
   createFullTextScreeningCriterionSchema,
   recordFullTextScreeningDecisionSchema,
+  recordFullTextRetrievalAttemptSchema,
   type CreateFullTextScreeningCriterionInput,
   type RecordFullTextScreeningDecisionInput,
+  type RecordFullTextRetrievalAttemptInput,
 } from "@/domain/validation";
 import type { ExtractionFieldType, PaperReviewStatus, ScreeningDecisionValue } from "@/domain/types";
 import { derivePaperReviewStatus, isFinallyIncluded } from "@/domain/paper-review";
@@ -61,6 +63,7 @@ import {
   ClaimRevisionSupportRepository,
   FullTextScreeningCriterionRepository,
   FullTextScreeningDecisionRepository,
+  FullTextRetrievalAttemptRepository,
   PaperReviewRepository,
 } from "./repositories";
 import { createManuscriptServices } from "./manuscript-services";
@@ -109,6 +112,7 @@ export function createReviewServices(db: Database) {
   const fullTextCriterionRepo = new FullTextScreeningCriterionRepository(db);
   const fullTextDecisionRepo = new FullTextScreeningDecisionRepository(db);
   const paperReviewRepo = new PaperReviewRepository(db);
+  const fullTextRetrievalRepo = new FullTextRetrievalAttemptRepository(db);
 
   async function requireProject(projectId: string) {
     ensureId(projectId);
@@ -164,9 +168,13 @@ export function createReviewServices(db: Database) {
   }
 
   function statusFromRow(row: Record<string, unknown> | null | undefined): PaperReviewStatus {
+    const retrievalState = row?.full_text_retrieval_state;
     return derivePaperReviewStatus({
       titleAbstractDecision: rowDecision(row, "title_abstract_decision"),
       fullTextDecision: rowDecision(row, "full_text_decision"),
+      fullTextRetrievalState: retrievalState === "pending" || retrievalState === "unavailable" || retrievalState === "retrieved" ? retrievalState : "not_sought",
+      everRetrieved: Boolean(row?.ever_retrieved),
+      hasFullTextRetrievalAttempts: Boolean(row?.has_full_text_retrieval_attempts),
       hasAnalyticalHistory: Boolean(row?.has_analytical_history),
     });
   }
@@ -580,16 +588,67 @@ export function createReviewServices(db: Database) {
       return listPaperReviewStatusesFor(projectId);
     },
 
+    async getPaperFullTextRetrieval(projectId: string, paperId: string) {
+      const paper = await requirePaper(projectId, paperId);
+      const [currentAttempt, history, reviewStatus] = await Promise.all([
+        fullTextRetrievalRepo.currentForPaper(projectId, paperId),
+        fullTextRetrievalRepo.listForPaper(projectId, paperId),
+        getPaperReviewStatusFor(projectId, paperId),
+      ]);
+      return { paper, currentState: reviewStatus.fullTextRetrievalState, everRetrieved: reviewStatus.everRetrieved, currentAttempt, history, reviewStatus };
+    },
+
+    async listFullTextRetrievalHistory(projectId: string, paperId: string) {
+      await requirePaper(projectId, paperId);
+      return fullTextRetrievalRepo.listForPaper(projectId, paperId);
+    },
+
+    async listFullTextRetrievalQueue(projectId: string, state?: "not_sought" | "pending" | "unavailable" | "retrieved" | "conflict") {
+      await requireProject(projectId);
+      const [papers, statuses] = await Promise.all([paperRepo.list(projectId), listPaperReviewStatusesFor(projectId)]);
+      const statusByPaperId = new Map(statuses.map((item) => [item.paperId, item.status]));
+      return papers.map((paper) => ({ paper, reviewStatus: statusByPaperId.get(paper.id)! })).filter(({ reviewStatus }) => {
+        if (state === "conflict") return reviewStatus.warnings.includes("retrieval_history_without_current_title_abstract_inclusion");
+        if (reviewStatus.titleAbstractState !== "included") return false;
+        return state ? reviewStatus.fullTextRetrievalState === state : true;
+      });
+    },
+
+    async recordFullTextRetrievalAttempt(projectId: string, paperId: string, input: RecordFullTextRetrievalAttemptInput) {
+      await requireProject(projectId);
+      const values = validate(recordFullTextRetrievalAttemptSchema, input);
+      return db.transaction(async (tx) => {
+        const paper = await paperRepo.findForUpdate(tx, projectId, paperId);
+        if (!paper) throw new DomainError("CROSS_PROJECT_REFERENCE", "Paper does not belong to this project");
+        const currentTa = await decisionRepo.currentForPaper(projectId, paperId, tx);
+        if (!currentTa || currentTa.decision !== "include") throw new DomainError("VALIDATION_ERROR", "Full-text retrieval requires a current title/abstract include decision");
+        try {
+          return await fullTextRetrievalRepo.create({
+            projectId,
+            paperId,
+            outcome: values.outcome,
+            method: values.method ?? null,
+            sourceReference: values.sourceReference ?? null,
+            note: values.note ?? null,
+            attemptedAt: values.attemptedAt,
+          }, tx);
+        } catch (error) {
+          if (isConstraintError(error)) throw new DomainError("CROSS_PROJECT_REFERENCE", "Full-text retrieval references an invalid project record");
+          throw error;
+        }
+      });
+    },
+
     async getPaperFullTextScreening(projectId: string, paperId: string) {
       const paper = await requirePaper(projectId, paperId);
-      const [criteria, currentDecision, decisions, reviewStatus] = await Promise.all([
-        fullTextCriterionRepo.list(projectId), fullTextDecisionRepo.currentForPaper(projectId, paperId), fullTextDecisionRepo.listForPaper(projectId, paperId), getPaperReviewStatusFor(projectId, paperId),
+      const [criteria, currentDecision, decisions, reviewStatus, retrievalCurrent, retrievalHistory] = await Promise.all([
+        fullTextCriterionRepo.list(projectId), fullTextDecisionRepo.currentForPaper(projectId, paperId), fullTextDecisionRepo.listForPaper(projectId, paperId), getPaperReviewStatusFor(projectId, paperId), fullTextRetrievalRepo.currentForPaper(projectId, paperId), fullTextRetrievalRepo.listForPaper(projectId, paperId),
       ]);
       const history = await Promise.all(decisions.map(async (decision) => ({
         ...decision,
         exclusionCriterion: decision.exclusionCriterionId ? await fullTextCriterionRepo.findById(projectId, decision.exclusionCriterionId) : null,
       })));
-      return { paper, criteria, currentState: reviewStatus.fullTextState, currentDecision, history, reviewStatus };
+      return { paper, criteria, currentState: reviewStatus.fullTextState, currentDecision, history, reviewStatus, retrievalCurrent, retrievalHistory };
     },
 
     async listFullTextScreeningQueue(projectId: string, state?: "awaiting" | "included" | "excluded" | "maybe" | "conflict") {
@@ -598,12 +657,13 @@ export function createReviewServices(db: Database) {
       const statusByPaperId = new Map(statuses.map((item) => [item.paperId, item.status]));
       const queue = papers.map((paper) => ({ paper, reviewStatus: statusByPaperId.get(paper.id)! })).filter((item) => {
         const { reviewStatus } = item;
-        if (state === "conflict") return reviewStatus.crossStageConflict;
+        const retrievalHistoryConflict = reviewStatus.warnings.includes("retrieval_history_without_current_title_abstract_inclusion");
+        if (state === "conflict") return reviewStatus.crossStageConflict || retrievalHistoryConflict;
         if (state === "awaiting") return reviewStatus.finalEligibility === "pending_full_text";
         if (state === "included") return reviewStatus.finalEligibility === "included";
         if (state === "excluded") return reviewStatus.finalEligibility === "excluded";
         if (state === "maybe") return reviewStatus.finalEligibility === "unresolved_full_text";
-        return reviewStatus.titleAbstractState === "included" || reviewStatus.crossStageConflict;
+        return reviewStatus.titleAbstractState === "included" || reviewStatus.crossStageConflict || retrievalHistoryConflict;
       });
       return queue;
     },
@@ -616,6 +676,8 @@ export function createReviewServices(db: Database) {
         if (!paper) throw new DomainError("CROSS_PROJECT_REFERENCE", "Paper does not belong to this project");
         const currentTa = await decisionRepo.currentForPaper(projectId, paperId, tx);
         if (!currentTa || currentTa.decision !== "include") throw new DomainError("VALIDATION_ERROR", "Full-text screening requires a current title/abstract include decision");
+        const currentRetrieval = await fullTextRetrievalRepo.currentForPaper(projectId, paperId, tx);
+        if (!currentRetrieval || currentRetrieval.outcome !== "retrieved") throw new DomainError("VALIDATION_ERROR", "Full-text screening requires a current retrieved full-text retrieval attempt");
         let exclusionCriterionId: string | null = null;
         if (values.decision === "exclude") {
           const criterion = await fullTextCriterionRepo.findById(projectId, values.exclusionCriterionId, tx);

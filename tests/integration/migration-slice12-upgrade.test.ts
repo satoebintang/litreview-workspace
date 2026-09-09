@@ -66,9 +66,10 @@ describe("Slice 12 migration boundaries", () => {
     }
   }, 120_000);
 
-  it("applies a clean database through 0012 with the current journal", async () => {
-    expect(await cleanClient!`select count(*)::integer as count from drizzle.__drizzle_migrations`).toEqual([{ count: 13 }]);
+  it("applies a clean database through the current journal while preserving the 0012 boundary", async () => {
+    expect(await cleanClient!`select count(*)::integer as count from drizzle.__drizzle_migrations`).toEqual([{ count: 14 }]);
     expect(await cleanClient!`select column_name from information_schema.columns where table_schema = 'public' and table_name = 'full_text_screening_decisions' order by ordinal_position`).toHaveLength(8);
+    expect(await cleanClient!`select column_name from information_schema.columns where table_schema = 'public' and table_name = 'full_text_retrieval_attempts' order by ordinal_position`).toHaveLength(10);
   });
 
   it("upgrades a representative Slice 11 schema through 0012 without losing existing Paper data", async () => {

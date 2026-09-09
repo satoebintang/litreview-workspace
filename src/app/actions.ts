@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { DomainError } from "@/domain/errors";
+import type { FullTextRetrievalMethod } from "@/domain/types";
 import { reviewServices } from "./server";
 
 function text(form: FormData, key: string) {
@@ -181,6 +182,23 @@ export async function recordFullTextScreeningDecisionAction(form: FormData) {
     fail(`/projects/${projectId}/screening/full-text/${paperId}`, error);
   }
   redirect(`/projects/${projectId}/screening/full-text/${paperId}?saved=decision`);
+}
+
+export async function recordFullTextRetrievalAttemptAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  try {
+    await reviewServices.recordFullTextRetrievalAttempt(projectId, paperId, {
+      outcome: text(form, "outcome") as "pending" | "unavailable" | "retrieved",
+      method: (optional(form, "method") ?? null) as FullTextRetrievalMethod | null,
+      sourceReference: optional(form, "sourceReference"),
+      note: optional(form, "note"),
+      attemptedAt: text(form, "attemptedAt") || new Date().toISOString(),
+    });
+  } catch (error) {
+    fail(`/projects/${projectId}/screening/full-text/retrieval/${paperId}`, error);
+  }
+  redirect(`/projects/${projectId}/screening/full-text/retrieval/${paperId}?saved=attempt`);
 }
 
 export async function createExtractionFieldAction(form: FormData) {

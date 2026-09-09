@@ -25,6 +25,7 @@ const requiredSchema = {
   retrieved_record_deduplication_decisions: ["id", "sequence", "project_id", "left_retrieved_record_id", "right_retrieved_record_id", "decision", "created_at"],
   full_text_screening_criteria: ["id", "project_id", "text", "sort_order", "created_at", "archived_at"],
   full_text_screening_decisions: ["id", "sequence", "project_id", "paper_id", "decision", "exclusion_criterion_id", "note", "created_at"],
+  full_text_retrieval_attempts: ["id", "sequence", "project_id", "paper_id", "outcome", "method", "source_reference", "note", "attempted_at", "created_at"],
 } as const;
 
 type MigrationEntry = { idx: number; tag: string; when: number };
@@ -120,8 +121,8 @@ async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
 async function assertSchema(client: postgres.Sql, databaseName: string) {
   const { migrations } = readExpectedMigrations();
   const expectedLatest = migrations.at(-1);
-  if (!expectedLatest || expectedLatest.tag !== "0012_full_text_screening") {
-    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0012_full_text_screening, found ${expectedLatest?.tag ?? "none"}`);
+  if (!expectedLatest || expectedLatest.tag !== "0013_full_text_retrieval") {
+    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0013_full_text_retrieval, found ${expectedLatest?.tag ?? "none"}`);
   }
 
   const migrationRows = await client.unsafe("select id, hash, created_at from drizzle.__drizzle_migrations order by id") as unknown as MigrationRow[];
@@ -133,7 +134,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
     return [];
   });
   if (migrationRows.length !== migrations.length || migrationMismatches.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0012_full_text_screening; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0013_full_text_retrieval; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
   }
 
   const tableNames = Object.keys(requiredSchema);
@@ -149,7 +150,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
   const missingColumns = Object.entries(requiredSchema).flatMap(([tableName, columns]) => columns.filter((columnName) => !actualColumns.get(tableName)?.has(columnName)).map((columnName) => `${tableName}.${columnName}`));
   const legacyColumns = await client.unsafe("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'projects' and column_name = 'research_question'") as unknown as Array<{ column_name: string }>;
   if (missingTables.length > 0 || missingColumns.length > 0 || legacyColumns.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0012_full_text_screening; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `projects.${row.column_name}`).join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0013_full_text_retrieval; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `projects.${row.column_name}`).join(", ") || "none"}`);
   }
 }
 
@@ -195,7 +196,7 @@ async function main() {
     } finally {
       await database.client.end();
     }
-    console.error(`[playwright-db] ready: ${databaseName}; migrations through 0012_full_text_screening verified`);
+  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0013_full_text_retrieval verified`);
 
     child = spawnNext("next-build", [nextBin, "build"], nextEnv);
     const buildExitCode = await waitForProcess(child, "next-build");

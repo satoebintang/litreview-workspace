@@ -96,6 +96,15 @@ export const recordFullTextScreeningDecisionSchema = z.discriminatedUnion("decis
   z.object({ decision: z.literal("exclude"), exclusionCriterionId: idSchema, note: optionalText }),
 ]);
 
+export const fullTextRetrievalMethodSchema = z.enum(["publisher", "bibliographic_database", "institutional_access", "library", "interlibrary_loan", "author_contact", "web", "manual", "other"]);
+export const recordFullTextRetrievalAttemptSchema = z.object({
+  outcome: z.enum(["pending", "unavailable", "retrieved"]),
+  method: fullTextRetrievalMethodSchema.nullable().optional(),
+  sourceReference: optionalText,
+  note: optionalText,
+  attemptedAt: z.coerce.date(),
+});
+
 export const extractionFieldTypeSchema = z.enum(["short_text", "long_text", "number", "boolean", "single_select"]);
 export const extractionValueStateSchema = z.enum(["present", "not_reported", "not_applicable", "cleared"]);
 
@@ -288,6 +297,7 @@ export type CreateScreeningCriterionInput = z.input<typeof createScreeningCriter
 export type RecordScreeningDecisionInput = z.input<typeof recordScreeningDecisionSchema>;
 export type CreateFullTextScreeningCriterionInput = z.input<typeof createFullTextScreeningCriterionSchema>;
 export type RecordFullTextScreeningDecisionInput = z.input<typeof recordFullTextScreeningDecisionSchema>;
+export type RecordFullTextRetrievalAttemptInput = z.input<typeof recordFullTextRetrievalAttemptSchema>;
 export type CreateExtractionFieldInput = z.input<typeof createExtractionFieldSchema>;
 export type UpdateExtractionFieldInput = z.input<typeof updateExtractionFieldSchema>;
 export type CreateExtractionOptionInput = z.input<typeof createExtractionOptionSchema>;

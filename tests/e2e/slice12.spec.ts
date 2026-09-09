@@ -31,9 +31,15 @@ test.describe("Slice 12 full-text eligibility screening", () => {
     await expect(page.getByText("Wrong population at full text", { exact: true }).first()).toBeVisible();
     await expect(page.locator(".screening-stat", { hasText: "awaiting" }).getByText("2")).toBeVisible();
 
+    await page.goto(`/projects/${projectId}/screening/full-text/retrieval/${firstPaperId}`);
+    await page.getByRole("button", { name: "Record attempt" }).click();
+    await expect(page.getByText("Retrieval attempt recorded.")).toBeVisible();
     await page.goto(`/projects/${projectId}/screening/full-text/${firstPaperId}`);
     await page.getByRole("button", { name: "Include", exact: true }).click();
     await expect(page.getByText("Full-text decision recorded in screening history.")).toBeVisible();
+    await page.goto(`/projects/${projectId}/screening/full-text/retrieval/${secondPaperId}`);
+    await page.getByRole("button", { name: "Record attempt" }).click();
+    await expect(page.getByText("Retrieval attempt recorded.")).toBeVisible();
     await page.goto(`/projects/${projectId}/screening/full-text/${secondPaperId}`);
     await page.getByLabel("Exclusion reason").selectOption({ label: "Wrong population at full text" });
     await page.getByRole("button", { name: "Confirm exclusion" }).click();

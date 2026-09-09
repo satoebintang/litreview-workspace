@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { evidence, papers, projects, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports } from "@/db/schema";
+import { evidence, papers, projects, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports } from "@/db/schema";
 
 type DbTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -434,6 +434,43 @@ export class FullTextScreeningDecisionRepository {
   }
 }
 
+export class FullTextRetrievalAttemptRepository {
+  constructor(private readonly db: Database) {}
+
+  async create(values: typeof fullTextRetrievalAttempts.$inferInsert, tx: DbTransaction = this.db as unknown as DbTransaction) {
+    const [attempt] = await tx.insert(fullTextRetrievalAttempts).values(values).returning();
+    return attempt;
+  }
+
+  async currentForPaper(projectId: string, paperId: string, tx: DbTransaction | Database = this.db) {
+    const [attempt] = await tx.select().from(fullTextRetrievalAttempts).where(and(
+      eq(fullTextRetrievalAttempts.projectId, projectId), eq(fullTextRetrievalAttempts.paperId, paperId),
+    )).orderBy(desc(fullTextRetrievalAttempts.sequence)).limit(1);
+    return attempt ?? null;
+  }
+
+  async listForPaper(projectId: string, paperId: string, tx: DbTransaction | Database = this.db) {
+    return tx.select().from(fullTextRetrievalAttempts).where(and(
+      eq(fullTextRetrievalAttempts.projectId, projectId), eq(fullTextRetrievalAttempts.paperId, paperId),
+    )).orderBy(fullTextRetrievalAttempts.sequence);
+  }
+
+  async hasAnyForPaper(projectId: string, paperId: string, tx: DbTransaction | Database = this.db) {
+    const rows = await tx.select({ id: fullTextRetrievalAttempts.id }).from(fullTextRetrievalAttempts).where(and(
+      eq(fullTextRetrievalAttempts.projectId, projectId), eq(fullTextRetrievalAttempts.paperId, paperId),
+    )).limit(1);
+    return rows.length > 0;
+  }
+
+  async everRetrievedForPaper(projectId: string, paperId: string, tx: DbTransaction | Database = this.db) {
+    const rows = await tx.select({ id: fullTextRetrievalAttempts.id }).from(fullTextRetrievalAttempts).where(and(
+      eq(fullTextRetrievalAttempts.projectId, projectId), eq(fullTextRetrievalAttempts.paperId, paperId),
+      eq(fullTextRetrievalAttempts.outcome, "retrieved"),
+    )).limit(1);
+    return rows.length > 0;
+  }
+}
+
 export class PaperReviewRepository {
   constructor(private readonly db: Database) {}
 
@@ -449,6 +486,19 @@ export class PaperReviewRepository {
         from full_text_screening_decisions
         where project_id=${projectId}
         order by project_id, paper_id, sequence desc
+      ), latest_retrieval as (
+        select distinct on (project_id, paper_id) project_id, paper_id, outcome
+        from full_text_retrieval_attempts
+        where project_id=${projectId}
+        order by project_id, paper_id, sequence desc
+      ), retrieval_history as (
+        select distinct project_id, paper_id
+        from full_text_retrieval_attempts
+        where project_id=${projectId}
+      ), retrieval_success as (
+        select distinct project_id, paper_id
+        from full_text_retrieval_attempts
+        where project_id=${projectId} and outcome='retrieved'
       ), analytical_history as (
         select distinct project_id, paper_id
         from extraction_value_revisions
@@ -456,10 +506,16 @@ export class PaperReviewRepository {
       )
       select p.id as paper_id, p.project_id, ta.decision as title_abstract_decision,
         ft.decision as full_text_decision,
+        lr.outcome as full_text_retrieval_state,
+        (rh.paper_id is not null) as has_full_text_retrieval_attempts,
+        (rs.paper_id is not null) as ever_retrieved,
         (ah.paper_id is not null) as has_analytical_history
       from papers p
       left join latest_title_abstract ta on ta.project_id=p.project_id and ta.paper_id=p.id
       left join latest_full_text ft on ft.project_id=p.project_id and ft.paper_id=p.id
+      left join latest_retrieval lr on lr.project_id=p.project_id and lr.paper_id=p.id
+      left join retrieval_history rh on rh.project_id=p.project_id and rh.paper_id=p.id
+      left join retrieval_success rs on rs.project_id=p.project_id and rs.paper_id=p.id
       left join analytical_history ah on ah.project_id=p.project_id and ah.paper_id=p.id
       where p.project_id=${projectId}
       order by p.id
@@ -480,6 +536,16 @@ export class PaperReviewRepository {
         where project_id=${projectId} and paper_id=${paperId}
         order by sequence desc
         limit 1
+      ), latest_retrieval as (
+        select outcome
+        from full_text_retrieval_attempts
+        where project_id=${projectId} and paper_id=${paperId}
+        order by sequence desc
+        limit 1
+      ), retrieval_history as (
+        select exists(select 1 from full_text_retrieval_attempts where project_id=${projectId} and paper_id=${paperId}) as has_full_text_retrieval_attempts
+      ), retrieval_success as (
+        select exists(select 1 from full_text_retrieval_attempts where project_id=${projectId} and paper_id=${paperId} and outcome='retrieved') as ever_retrieved
       ), analytical_history as (
         select exists (
           select 1 from extraction_value_revisions
@@ -489,6 +555,9 @@ export class PaperReviewRepository {
       select
         (select decision from latest_title_abstract) as title_abstract_decision,
         (select decision from latest_full_text) as full_text_decision,
+        (select outcome from latest_retrieval) as full_text_retrieval_state,
+        (select has_full_text_retrieval_attempts from retrieval_history) as has_full_text_retrieval_attempts,
+        (select ever_retrieved from retrieval_success) as ever_retrieved,
         (select has_analytical_history from analytical_history) as has_analytical_history
       from papers p
       where p.project_id=${projectId} and p.id=${paperId}

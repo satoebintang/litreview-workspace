@@ -21,12 +21,22 @@ type Summary = {
   excluded: number;
   maybe: number;
   fullTextEligible: number;
+  fullTextRetrievalEligible: number;
   fullTextAwaiting: number;
   fullTextAssessed: number;
   fullTextIncluded: number;
   fullTextExcluded: number;
   fullTextMaybe: number;
   fullTextConflicts: number;
+  fullTextNotSought: number;
+  fullTextRetrievalPending: number;
+  fullTextRetrieved: number;
+  fullTextUnavailable: number;
+  fullTextSought: number;
+  fullTextEverSought: number;
+  fullTextEverRetrieved: number;
+  legacyFullTextWithoutRetrieval: number;
+  fullTextRetrievalConflicts: number;
   finallyIncluded: number;
   legacyAnalysisAwaitingFullText: number;
   historicalAcquisitionOnlyPapers: number;
@@ -52,6 +62,7 @@ export default async function ReviewFlowPage({ params }: { params: Promise<{ pro
       <section className="card section-card full"><div className="section-heading"><h2>Deduplication</h2><span className="count">current acquisition state</span></div><div className="screening-stats"><Metric label="Resolved records" value={summary.currentlyResolvedRecords} /><Metric label="Unresolved records" value={summary.unresolvedRecords} /><Metric label="Unresolved candidate pairs" value={summary.unresolvedDuplicatePairs} href={`/projects/${projectId}/deduplication`} /><Metric label="Acquisition Papers" value={summary.acquisitionDerivedPapers} /><Metric label="Collapsed records" value={summary.duplicateRecordsCollapsed} hint="resolved records minus acquisition Papers" /><Metric label="Same-work decisions" value={summary.sameWorkDecisionPairs} /><Metric label="Different-work decisions" value={summary.differentWorkDecisionPairs} /></div></section>
       <section className="card section-card full"><div className="section-heading"><h2>Screening</h2><span className="count">all canonical Papers, including manual Papers</span></div><div className="screening-stats"><Metric label="Screening population" value={summary.papersInScreeningPopulation} href={`/projects/${projectId}/screening`} /><Metric label="Unscreened" value={summary.unscreened} href={`/projects/${projectId}/screening?state=unscreened`} /><Metric label="Included" value={summary.included} href={`/projects/${projectId}/screening?state=included`} /><Metric label="Excluded" value={summary.excluded} href={`/projects/${projectId}/screening?state=excluded`} /><Metric label="Maybe" value={summary.maybe} href={`/projects/${projectId}/screening?state=maybe`} /></div>{summary.exclusionReasons.length > 0 && <div className="nested-support" style={{ marginTop: 18 }}><div className="item-meta">Current exclusion reasons</div><div className="item-list">{summary.exclusionReasons.map((reason) => <div className="item-row" key={reason.criterionId}><span>{reason.text}</span><strong>{reason.count}</strong></div>)}</div></div>}</section>
       <section className="card section-card full"><div className="section-heading"><h2>Full-text eligibility</h2><span className="count">only current title/abstract-included Papers contribute</span></div><div className="screening-stats"><Metric label="Full-text eligible" value={summary.fullTextEligible} href={`/projects/${projectId}/screening/full-text`} /><Metric label="Awaiting full text" value={summary.fullTextAwaiting} href={`/projects/${projectId}/screening/full-text?state=awaiting`} /><Metric label="Assessed" value={summary.fullTextAssessed} /><Metric label="Included" value={summary.fullTextIncluded} href={`/projects/${projectId}/screening/full-text?state=included`} /><Metric label="Excluded" value={summary.fullTextExcluded} href={`/projects/${projectId}/screening/full-text?state=excluded`} /><Metric label="Maybe" value={summary.fullTextMaybe} href={`/projects/${projectId}/screening/full-text?state=maybe`} /><Metric label="Conflicts" value={summary.fullTextConflicts} href={`/projects/${projectId}/screening/full-text?state=conflict`} /><Metric label="Finally included" value={summary.finallyIncluded} href={`/projects/${projectId}/extraction`} /></div><p className="footer-note">Historical analysis awaiting full-text review: {summary.legacyAnalysisAwaitingFullText}.</p></section>
+      <section className="card section-card full"><div className="section-heading"><h2>Full-text retrieval</h2><span className="count">current queue arithmetic among TA-included Papers</span></div><div className="screening-stats"><Metric label="Retrieval eligible" value={summary.fullTextRetrievalEligible} href={`/projects/${projectId}/screening/full-text/retrieval`} /><Metric label="Not sought" value={summary.fullTextNotSought} href={`/projects/${projectId}/screening/full-text/retrieval?state=not_sought`} /><Metric label="Pending" value={summary.fullTextRetrievalPending} href={`/projects/${projectId}/screening/full-text/retrieval?state=pending`} /><Metric label="Retrieved" value={summary.fullTextRetrieved} href={`/projects/${projectId}/screening/full-text/retrieval?state=retrieved`} /><Metric label="Unavailable" value={summary.fullTextUnavailable} href={`/projects/${projectId}/screening/full-text/retrieval?state=unavailable`} /><Metric label="Sought" value={summary.fullTextSought} /><Metric label="Ever retrieved" value={summary.fullTextEverRetrieved} /></div><p className="footer-note">Historical process facts: ever sought {summary.fullTextEverSought}; ever retrieved {summary.fullTextEverRetrieved}; legacy FT decisions without retrieval {summary.legacyFullTextWithoutRetrieval}; retrieval history conflicts {summary.fullTextRetrievalConflicts}.</p></section>
       <section className="card section-card full"><div className="section-heading"><h2>Paper provenance classification</h2><span className="count">derived from current links</span></div><div className="screening-stats"><Metric label="Manual Papers" value={summary.manualPapers} /><Metric label="Historical-only acquisition Papers" value={summary.historicalAcquisitionOnlyPapers} hint="no current record link" /></div><p className="footer-note">This is a review-flow summary, not a PRISMA diagram or persisted snapshot. Clickable metrics identify the relevant existing workspace population.</p></section>
     </div></main>;
 }

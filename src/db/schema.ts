@@ -265,6 +265,35 @@ export const fullTextScreeningDecisions = pgTable(
   }),
 );
 
+export const fullTextRetrievalAttempts = pgTable(
+  "full_text_retrieval_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    paperId: uuid("paper_id").notNull(),
+    outcome: text("outcome").notNull(),
+    method: text("method"),
+    sourceReference: text("source_reference"),
+    note: text("note"),
+    attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("full_text_retrieval_attempts_project_id_id_unique").on(table.projectId, table.id),
+    paperOwnership: foreignKey({
+      columns: [table.projectId, table.paperId],
+      foreignColumns: [papers.projectId, papers.id],
+      name: "full_text_retrieval_attempts_project_paper_fk",
+    }).onDelete("restrict"),
+    paperSequence: index("full_text_retrieval_attempts_project_paper_sequence_idx").on(table.projectId, table.paperId, table.sequence),
+    outcomeValid: check("full_text_retrieval_attempts_outcome_valid", sql`${table.outcome} in ('pending', 'unavailable', 'retrieved')`),
+    methodValid: check("full_text_retrieval_attempts_method_valid", sql`${table.method} is null or ${table.method} in ('publisher', 'bibliographic_database', 'institutional_access', 'library', 'interlibrary_loan', 'author_contact', 'web', 'manual', 'other')`),
+    sourceReferenceNonblank: check("full_text_retrieval_attempts_source_reference_nonblank", sql`${table.sourceReference} is null or btrim(${table.sourceReference}) <> ''`),
+    noteNonblank: check("full_text_retrieval_attempts_note_nonblank", sql`${table.note} is null or btrim(${table.note}) <> ''`),
+  }),
+);
+
 export const extractionFields = pgTable(
   "extraction_fields",
   {
@@ -992,4 +1021,4 @@ export const retrievedRecordDeduplicationDecisions = pgTable(
   }),
 );
 
-export const schema = { projects, papers, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };
+export const schema = { projects, papers, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };

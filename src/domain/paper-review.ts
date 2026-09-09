@@ -1,6 +1,7 @@
 import type {
   FinalEligibility,
   FullTextDecisionState,
+  FullTextRetrievalState,
   PaperReviewStatus,
   PaperReviewWarning,
   ScreeningDecisionValue,
@@ -10,6 +11,9 @@ import type {
 export type PaperReviewInputs = {
   titleAbstractDecision: ScreeningDecisionValue | null;
   fullTextDecision: ScreeningDecisionValue | null;
+  fullTextRetrievalState?: FullTextRetrievalState;
+  everRetrieved?: boolean;
+  hasFullTextRetrievalAttempts?: boolean;
   hasAnalyticalHistory?: boolean;
 };
 
@@ -30,6 +34,8 @@ function fullTextState(decision: ScreeningDecisionValue | null): FullTextDecisio
 export function derivePaperReviewStatus(input: PaperReviewInputs): PaperReviewStatus {
   const titleState = titleAbstractState(input.titleAbstractDecision);
   const fullState = fullTextState(input.fullTextDecision);
+  const fullTextRetrievalState = input.fullTextRetrievalState ?? "not_sought";
+  const everRetrieved = input.everRetrieved ?? false;
   const crossStageConflict = input.fullTextDecision !== null && input.titleAbstractDecision !== "include";
   let finalEligibility: FinalEligibility;
 
@@ -47,8 +53,10 @@ export function derivePaperReviewStatus(input: PaperReviewInputs): PaperReviewSt
   const warnings: PaperReviewWarning[] = [];
   if (crossStageConflict) warnings.push("cross_stage_conflict");
   if (input.fullTextDecision === null && input.hasAnalyticalHistory) warnings.push("legacy_analysis_precedes_full_text_screening");
+  if (input.fullTextDecision !== null && !input.hasFullTextRetrievalAttempts) warnings.push("legacy_full_text_decision_without_retrieval_record");
+  if (input.hasFullTextRetrievalAttempts && input.titleAbstractDecision !== "include") warnings.push("retrieval_history_without_current_title_abstract_inclusion");
 
-  return { titleAbstractState: titleState, fullTextState: fullState, finalEligibility, crossStageConflict, warnings };
+  return { titleAbstractState: titleState, fullTextState: fullState, fullTextRetrievalState, everRetrieved, finalEligibility, crossStageConflict, warnings };
 }
 
 export function isFinallyIncluded(status: PaperReviewStatus): boolean {

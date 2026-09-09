@@ -26,6 +26,16 @@ export type ReviewReportMetricKey =
   | "fullTextExcluded"
   | "fullTextMaybe"
   | "fullTextConflicts"
+  | "fullTextRetrievalEligible"
+  | "fullTextNotSought"
+  | "fullTextRetrievalPending"
+  | "fullTextRetrieved"
+  | "fullTextUnavailable"
+  | "fullTextSought"
+  | "fullTextEverSought"
+  | "fullTextEverRetrieved"
+  | "legacyFullTextWithoutRetrieval"
+  | "fullTextRetrievalConflicts"
   | "finallyIncluded"
   | "legacyAnalysisAwaitingFullText"
   | "historicalAcquisitionOnlyPapers"
@@ -36,6 +46,9 @@ export type ReviewReportSupportKey =
   | "records_screened"
   | "duplicates_removed"
   | "reports_sought_or_retrieved"
+  | "reports_sought"
+  | "reports_retrieved"
+  | "reports_not_retrieved"
   | "reports_assessed_for_eligibility"
   | "reports_excluded_full_text"
   | "studies_included_final"
@@ -45,6 +58,9 @@ export type ReviewReportSupportKey =
 export type ReviewReportLimitationCode =
   | "full_text_stage_not_modeled"
   | "reports_sought_retrieved_not_modeled"
+  | "retrieval_pending_or_unavailable"
+  | "legacy_full_text_decisions_without_retrieval"
+  | "retrieval_history_conflicts"
   | "automation_exclusion_stage_not_modeled"
   | "source_category_mapping_unavailable"
   | "formal_prisma_compliance_not_claimed"
@@ -124,6 +140,7 @@ export type ReviewReportProjection = {
     metrics: ReviewReportMetric[];
     exclusionReasons: Array<{ criterionId: string; text: string; archived: boolean; count: number; contributor: ReviewReportContributorSelector }>;
   };
+  fullTextRetrieval: { metrics: ReviewReportMetric[] };
   finalEligibility: { metrics: ReviewReportMetric[] };
   supportMatrix: ReviewReportSupportMapping[];
   limitations: ReviewReportLimitation[];

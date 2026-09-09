@@ -37,6 +37,16 @@ const labels: Record<ReviewReportMetricKey, string> = {
   fullTextExcluded: "Excluded after current full-text screening",
   fullTextMaybe: "Currently maybe at full-text screening",
   fullTextConflicts: "Cross-stage full-text conflicts",
+  fullTextRetrievalEligible: "Currently eligible for full-text retrieval",
+  fullTextNotSought: "Currently title/abstract-included Papers not sought for full text",
+  fullTextRetrievalPending: "Currently pending full-text retrieval",
+  fullTextRetrieved: "Currently retrieved full text",
+  fullTextUnavailable: "Currently unavailable full text",
+  fullTextSought: "Currently title/abstract-included Papers with a retrieval attempt",
+  fullTextEverSought: "Papers ever sought for full text",
+  fullTextEverRetrieved: "Papers ever retrieved successfully",
+  legacyFullTextWithoutRetrieval: "Papers with historical full-text decisions but no retrieval attempt",
+  fullTextRetrievalConflicts: "Papers with retrieval history outside current TA inclusion",
   finallyIncluded: "Finally currently included Papers",
   legacyAnalysisAwaitingFullText: "Papers with analysis predating full-text screening",
   historicalAcquisitionOnlyPapers: "Papers with historical but no current acquisition link",
@@ -67,6 +77,16 @@ const explanations: Record<ReviewReportMetricKey, string> = {
   fullTextExcluded: "Title/abstract-included Papers whose latest full-text decision is exclude.",
   fullTextMaybe: "Title/abstract-included Papers whose latest full-text decision is maybe.",
   fullTextConflicts: "Papers with full-text history whose current title/abstract state is not included.",
+  fullTextRetrievalEligible: "Current title/abstract-included Papers; this is the retrieval gateway population, not a retrieval success count.",
+  fullTextNotSought: "Current title/abstract-included Papers with no retrieval attempts.",
+  fullTextRetrievalPending: "Current title/abstract-included Papers whose latest retrieval attempt is pending.",
+  fullTextRetrieved: "Current title/abstract-included Papers whose latest retrieval attempt is retrieved.",
+  fullTextUnavailable: "Current title/abstract-included Papers whose latest retrieval attempt is unavailable.",
+  fullTextSought: "Current title/abstract-included Papers with at least one retrieval attempt.",
+  fullTextEverSought: "Distinct Papers with at least one historical retrieval attempt, regardless of current TA state.",
+  fullTextEverRetrieved: "Distinct Papers with at least one historical retrieved attempt, regardless of later attempts.",
+  legacyFullTextWithoutRetrieval: "Distinct Papers with full-text screening history and zero retrieval attempts; no readiness is inferred.",
+  fullTextRetrievalConflicts: "Distinct Papers with retrieval history whose current TA state is not included.",
   finallyIncluded: "Papers with current include decisions at both title/abstract and full-text stages.",
   legacyAnalysisAwaitingFullText: "Papers with finalized extraction history and no full-text decision; this is informational and does not alter history.",
   historicalAcquisitionOnlyPapers: "Papers with a historical linked event but no current linked record.",
@@ -87,10 +107,9 @@ export function buildReviewReportProjection(input: ReviewReportInputs): ReviewRe
   const deduplicationKeys: ReviewReportMetricKey[] = ["currentlyResolvedRecords", "unresolvedRecords", "unresolvedDuplicatePairs", "sameWorkDecisionPairs", "differentWorkDecisionPairs", "acquisitionDerivedPapers", "duplicateRecordsCollapsed", "historicalAcquisitionOnlyPapers", "manualPapers"];
   const screeningKeys: ReviewReportMetricKey[] = ["papersInScreeningPopulation", "included", "excluded", "maybe", "unscreened"];
   const limitations: ReviewReportLimitation[] = [
-    limitation("reports_sought_retrieved_not_modeled", "model_capability", "Reports sought or retrieved after title/abstract screening are not modeled."),
+    limitation("formal_prisma_compliance_not_claimed", "model_capability", "This is a derived review-flow report and does not claim formal PRISMA 2020 compliance."),
     limitation("automation_exclusion_stage_not_modeled", "model_capability", "Automation-tool exclusion counts are not modeled."),
     limitation("source_category_mapping_unavailable", "model_capability", "No database/register/other-source taxonomy is persisted; actual SearchSource labels are reported instead."),
-    limitation("formal_prisma_compliance_not_claimed", "model_capability", "This is a derived review-flow report and does not claim formal PRISMA 2020 compliance."),
   ];
   const add = (item: ReviewReportLimitation) => { if (!limitations.some((existing) => existing.code === item.code)) limitations.push(item); };
   if (n(summary, "reportedResultsTotal") > n(summary, "retrievedRecords")) add(limitation("reported_results_exceed_entered_records", "current_data", "Recorded searches report more results than have been entered as RetrievedRecords; ingestion may be partial or intentional."));
@@ -101,12 +120,18 @@ export function buildReviewReportProjection(input: ReviewReportInputs): ReviewRe
   if (n(summary, "manualPapers") > 0) add(limitation("manual_papers_present", "current_data", "Some Papers have no historical acquisition link."));
   if (n(summary, "historicalAcquisitionOnlyPapers") > 0) add(limitation("historical_acquisition_only_papers_present", "current_data", "Some Papers retain historical acquisition provenance but no current record link."));
   if (context.overlappingPaperCount > 0) add(limitation("cross_source_paper_overlap", "current_data", "Some Papers are linked through more than one SearchSource; per-source Paper counts are non-additive."));
+  if (n(summary, "fullTextRetrievalPending") > 0 || n(summary, "fullTextUnavailable") > 0) add(limitation("retrieval_pending_or_unavailable", "current_data", "Current retrieval state includes pending or unavailable Papers; these are operational states, not historical PRISMA event counts."));
+  if (n(summary, "legacyFullTextWithoutRetrieval") > 0) add(limitation("legacy_full_text_decisions_without_retrieval", "current_data", "Some historical full-text decisions predate retrieval tracking; no retrieval readiness or historical success is inferred."));
+  if (n(summary, "fullTextRetrievalConflicts") > 0) add(limitation("retrieval_history_conflicts", "current_data", "Some retrieval history belongs to Papers no longer currently included at title/abstract screening."));
 
   const supportMatrix: ReviewReportSupportMapping[] = [
     { key: "records_identified_from_recorded_searches", label: "Records identified from recorded searches", support: "partially_supported", explanation: "Recorded provider totals and entered records are available, but they are not guaranteed unique records and source categories are not modeled." },
     { key: "records_screened", label: "Records screened", support: "partially_supported", explanation: "The application reports current canonical Papers at title/abstract screening, not a complete formal screening flow over reports." },
     { key: "duplicates_removed", label: "Duplicates removed", support: "partially_supported", explanation: "Slice 10 exposes current canonical resolution and a derived collapsed-record surplus, not a formal persisted duplicate-removal event count." },
-    { key: "reports_sought_or_retrieved", label: "Reports sought or retrieved", support: "unsupported", explanation: "No later reports-sought/retrieved stage exists." },
+    { key: "reports_sought_or_retrieved", label: "Reports sought or retrieved", support: "partially_supported", explanation: "The application records Paper-level retrieval attempts, but Paper is only a nearest report proxy and process-history events are not formal PRISMA report counts." },
+    { key: "reports_sought", label: "Reports sought", support: "partially_supported", explanation: "Nearest proxy is Papers ever sought (at least one retrieval attempt); this is a historical Paper-level fact, not a report event count." },
+    { key: "reports_retrieved", label: "Reports retrieved", support: "partially_supported", explanation: "Nearest proxy is Papers ever retrieved successfully; later unavailable attempts do not erase this historical fact." },
+    { key: "reports_not_retrieved", label: "Reports not retrieved", support: "partially_supported", explanation: "Only current unavailable retrieval state is available; this must not be read as never retrieved, so formal historical not-retrieved reporting is not claimed." },
     { key: "reports_assessed_for_eligibility", label: "Reports assessed for eligibility", support: "partially_supported", explanation: "Current full-text decisions are recorded for canonical Papers, but reports sought/retrieved and historical PRISMA event flow are not modeled." },
     { key: "reports_excluded_full_text", label: "Reports excluded after full-text review", support: "partially_supported", explanation: "Current full-text exclusions and structured reasons are recorded for canonical Papers, not a separate report entity." },
     { key: "studies_included_final", label: "Studies included after eligibility", support: "partially_supported", explanation: "Current final inclusion is derived from both screening stages on canonical Papers; distinct study/report identity is not modeled." },
@@ -122,6 +147,7 @@ export function buildReviewReportProjection(input: ReviewReportInputs): ReviewRe
     identification: { metrics: identificationKeys.map((key) => metric(summary, key)), bySource: context.sources, runs: context.runs, overlappingPaperCount: context.overlappingPaperCount },
     deduplication: { metrics: deduplicationKeys.map((key) => metric(summary, key)) },
     screening: { metrics: screeningKeys.map((key) => metric(summary, key)), exclusionReasons: exclusionReasons.map((reason) => ({ ...reason, contributor: { scope: "exclusionReason", criterionId: reason.criterionId } })) },
+    fullTextRetrieval: { metrics: ["fullTextRetrievalEligible", "fullTextNotSought", "fullTextRetrievalPending", "fullTextRetrieved", "fullTextUnavailable", "fullTextSought", "fullTextEverSought", "fullTextEverRetrieved", "legacyFullTextWithoutRetrieval", "fullTextRetrievalConflicts"].map((key) => metric(summary, key as ReviewReportMetricKey)) },
     fullTextEligibility: { metrics: ["fullTextEligible", "fullTextAwaiting", "fullTextAssessed", "fullTextIncluded", "fullTextExcluded", "fullTextMaybe", "fullTextConflicts"].map((key) => metric(summary, key as ReviewReportMetricKey)), exclusionReasons: fullTextExclusionReasons.map((reason) => ({ ...reason, contributor: { scope: "fullTextExclusionReason", criterionId: reason.criterionId } })) },
     finalEligibility: { metrics: ["finallyIncluded", "legacyAnalysisAwaitingFullText"].map((key) => metric(summary, key as ReviewReportMetricKey)) },
     supportMatrix,
@@ -162,6 +188,8 @@ export function serializeReviewFlowMarkdown(projection: ReviewReportProjection):
   lines.push("", "### Current Exclusion Reasons");
   if (projection.screening.exclusionReasons.length === 0) lines.push("", "- None recorded.");
   for (const reason of projection.screening.exclusionReasons) lines.push("", `- ${md(reason.text)}: ${reason.count}${reason.archived ? " (criterion archived)" : ""}`);
+  lines.push("", "## Full-text retrieval (current queue and historical facts)");
+  for (const item of projection.fullTextRetrieval.metrics) lines.push("", `- ${item.label}: ${item.value}`);
   lines.push("", "## Full-text eligibility");
   for (const item of projection.fullTextEligibility.metrics) lines.push("", `- ${item.label}: ${item.value}`);
   lines.push("", "### Active Full-Text Criteria");

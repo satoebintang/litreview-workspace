@@ -12,6 +12,7 @@ export type ScreeningCriterionId = string;
 export type ScreeningDecisionId = string;
 export type FullTextScreeningCriterionId = string;
 export type FullTextScreeningDecisionId = string;
+export type FullTextRetrievalAttemptId = string;
 export type ResearchQuestionId = string;
 export type SearchSourceId = string;
 export type SearchStrategyId = string;
@@ -22,8 +23,11 @@ export type ScreeningState = "unscreened" | "included" | "excluded" | "maybe";
 export type ScreeningDecisionValue = "include" | "exclude" | "maybe";
 export type ScreeningCriterionType = "inclusion" | "exclusion";
 export type FullTextDecisionState = "not_started" | "included" | "excluded" | "maybe";
+export type FullTextRetrievalOutcome = "pending" | "unavailable" | "retrieved";
+export type FullTextRetrievalState = "not_sought" | FullTextRetrievalOutcome;
+export type FullTextRetrievalMethod = "publisher" | "bibliographic_database" | "institutional_access" | "library" | "interlibrary_loan" | "author_contact" | "web" | "manual" | "other";
 export type FinalEligibility = "title_abstract_pending" | "title_abstract_unresolved" | "not_eligible" | "pending_full_text" | "included" | "excluded" | "unresolved_full_text";
-export type PaperReviewWarning = "cross_stage_conflict" | "legacy_analysis_precedes_full_text_screening";
+export type PaperReviewWarning = "cross_stage_conflict" | "legacy_analysis_precedes_full_text_screening" | "legacy_full_text_decision_without_retrieval_record" | "retrieval_history_without_current_title_abstract_inclusion";
 export type ExtractionFieldType = "short_text" | "long_text" | "number" | "boolean" | "single_select";
 export type ExtractionValueState = "present" | "not_reported" | "not_applicable" | "cleared";
 
@@ -468,9 +472,24 @@ export interface FullTextScreeningHistoryItem extends FullTextScreeningDecision 
   exclusionCriterion: FullTextScreeningCriterion | null;
 }
 
+export interface FullTextRetrievalAttempt {
+  id: FullTextRetrievalAttemptId;
+  sequence: number;
+  projectId: ProjectId;
+  paperId: PaperId;
+  outcome: FullTextRetrievalOutcome;
+  method: FullTextRetrievalMethod | null;
+  sourceReference: string | null;
+  note: string | null;
+  attemptedAt: Date;
+  createdAt: Date;
+}
+
 export interface PaperReviewStatus {
   titleAbstractState: ScreeningState;
   fullTextState: FullTextDecisionState;
+  fullTextRetrievalState: FullTextRetrievalState;
+  everRetrieved: boolean;
   finalEligibility: FinalEligibility;
   crossStageConflict: boolean;
   warnings: PaperReviewWarning[];

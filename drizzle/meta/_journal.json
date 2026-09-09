@@ -92,6 +92,13 @@
       "when": 1788998400000,
       "tag": "0012_full_text_screening",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788998460000,
+      "tag": "0013_full_text_retrieval",
+      "breakpoints": true
     }
   ]
 }
