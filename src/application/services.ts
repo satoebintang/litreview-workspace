@@ -58,6 +58,7 @@ import {
 import { createManuscriptServices } from "./manuscript-services";
 import { createAcquisitionServices } from "./acquisition-services";
 import { createDeduplicationServices } from "./deduplication-services";
+import { createReviewReportingServices } from "./review-reporting";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
   const result = schema.safeParse(input);
@@ -941,5 +942,8 @@ export function createReviewServices(db: Database) {
       return { claim: result.claim, supportStatus: result.currentRevision.supportStatus, evidence: result.currentRevision.supports.evidence.map((item) => item.evidence) };
     },
   };
-  return Object.assign(services, createManuscriptServices(db), createAcquisitionServices(db), createDeduplicationServices(db));
+  const deduplicationServices = createDeduplicationServices(db);
+  const baseServices = Object.assign(services, createManuscriptServices(db), createAcquisitionServices(db), deduplicationServices);
+  const reportingServices = createReviewReportingServices(db, deduplicationServices);
+  return Object.assign(baseServices, reportingServices) as typeof baseServices & typeof reportingServices;
 }

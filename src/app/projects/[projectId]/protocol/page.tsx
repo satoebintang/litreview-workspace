@@ -45,7 +45,7 @@ export default async function ProtocolPage({ params, searchParams }: {
 
   return <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
     <div className="container workspace"><Link className="back-link" href={`/projects/${projectId}`}>← Back to workspace</Link>
-      <div className="workspace-header"><div><p className="eyebrow">Review protocol</p><h1>Protocol &amp; search</h1><p>{project.title} · preserve the exact history of every search.</p></div><Link className="button secondary" href={`/projects/${projectId}/screening`}>Open screening criteria →</Link></div>
+      <div className="workspace-header"><div><p className="eyebrow">Review protocol</p><h1>Protocol &amp; search</h1><p>{project.title} · preserve the exact history of every search.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Link className="button secondary" href={`/projects/${projectId}/review-report`}>Open review report →</Link><Link className="button secondary" href={`/projects/${projectId}/screening`}>Open screening criteria →</Link></div></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">Protocol updated.</div>}
 
        <div className="workspace-grid">
