@@ -1,4 +1,4 @@
-import type { Paper, ResearchQuestion, ScreeningCriterion, SearchRun, SearchSource } from "./types";
+import type { FullTextScreeningCriterion, Paper, ResearchQuestion, ScreeningCriterion, SearchRun, SearchSource } from "./types";
 
 export type ReportMetricSupport = "supported" | "partially_supported" | "unsupported";
 
@@ -19,6 +19,15 @@ export type ReviewReportMetricKey =
   | "included"
   | "excluded"
   | "maybe"
+  | "fullTextEligible"
+  | "fullTextAwaiting"
+  | "fullTextAssessed"
+  | "fullTextIncluded"
+  | "fullTextExcluded"
+  | "fullTextMaybe"
+  | "fullTextConflicts"
+  | "finallyIncluded"
+  | "legacyAnalysisAwaitingFullText"
   | "historicalAcquisitionOnlyPapers"
   | "manualPapers";
 
@@ -52,6 +61,7 @@ export type ReviewReportContributorSelector =
   | { scope: "metric"; metric: ReviewReportMetricKey }
   | { scope: "source"; sourceId: string; metric: "runs" | "reportedResults" | "retrievedRecords" | "resolvedRecords" | "acquisitionPapers" }
   | { scope: "exclusionReason"; criterionId: string }
+  | { scope: "fullTextExclusionReason"; criterionId: string }
   | { scope: "overlap" };
 
 export type ReviewReportContributor =
@@ -60,6 +70,7 @@ export type ReviewReportContributor =
   | { kind: "paper"; id: string; label: string; contribution: number; recordCount?: number; sourceIds?: string[] }
   | { kind: "deduplicationPair"; id: string; label: string; contribution: number; leftRecordId: string; rightRecordId: string }
   | { kind: "screeningDecision"; id: string; label: string; contribution: number; paperId: string; decision: string }
+  | { kind: "fullTextScreeningDecision"; id: string; label: string; contribution: number; paperId: string; decision: string }
   | { kind: "searchSource"; id: string; label: string; contribution: number };
 
 export type ReviewReportMetric =
@@ -97,6 +108,7 @@ export type ReviewReportProjection = {
   project: { id: string; title: string };
   activeResearchQuestions: ResearchQuestion[];
   activeCriteria: ScreeningCriterion[];
+  activeFullTextCriteria: FullTextScreeningCriterion[];
   identification: {
     metrics: ReviewReportMetric[];
     bySource: ReviewReportSource[];
@@ -108,6 +120,11 @@ export type ReviewReportProjection = {
     metrics: ReviewReportMetric[];
     exclusionReasons: Array<{ criterionId: string; text: string; archived: boolean; count: number; contributor: ReviewReportContributorSelector }>;
   };
+  fullTextEligibility: {
+    metrics: ReviewReportMetric[];
+    exclusionReasons: Array<{ criterionId: string; text: string; archived: boolean; count: number; contributor: ReviewReportContributorSelector }>;
+  };
+  finalEligibility: { metrics: ReviewReportMetric[] };
   supportMatrix: ReviewReportSupportMapping[];
   limitations: ReviewReportLimitation[];
 };
@@ -116,6 +133,7 @@ export type ReviewReportContext = {
   project: { id: string; title: string };
   activeResearchQuestions: ResearchQuestion[];
   activeCriteria: ScreeningCriterion[];
+  activeFullTextCriteria: FullTextScreeningCriterion[];
   sources: ReviewReportSource[];
   runs: ReviewReportRun[];
   overlappingPaperCount: number;
@@ -130,6 +148,7 @@ export type ReviewReportInputs = {
   summary: Record<string, unknown>;
   context: ReviewReportContext;
   exclusionReasons: Array<{ criterionId: string; text: string; archived: boolean; count: number }>;
+  fullTextExclusionReasons: Array<{ criterionId: string; text: string; archived: boolean; count: number }>;
 };
 
 export type ReviewReportPaper = Pick<Paper, "id" | "title">;

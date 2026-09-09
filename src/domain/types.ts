@@ -10,6 +10,8 @@ export type ManuscriptClaimPlacementId = string;
 export type ManuscriptPlacementEventId = string;
 export type ScreeningCriterionId = string;
 export type ScreeningDecisionId = string;
+export type FullTextScreeningCriterionId = string;
+export type FullTextScreeningDecisionId = string;
 export type ResearchQuestionId = string;
 export type SearchSourceId = string;
 export type SearchStrategyId = string;
@@ -19,6 +21,9 @@ export type RetrievedRecordMatchId = string;
 export type ScreeningState = "unscreened" | "included" | "excluded" | "maybe";
 export type ScreeningDecisionValue = "include" | "exclude" | "maybe";
 export type ScreeningCriterionType = "inclusion" | "exclusion";
+export type FullTextDecisionState = "not_started" | "included" | "excluded" | "maybe";
+export type FinalEligibility = "title_abstract_pending" | "title_abstract_unresolved" | "not_eligible" | "pending_full_text" | "included" | "excluded" | "unresolved_full_text";
+export type PaperReviewWarning = "cross_stage_conflict" | "legacy_analysis_precedes_full_text_screening";
 export type ExtractionFieldType = "short_text" | "long_text" | "number" | "boolean" | "single_select";
 export type ExtractionValueState = "present" | "not_reported" | "not_applicable" | "cleared";
 
@@ -437,6 +442,38 @@ export interface ScreeningHistoryItem extends ScreeningDecision {
 export interface PaperWithScreening extends Paper {
   screeningState: ScreeningState;
   currentDecision: ScreeningDecision | null;
+}
+
+export interface FullTextScreeningCriterion {
+  id: FullTextScreeningCriterionId;
+  projectId: ProjectId;
+  text: string;
+  sortOrder: number;
+  createdAt: Date;
+  archivedAt: Date | null;
+}
+
+export interface FullTextScreeningDecision {
+  id: FullTextScreeningDecisionId;
+  sequence: number;
+  projectId: ProjectId;
+  paperId: PaperId;
+  decision: ScreeningDecisionValue;
+  exclusionCriterionId: FullTextScreeningCriterionId | null;
+  note: string | null;
+  createdAt: Date;
+}
+
+export interface FullTextScreeningHistoryItem extends FullTextScreeningDecision {
+  exclusionCriterion: FullTextScreeningCriterion | null;
+}
+
+export interface PaperReviewStatus {
+  titleAbstractState: ScreeningState;
+  fullTextState: FullTextDecisionState;
+  finalEligibility: FinalEligibility;
+  crossStageConflict: boolean;
+  warnings: PaperReviewWarning[];
 }
 
 export interface ExtractionField {

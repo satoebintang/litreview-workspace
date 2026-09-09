@@ -23,6 +23,10 @@ test.describe("Slice 3 structured extraction", () => {
     await page.getByRole("link", { name: "Start screening" }).click();
     await page.getByRole("button", { name: "Include", exact: true }).click();
     await expect(page.locator(".status.screening-included")).toBeVisible();
+    const paperId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/screening/full-text/${paperId}`);
+    await page.getByRole("button", { name: "Include", exact: true }).click();
+    await expect(page.getByText("Full-text decision recorded in screening history.")).toBeVisible();
 
     await page.goto(`/projects/${projectId}/extraction`);
     await page.getByLabel("Field name").fill("Attack technique");

@@ -214,6 +214,57 @@ export const screeningDecisions = pgTable(
   }),
 );
 
+export const fullTextScreeningCriteria = pgTable(
+  "full_text_screening_criteria",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    text: text("text").notNull(),
+    sortOrder: bigint("sort_order", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => ({
+    projectIdentity: unique("full_text_screening_criteria_project_id_id_unique").on(table.projectId, table.id),
+    projectOrder: index("full_text_screening_criteria_project_order_idx").on(table.projectId, table.sortOrder),
+    textNonblank: check("full_text_screening_criteria_text_nonblank", sql`btrim(${table.text}) <> ''`),
+  }),
+);
+
+export const fullTextScreeningDecisions = pgTable(
+  "full_text_screening_decisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    paperId: uuid("paper_id").notNull(),
+    decision: text("decision").notNull(),
+    exclusionCriterionId: uuid("exclusion_criterion_id"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("full_text_screening_decisions_project_id_id_unique").on(table.projectId, table.id),
+    paperOwnership: foreignKey({
+      columns: [table.projectId, table.paperId],
+      foreignColumns: [papers.projectId, papers.id],
+      name: "full_text_screening_decisions_project_paper_fk",
+    }).onDelete("restrict"),
+    criterionOwnership: foreignKey({
+      columns: [table.projectId, table.exclusionCriterionId],
+      foreignColumns: [fullTextScreeningCriteria.projectId, fullTextScreeningCriteria.id],
+      name: "full_text_screening_decisions_project_criterion_fk",
+    }).onDelete("restrict"),
+    paperSequence: index("full_text_screening_decisions_project_paper_sequence_idx").on(table.projectId, table.paperId, table.sequence),
+    decisionValid: check("full_text_screening_decisions_decision_valid", sql`${table.decision} in ('include', 'exclude', 'maybe')`),
+    exclusionShape: check("full_text_screening_decisions_exclusion_shape", sql`(
+      (${table.decision} = 'exclude' and ${table.exclusionCriterionId} is not null)
+      or (${table.decision} in ('include', 'maybe') and ${table.exclusionCriterionId} is null)
+    )`),
+    noteNonblank: check("full_text_screening_decisions_note_nonblank", sql`${table.note} is null or btrim(${table.note}) <> ''`),
+  }),
+);
+
 export const extractionFields = pgTable(
   "extraction_fields",
   {
@@ -941,4 +992,4 @@ export const retrievedRecordDeduplicationDecisions = pgTable(
   }),
 );
 
-export const schema = { projects, papers, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };
+export const schema = { projects, papers, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };

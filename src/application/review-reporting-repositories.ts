@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { researchQuestions, screeningCriteria } from "@/db/schema";
+import { fullTextScreeningCriteria, researchQuestions, screeningCriteria } from "@/db/schema";
 import type { ReviewReportContributorSelector, ReviewReportContext, ReviewReportContributorResult, ReviewReportRun, ReviewReportSource } from "@/domain/review-report";
 import { DeduplicationDecisionRepository } from "./deduplication-repositories";
 
@@ -16,10 +16,11 @@ export class ReviewReportingRepository {
   }
 
   async context(projectId: string): Promise<ReviewReportContext> {
-    const [projectRows, questions, criteria, sources, runs, overlapRows] = await Promise.all([
+    const [projectRows, questions, criteria, fullTextCriteria, sources, runs, overlapRows] = await Promise.all([
       this.db.execute(sql`select id, title from projects where id = ${projectId}`),
       this.db.select().from(researchQuestions).where(and(eq(researchQuestions.projectId, projectId), sql`${researchQuestions.archivedAt} is null`)).orderBy(asc(researchQuestions.sortOrder), asc(researchQuestions.id)),
       this.db.select().from(screeningCriteria).where(eq(screeningCriteria.projectId, projectId)).orderBy(asc(screeningCriteria.sortOrder), asc(screeningCriteria.id)),
+      this.db.select().from(fullTextScreeningCriteria).where(eq(fullTextScreeningCriteria.projectId, projectId)).orderBy(asc(fullTextScreeningCriteria.sortOrder), asc(fullTextScreeningCriteria.id)),
       this.sourceAggregates(projectId),
       this.runs(projectId),
       this.db.execute(sql`
@@ -39,6 +40,7 @@ export class ReviewReportingRepository {
       project: { id: stringValue(project?.id), title: stringValue(project?.title) },
       activeResearchQuestions: questions.map((row) => this.mapQuestion(row)),
       activeCriteria: criteria.filter((row) => !row.archivedAt).map((row) => this.mapCriterion(row)),
+      activeFullTextCriteria: fullTextCriteria.filter((row) => !row.archivedAt).map((row) => ({ id: stringValue(row.id), projectId: stringValue(row.projectId), text: stringValue(row.text), sortOrder: numberValue(row.sortOrder), createdAt: row.createdAt, archivedAt: row.archivedAt ?? null })),
       sources,
       runs,
       overlappingPaperCount: numberValue((overlapRows as unknown as Array<Record<string, unknown>>)[0]?.overlap_count),
@@ -135,9 +137,32 @@ export class ReviewReportingRepository {
     return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({ criterionId: stringValue(row.exclusion_criterion_id), text: stringValue(row.text), archived: row.archived_at != null, count: numberValue(row.count) }));
   }
 
+  async fullTextExclusionReasons(projectId: string) {
+    const rows = await this.db.execute(sql`
+      with current_full_text as (
+        select distinct on (project_id, paper_id) project_id, paper_id, decision, exclusion_criterion_id
+        from full_text_screening_decisions where project_id = ${projectId}
+        order by project_id, paper_id, sequence desc
+      ), current_title_abstract as (
+        select distinct on (project_id, paper_id) project_id, paper_id, decision
+        from screening_decisions where project_id = ${projectId} and stage = 'title_abstract'
+        order by project_id, paper_id, sequence desc
+      )
+      select f.exclusion_criterion_id, c.text, c.archived_at, count(*)::int as count
+      from current_full_text f
+      join current_title_abstract t on t.project_id=f.project_id and t.paper_id=f.paper_id and t.decision='include'
+      join full_text_screening_criteria c on c.project_id=f.project_id and c.id=f.exclusion_criterion_id
+      where f.project_id=${projectId} and f.decision='exclude' and f.exclusion_criterion_id is not null
+      group by f.exclusion_criterion_id, c.text, c.archived_at
+      order by c.text, f.exclusion_criterion_id
+    `);
+    return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({ criterionId: stringValue(row.exclusion_criterion_id), text: stringValue(row.text), archived: row.archived_at != null, count: numberValue(row.count) }));
+  }
+
   async contributors(projectId: string, selector: ReviewReportContributorSelector): Promise<ReviewReportContributorResult> {
     if (selector.scope === "source") return this.sourceContributors(projectId, selector.sourceId, selector.metric);
     if (selector.scope === "exclusionReason") return this.exclusionContributors(projectId, selector.criterionId);
+    if (selector.scope === "fullTextExclusionReason") return this.fullTextExclusionContributors(projectId, selector.criterionId);
     if (selector.scope === "overlap") return this.overlapContributors(projectId);
     const metric = selector.metric;
     if (metric === "unresolvedDuplicatePairs") {
@@ -167,6 +192,11 @@ export class ReviewReportingRepository {
       case "papersInScreeningPopulation": return sql`select id, title from papers where project_id=${projectId} order by id`;
       case "unscreened": return sql`${latestScreening} select p.id, p.title from papers p left join current_screening s on s.project_id=p.project_id and s.paper_id=p.id where p.project_id=${projectId} and s.paper_id is null order by p.id`;
       case "included": case "excluded": case "maybe": return sql`${latestScreening} select p.id, p.title, s.id as decision_id, s.decision from papers p join current_screening s on s.project_id=p.project_id and s.paper_id=p.id where p.project_id=${projectId} and s.decision=${metric === "included" ? "include" : metric} order by p.id`;
+      case "fullTextEligible": return sql`${latestScreening} select p.id, p.title from papers p join current_screening s on s.project_id=p.project_id and s.paper_id=p.id where p.project_id=${projectId} and s.decision='include' order by p.id`;
+      case "fullTextAwaiting": case "fullTextAssessed": case "fullTextIncluded": case "fullTextExcluded": case "fullTextMaybe": return sql`${latestScreening}, current_full_text as (select distinct on (project_id,paper_id) project_id,paper_id,id,decision from full_text_screening_decisions where project_id=${projectId} order by project_id,paper_id,sequence desc) select p.id,p.title,f.id as decision_id,f.decision from papers p join current_screening s on s.project_id=p.project_id and s.paper_id=p.id left join current_full_text f on f.project_id=p.project_id and f.paper_id=p.id where p.project_id=${projectId} and s.decision='include' and ${metric === "fullTextAwaiting" ? sql`f.paper_id is null` : metric === "fullTextAssessed" ? sql`f.decision in ('include','exclude','maybe')` : sql`f.decision=${metric === "fullTextIncluded" ? "include" : metric === "fullTextExcluded" ? "exclude" : "maybe"}`} order by p.id`;
+      case "fullTextConflicts": return sql`with current_screening as (select distinct on (project_id,paper_id) project_id,paper_id,decision from screening_decisions where project_id=${projectId} and stage='title_abstract' order by project_id,paper_id,sequence desc), current_full_text as (select distinct on (project_id,paper_id) project_id,paper_id,id,decision from full_text_screening_decisions where project_id=${projectId} order by project_id,paper_id,sequence desc) select p.id,p.title,f.id as decision_id,f.decision from papers p join current_full_text f on f.project_id=p.project_id and f.paper_id=p.id left join current_screening s on s.project_id=p.project_id and s.paper_id=p.id where p.project_id=${projectId} and coalesce(s.decision,'') <> 'include' order by p.id`;
+      case "finallyIncluded": return sql`${latestScreening}, current_full_text as (select distinct on (project_id,paper_id) project_id,paper_id,decision from full_text_screening_decisions where project_id=${projectId} order by project_id,paper_id,sequence desc) select p.id,p.title from papers p join current_screening s on s.project_id=p.project_id and s.paper_id=p.id join current_full_text f on f.project_id=p.project_id and f.paper_id=p.id where p.project_id=${projectId} and s.decision='include' and f.decision='include' order by p.id`;
+      case "legacyAnalysisAwaitingFullText": return sql`with current_full_text as (select distinct on (project_id,paper_id) project_id,paper_id from full_text_screening_decisions where project_id=${projectId} order by project_id,paper_id,sequence desc) select p.id,p.title from papers p join extraction_value_revisions r on r.project_id=p.project_id and r.paper_id=p.id and r.finalized_at is not null left join current_full_text f on f.project_id=p.project_id and f.paper_id=p.id where p.project_id=${projectId} and f.paper_id is null group by p.id,p.title order by p.id`;
       default: return sql`select id, title from papers where project_id=${projectId} order by id`;
     }
   }
@@ -178,6 +208,7 @@ export class ReviewReportingRepository {
     if (metric === "duplicateRecordsCollapsed") return { kind: "paper", id: stringValue(row.id), label: stringValue(row.title), contribution: numberValue(row.record_count) - 1, recordCount: numberValue(row.record_count) };
     if (metric === "sameWorkDecisionPairs" || metric === "differentWorkDecisionPairs") return { kind: "deduplicationPair", id: `${stringValue(row.left_retrieved_record_id)}:${stringValue(row.right_retrieved_record_id)}`, label: `${stringValue(row.left_retrieved_record_id)} ↔ ${stringValue(row.right_retrieved_record_id)}`, contribution: row.decision === (metric === "sameWorkDecisionPairs" ? "same_work" : "different_work") ? 1 : 0, leftRecordId: stringValue(row.left_retrieved_record_id), rightRecordId: stringValue(row.right_retrieved_record_id) };
     if (metric === "included" || metric === "excluded" || metric === "maybe") return { kind: "screeningDecision", id: stringValue(row.decision_id), label: stringValue(row.title), contribution: 1, paperId: stringValue(row.id), decision: stringValue(row.decision) };
+    if (metric.startsWith("fullText")) return { kind: "fullTextScreeningDecision", id: stringValue(row.decision_id), label: stringValue(row.title), contribution: 1, paperId: stringValue(row.id), decision: stringValue(row.decision) };
     return { kind: "paper", id: stringValue(row.id), label: stringValue(row.title), contribution: 1 };
   }
 
@@ -203,6 +234,12 @@ export class ReviewReportingRepository {
   private async exclusionContributors(projectId: string, criterionId: string): Promise<ReviewReportContributorResult> {
     const rows = await this.db.execute(sql`with current_screening as (select distinct on (project_id,paper_id) project_id,paper_id,id,decision,exclusion_criterion_id from screening_decisions where project_id=${projectId} and stage='title_abstract' order by project_id,paper_id,sequence desc) select p.id,p.title,s.id as decision_id from papers p join current_screening s on s.project_id=p.project_id and s.paper_id=p.id where p.project_id=${projectId} and s.decision='exclude' and s.exclusion_criterion_id=${criterionId} order by p.id`);
     const items = (rows as unknown as Array<Record<string, unknown>>).map((row) => ({ kind: "screeningDecision" as const, id: stringValue(row.decision_id), label: stringValue(row.title), contribution: 1, paperId: stringValue(row.id), decision: "exclude" }));
+    return { total: items.length, items };
+  }
+
+  private async fullTextExclusionContributors(projectId: string, criterionId: string): Promise<ReviewReportContributorResult> {
+    const rows = await this.db.execute(sql`with current_screening as (select distinct on (project_id,paper_id) project_id,paper_id,decision from screening_decisions where project_id=${projectId} and stage='title_abstract' order by project_id,paper_id,sequence desc), current_full_text as (select distinct on (project_id,paper_id) project_id,paper_id,id,decision,exclusion_criterion_id from full_text_screening_decisions where project_id=${projectId} order by project_id,paper_id,sequence desc) select p.id,p.title,f.id as decision_id from papers p join current_full_text f on f.project_id=p.project_id and f.paper_id=p.id join current_screening s on s.project_id=p.project_id and s.paper_id=p.id where p.project_id=${projectId} and s.decision='include' and f.decision='exclude' and f.exclusion_criterion_id=${criterionId} order by p.id`);
+    const items = (rows as unknown as Array<Record<string, unknown>>).map((row) => ({ kind: "fullTextScreeningDecision" as const, id: stringValue(row.decision_id), label: stringValue(row.title), contribution: 1, paperId: stringValue(row.id), decision: "exclude" }));
     return { total: items.length, items };
   }
 

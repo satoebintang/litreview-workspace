@@ -94,7 +94,7 @@ test.describe("Slice 10 deduplication and review flow", () => {
     await expect(page.getByRole("heading", { name: "Review Flow Report" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Search Identification" })).toBeVisible();
     await expect(page.getByText("Results reported by recorded searches", { exact: true })).toBeVisible();
-    await expect(page.getByText("A separate full-text eligibility stage is not modeled.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Full-text Eligibility" })).toBeVisible();
     await page.getByText("Results reported by recorded searches", { exact: true }).click();
     await expect(page.getByRole("heading", { name: "Contributors" })).toBeVisible();
     await expect(page.getByText("searchRun", { exact: true }).first()).toBeVisible();

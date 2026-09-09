@@ -30,6 +30,15 @@ const labels: Record<ReviewReportMetricKey, string> = {
   included: "Currently included at title/abstract screening",
   excluded: "Currently excluded at title/abstract screening",
   maybe: "Currently marked maybe at title/abstract screening",
+  fullTextEligible: "Currently eligible for full-text screening",
+  fullTextAwaiting: "Awaiting full-text screening",
+  fullTextAssessed: "Currently assessed at full-text screening",
+  fullTextIncluded: "Included after current full-text screening",
+  fullTextExcluded: "Excluded after current full-text screening",
+  fullTextMaybe: "Currently maybe at full-text screening",
+  fullTextConflicts: "Cross-stage full-text conflicts",
+  finallyIncluded: "Finally currently included Papers",
+  legacyAnalysisAwaitingFullText: "Papers with analysis predating full-text screening",
   historicalAcquisitionOnlyPapers: "Papers with historical but no current acquisition link",
   manualPapers: "Papers never linked to a RetrievedRecord",
 };
@@ -51,6 +60,15 @@ const explanations: Record<ReviewReportMetricKey, string> = {
   included: "Papers with a current title/abstract include decision.",
   excluded: "Papers with a current title/abstract exclude decision.",
   maybe: "Papers with a current title/abstract maybe decision.",
+  fullTextEligible: "Papers whose current title/abstract state is included; only these contribute to current full-text outcomes.",
+  fullTextAwaiting: "Title/abstract-included Papers with no full-text decision.",
+  fullTextAssessed: "Title/abstract-included Papers with a current full-text include, exclude, or maybe decision.",
+  fullTextIncluded: "Title/abstract-included Papers whose latest full-text decision is include.",
+  fullTextExcluded: "Title/abstract-included Papers whose latest full-text decision is exclude.",
+  fullTextMaybe: "Title/abstract-included Papers whose latest full-text decision is maybe.",
+  fullTextConflicts: "Papers with full-text history whose current title/abstract state is not included.",
+  finallyIncluded: "Papers with current include decisions at both title/abstract and full-text stages.",
+  legacyAnalysisAwaitingFullText: "Papers with finalized extraction history and no full-text decision; this is informational and does not alter history.",
   historicalAcquisitionOnlyPapers: "Papers with a historical linked event but no current linked record.",
   manualPapers: "Papers with no historical linked RetrievedRecord; distinct from the Manual SearchSource.",
 };
@@ -64,12 +82,11 @@ function limitation(code: ReviewReportLimitation["code"], kind: ReviewReportLimi
 }
 
 export function buildReviewReportProjection(input: ReviewReportInputs): ReviewReportProjection {
-  const { summary, context, exclusionReasons } = input;
+  const { summary, context, exclusionReasons, fullTextExclusionReasons } = input;
   const identificationKeys: ReviewReportMetricKey[] = ["distinctSearchRuns", "reportedResultsTotal", "retrievedRecords", "distinctSources"];
   const deduplicationKeys: ReviewReportMetricKey[] = ["currentlyResolvedRecords", "unresolvedRecords", "unresolvedDuplicatePairs", "sameWorkDecisionPairs", "differentWorkDecisionPairs", "acquisitionDerivedPapers", "duplicateRecordsCollapsed", "historicalAcquisitionOnlyPapers", "manualPapers"];
   const screeningKeys: ReviewReportMetricKey[] = ["papersInScreeningPopulation", "included", "excluded", "maybe", "unscreened"];
   const limitations: ReviewReportLimitation[] = [
-    limitation("full_text_stage_not_modeled", "model_capability", "A separate full-text eligibility stage is not modeled."),
     limitation("reports_sought_retrieved_not_modeled", "model_capability", "Reports sought or retrieved after title/abstract screening are not modeled."),
     limitation("automation_exclusion_stage_not_modeled", "model_capability", "Automation-tool exclusion counts are not modeled."),
     limitation("source_category_mapping_unavailable", "model_capability", "No database/register/other-source taxonomy is persisted; actual SearchSource labels are reported instead."),
@@ -90,9 +107,9 @@ export function buildReviewReportProjection(input: ReviewReportInputs): ReviewRe
     { key: "records_screened", label: "Records screened", support: "partially_supported", explanation: "The application reports current canonical Papers at title/abstract screening, not a complete formal screening flow over reports." },
     { key: "duplicates_removed", label: "Duplicates removed", support: "partially_supported", explanation: "Slice 10 exposes current canonical resolution and a derived collapsed-record surplus, not a formal persisted duplicate-removal event count." },
     { key: "reports_sought_or_retrieved", label: "Reports sought or retrieved", support: "unsupported", explanation: "No later reports-sought/retrieved stage exists." },
-    { key: "reports_assessed_for_eligibility", label: "Reports assessed for eligibility", support: "unsupported", explanation: "Full-text eligibility is not modeled." },
-    { key: "reports_excluded_full_text", label: "Reports excluded after full-text review", support: "unsupported", explanation: "Full-text exclusion is not modeled." },
-    { key: "studies_included_final", label: "Studies included after eligibility", support: "unsupported", explanation: "A final eligibility stage is not modeled; title/abstract included Papers are reported separately." },
+    { key: "reports_assessed_for_eligibility", label: "Reports assessed for eligibility", support: "partially_supported", explanation: "Current full-text decisions are recorded for canonical Papers, but reports sought/retrieved and historical PRISMA event flow are not modeled." },
+    { key: "reports_excluded_full_text", label: "Reports excluded after full-text review", support: "partially_supported", explanation: "Current full-text exclusions and structured reasons are recorded for canonical Papers, not a separate report entity." },
+    { key: "studies_included_final", label: "Studies included after eligibility", support: "partially_supported", explanation: "Current final inclusion is derived from both screening stages on canonical Papers; distinct study/report identity is not modeled." },
     { key: "automation_exclusions", label: "Automation-tool exclusions", support: "unsupported", explanation: "Automation exclusion stages are not modeled." },
     { key: "source_category_taxonomy", label: "Database/register/other source categories", support: "unsupported", explanation: "No persisted reporting taxonomy exists; actual SearchSource labels are retained." },
   ];
@@ -101,9 +118,12 @@ export function buildReviewReportProjection(input: ReviewReportInputs): ReviewRe
     project: context.project,
     activeResearchQuestions: context.activeResearchQuestions,
     activeCriteria: context.activeCriteria,
+    activeFullTextCriteria: context.activeFullTextCriteria,
     identification: { metrics: identificationKeys.map((key) => metric(summary, key)), bySource: context.sources, runs: context.runs, overlappingPaperCount: context.overlappingPaperCount },
     deduplication: { metrics: deduplicationKeys.map((key) => metric(summary, key)) },
     screening: { metrics: screeningKeys.map((key) => metric(summary, key)), exclusionReasons: exclusionReasons.map((reason) => ({ ...reason, contributor: { scope: "exclusionReason", criterionId: reason.criterionId } })) },
+    fullTextEligibility: { metrics: ["fullTextEligible", "fullTextAwaiting", "fullTextAssessed", "fullTextIncluded", "fullTextExcluded", "fullTextMaybe", "fullTextConflicts"].map((key) => metric(summary, key as ReviewReportMetricKey)), exclusionReasons: fullTextExclusionReasons.map((reason) => ({ ...reason, contributor: { scope: "fullTextExclusionReason", criterionId: reason.criterionId } })) },
+    finalEligibility: { metrics: ["finallyIncluded", "legacyAnalysisAwaitingFullText"].map((key) => metric(summary, key as ReviewReportMetricKey)) },
     supportMatrix,
     limitations,
   };
@@ -142,6 +162,16 @@ export function serializeReviewFlowMarkdown(projection: ReviewReportProjection):
   lines.push("", "### Current Exclusion Reasons");
   if (projection.screening.exclusionReasons.length === 0) lines.push("", "- None recorded.");
   for (const reason of projection.screening.exclusionReasons) lines.push("", `- ${md(reason.text)}: ${reason.count}${reason.archived ? " (criterion archived)" : ""}`);
+  lines.push("", "## Full-text eligibility");
+  for (const item of projection.fullTextEligibility.metrics) lines.push("", `- ${item.label}: ${item.value}`);
+  lines.push("", "### Active Full-Text Criteria");
+  if (projection.activeFullTextCriteria.length === 0) lines.push("", "- None active.");
+  for (const criterion of projection.activeFullTextCriteria) lines.push("", `- ${md(criterion.text)}`);
+  lines.push("", "### Current Full-Text Exclusion Reasons");
+  if (projection.fullTextEligibility.exclusionReasons.length === 0) lines.push("", "- None recorded.");
+  for (const reason of projection.fullTextEligibility.exclusionReasons) lines.push("", `- ${md(reason.text)}: ${reason.count}${reason.archived ? " (criterion archived)" : ""}`);
+  lines.push("", "## Final Eligibility");
+  for (const item of projection.finalEligibility.metrics) lines.push("", `- ${item.label}: ${item.value}`);
   lines.push("", "## Reporting Support");
   for (const mapping of projection.supportMatrix) lines.push("", `- ${mapping.label}: ${mapping.support} — ${mapping.explanation}`);
   lines.push("", "## Reporting Limitations");
@@ -165,8 +195,8 @@ export function createReviewReportingServices(db: Database, flowServices: { getR
   const repository = new ReviewReportingRepository(db);
   return {
     async getReviewReport(projectId: string) {
-      const [summary, context, exclusionReasons] = await Promise.all([flowServices.getReviewFlowSummary(projectId), repository.context(projectId), repository.exclusionReasons(projectId)]);
-      return buildReviewReportProjection({ summary, context, exclusionReasons });
+      const [summary, context, exclusionReasons, fullTextExclusionReasons] = await Promise.all([flowServices.getReviewFlowSummary(projectId), repository.context(projectId), repository.exclusionReasons(projectId), repository.fullTextExclusionReasons(projectId)]);
+      return buildReviewReportProjection({ summary, context, exclusionReasons, fullTextExclusionReasons });
     },
     async listReviewReportContributors(projectId: string, selector: ReviewReportContributorSelector): Promise<ReviewReportContributorResult> {
       return repository.contributors(projectId, selector);

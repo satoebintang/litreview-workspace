@@ -147,6 +147,42 @@ export async function recordScreeningDecisionAction(form: FormData) {
   redirect(`/projects/${projectId}/screening/${paperId}?saved=decision`);
 }
 
+export async function createFullTextScreeningCriterionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  try {
+    await reviewServices.createFullTextScreeningCriterion(projectId, { text: text(form, "text") });
+  } catch (error) {
+    fail(`/projects/${projectId}/screening/full-text`, error);
+  }
+  redirect(`/projects/${projectId}/screening/full-text?saved=criterion`);
+}
+
+export async function archiveFullTextScreeningCriterionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  try {
+    await reviewServices.archiveFullTextScreeningCriterion(projectId, text(form, "criterionId"));
+  } catch (error) {
+    fail(`/projects/${projectId}/screening/full-text`, error);
+  }
+  redirect(`/projects/${projectId}/screening/full-text?saved=criterion`);
+}
+
+export async function recordFullTextScreeningDecisionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  const decision = text(form, "decision");
+  try {
+    await reviewServices.recordFullTextScreeningDecision(projectId, paperId,
+      decision === "exclude"
+        ? { decision: "exclude", exclusionCriterionId: text(form, "exclusionCriterionId"), note: optional(form, "note") }
+        : { decision: decision as "include" | "maybe", note: optional(form, "note") },
+    );
+  } catch (error) {
+    fail(`/projects/${projectId}/screening/full-text/${paperId}`, error);
+  }
+  redirect(`/projects/${projectId}/screening/full-text/${paperId}?saved=decision`);
+}
+
 export async function createExtractionFieldAction(form: FormData) {
   const projectId = text(form, "projectId");
   try {

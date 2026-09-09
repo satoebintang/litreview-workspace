@@ -39,10 +39,20 @@ test.describe("Slice 4 evidence synthesis", () => {
     await expect(page.getByText("Out of scope for this review")).toBeVisible({ timeout: 30_000 });
     const screeningStart = await page.getByRole("link", { name: "Start screening" }).getAttribute("href");
     await page.goto(`${screeningStart}`);
-    await page.getByRole("button", { name: "Include", exact: true }).click();
+    const firstPaperId = new URL(page.url()).pathname.split("/").pop()!;
     const nextScreening = await page.getByRole("link", { name: "Next →" }).getAttribute("href");
-    await page.goto(`${nextScreening}`);
     await page.getByRole("button", { name: "Include", exact: true }).click();
+    await expect(page.locator(".status.screening-included")).toBeVisible();
+    await page.goto(`/projects/${projectId}/screening/full-text/${firstPaperId}`);
+    await page.getByRole("button", { name: "Include", exact: true }).click();
+    await expect(page.getByText("Full-text decision recorded in screening history.")).toBeVisible();
+    await page.goto(`${nextScreening}`);
+    const secondPaperId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.getByRole("button", { name: "Include", exact: true }).click();
+    await expect(page.locator(".status.screening-included")).toBeVisible();
+    await page.goto(`/projects/${projectId}/screening/full-text/${secondPaperId}`);
+    await page.getByRole("button", { name: "Include", exact: true }).click();
+    await expect(page.getByText("Full-text decision recorded in screening history.")).toBeVisible();
 
     await page.goto(`/projects/${projectId}/extraction`);
     await page.getByLabel("Field name").fill("Attack technique");

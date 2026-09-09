@@ -7,10 +7,14 @@ import postgres from "postgres";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { createDb } from "../../src/db/client";
 
-const DEFAULT_DATABASE_URL = "postgres://litreview:litreview@localhost:5432/litreview";
+const DEFAULT_DATABASE_URL = "postgres://litreview:litreview@127.0.0.1:5432/litreview";
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
 const databaseMarkerPath = path.resolve(process.cwd(), ".ai", "playwright-db.json");
 const nextBin = path.resolve(process.cwd(), "node_modules", "next", "dist", "bin", "next");
+const serverHost = "127.0.0.1";
+const serverPort = 3000;
+const readinessUrl = `http://${serverHost}:${serverPort}/`;
+const readinessTimeoutMs = 300_000;
 const requiredSchema = {
   research_questions: ["id", "project_id", "identifier", "label", "sort_order", "created_at", "updated_at", "archived_at"],
   search_sources: ["id", "project_id", "source_key", "display_name", "created_at", "updated_at", "archived_at"],
@@ -19,6 +23,8 @@ const requiredSchema = {
   retrieved_records: ["id", "project_id", "search_run_id", "search_source_id", "source_record_id", "title", "doi", "retrieved_at", "created_at"],
   retrieved_record_matches: ["id", "sequence", "project_id", "retrieved_record_id", "paper_id", "action", "created_at"],
   retrieved_record_deduplication_decisions: ["id", "sequence", "project_id", "left_retrieved_record_id", "right_retrieved_record_id", "decision", "created_at"],
+  full_text_screening_criteria: ["id", "project_id", "text", "sort_order", "created_at", "archived_at"],
+  full_text_screening_decisions: ["id", "sequence", "project_id", "paper_id", "decision", "exclusion_criterion_id", "note", "created_at"],
 } as const;
 
 type MigrationEntry = { idx: number; tag: string; when: number };
@@ -45,18 +51,77 @@ function createDatabaseName() {
   return `litreview_playwright_${process.pid}_${Date.now()}_${randomUUID().replaceAll("-", "").slice(0, 8)}`;
 }
 
-function waitForProcess(childProcess: ReturnType<typeof spawn>) {
+function databaseIdentity(databaseUrl: string) {
+  const url = new URL(databaseUrl);
+  return `${url.protocol}//${url.hostname}:${url.port || "(default)"}/${url.pathname.slice(1)}`;
+}
+
+function shellArgument(value: string) {
+  return /[\s"]/.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+}
+
+function logNextEnvironment(phase: string, args: string[], env: NodeJS.ProcessEnv) {
+  console.error(`[playwright-next] ${phase} command: ${shellArgument(process.execPath)} ${args.map(shellArgument).join(" ")}`);
+  console.error(`[playwright-next] ${phase} environment: DATABASE_URL=${databaseIdentity(env.DATABASE_URL ?? "")}; PORT=${env.PORT ?? "(unset)"}; HOSTNAME=${env.HOSTNAME ?? "(unset)"}; NODE_ENV=${env.NODE_ENV ?? "(unset)"}; CI=${env.CI ?? "(unset)"}`);
+}
+
+function waitForProcess(childProcess: ReturnType<typeof spawn>, phase: string) {
+  if (childProcess.exitCode !== null || childProcess.signalCode !== null) return Promise.resolve(childProcess.exitCode ?? (childProcess.signalCode ? 1 : 0));
   return new Promise<number>((resolve, reject) => {
-    childProcess.once("error", reject);
-    childProcess.once("exit", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
+    childProcess.once("error", (error) => {
+      console.error(`[playwright-next] ${phase} process error: ${error instanceof Error ? error.message : String(error)}`);
+      reject(error);
+    });
+    childProcess.once("exit", (code, signal) => {
+      const exitCode = code ?? (signal ? 1 : 0);
+      console.error(`[playwright-next] ${phase} process exited: code=${code ?? "null"}; signal=${signal ?? "none"}; effectiveExitCode=${exitCode}`);
+      resolve(exitCode);
+    });
   });
+}
+
+function spawnNext(phase: string, args: string[], env: NodeJS.ProcessEnv) {
+  logNextEnvironment(phase, args, env);
+  const childProcess = spawn(process.execPath, args, {
+    env,
+    stdio: "inherit",
+  });
+  return childProcess;
+}
+
+async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
+  const startedAt = Date.now();
+  let lastError = "no response";
+  while (Date.now() - startedAt < readinessTimeoutMs) {
+    if (childProcess.exitCode !== null) {
+      throw new Error(`Next exited before readiness: code=${childProcess.exitCode ?? "null"}; signal=${childProcess.signalCode ?? "none"}; last readiness error=${lastError}`);
+    }
+
+    const controller = new AbortController();
+    const requestTimeout = setTimeout(() => controller.abort(), 2_000);
+    try {
+      const response = await fetch(readinessUrl, { signal: controller.signal });
+      await response.text();
+      if (response.ok) {
+        console.error(`[playwright-next] readiness confirmed: ${readinessUrl}; status=${response.status}; elapsedMs=${Date.now() - startedAt}`);
+        return;
+      }
+      lastError = `HTTP ${response.status}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    } finally {
+      clearTimeout(requestTimeout);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Next readiness timed out after ${readinessTimeoutMs}ms at ${readinessUrl}; last readiness error=${lastError}; childExitCode=${childProcess.exitCode ?? "null"}`);
 }
 
 async function assertSchema(client: postgres.Sql, databaseName: string) {
   const { migrations } = readExpectedMigrations();
   const expectedLatest = migrations.at(-1);
-  if (!expectedLatest || expectedLatest.tag !== "0011_deduplication_flow") {
-    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0011_deduplication_flow, found ${expectedLatest?.tag ?? "none"}`);
+  if (!expectedLatest || expectedLatest.tag !== "0012_full_text_screening") {
+    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0012_full_text_screening, found ${expectedLatest?.tag ?? "none"}`);
   }
 
   const migrationRows = await client.unsafe("select id, hash, created_at from drizzle.__drizzle_migrations order by id") as unknown as MigrationRow[];
@@ -68,7 +133,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
     return [];
   });
   if (migrationRows.length !== migrations.length || migrationMismatches.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0011_deduplication_flow; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0012_full_text_screening; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
   }
 
   const tableNames = Object.keys(requiredSchema);
@@ -84,7 +149,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
   const missingColumns = Object.entries(requiredSchema).flatMap(([tableName, columns]) => columns.filter((columnName) => !actualColumns.get(tableName)?.has(columnName)).map((columnName) => `${tableName}.${columnName}`));
   const legacyColumns = await client.unsafe("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'projects' and column_name = 'research_question'") as unknown as Array<{ column_name: string }>;
   if (missingTables.length > 0 || missingColumns.length > 0 || legacyColumns.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0011_deduplication_flow; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `projects.${row.column_name}`).join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0012_full_text_screening; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `projects.${row.column_name}`).join(", ") || "none"}`);
   }
 }
 
@@ -94,15 +159,29 @@ async function main() {
   const databaseUrl = new URL(adminUrl);
   databaseUrl.pathname = `/${databaseName}`;
   const testDatabaseUrl = databaseUrl.toString();
+  const nextEnv: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: testDatabaseUrl, PORT: String(serverPort), HOSTNAME: serverHost };
+  delete nextEnv.FORCE_COLOR;
   const admin = postgres(adminUrl, { max: 1 });
   let child: ReturnType<typeof spawn> | undefined;
   let requestedExitCode: number | undefined;
+  const lifecycleStartedAt = Date.now();
+
+  console.error(`[playwright-lifecycle] webServer command=npm run e2e:server; readiness=${readinessUrl}; reuseExistingServer=false; timeoutMs=${readinessTimeoutMs}`);
+  console.error(`[playwright-db] admin database identity: ${databaseIdentity(adminUrl)}`);
+  console.error(`[playwright-db] effective test database identity: ${databaseIdentity(testDatabaseUrl)}`);
 
   const cleanup = async () => {
-    if (child && child.exitCode === null) child.kill("SIGTERM");
+    const processToStop = child;
+    if (processToStop && processToStop.exitCode === null && processToStop.signalCode === null) {
+      console.error(`[playwright-lifecycle] stopping Next process during cleanup: pid=${processToStop.pid ?? "unknown"}`);
+      if (!processToStop.killed) processToStop.kill("SIGTERM");
+      await waitForProcess(processToStop, "next-cleanup").catch((error) => console.error(`[playwright-lifecycle] Next cleanup wait failed: ${error instanceof Error ? error.message : String(error)}`));
+    }
+    child = undefined;
     await admin.unsafe(`drop database if exists ${quoteIdentifier(databaseName)} with (force)`);
     fs.rmSync(databaseMarkerPath, { force: true });
     await admin.end();
+    console.error(`[playwright-lifecycle] cleanup complete: database=${databaseName}; elapsedMs=${Date.now() - lifecycleStartedAt}`);
   };
 
   try {
@@ -116,27 +195,22 @@ async function main() {
     } finally {
       await database.client.end();
     }
-    console.error(`[playwright-db] ready: ${databaseName}; migrations through 0011_deduplication_flow verified`);
+    console.error(`[playwright-db] ready: ${databaseName}; migrations through 0012_full_text_screening verified`);
 
-    child = spawn(process.execPath, [nextBin, "build"], {
-      env: { ...process.env, DATABASE_URL: testDatabaseUrl },
-      stdio: "inherit",
-    });
-    const buildExitCode = await waitForProcess(child);
+    child = spawnNext("next-build", [nextBin, "build"], nextEnv);
+    const buildExitCode = await waitForProcess(child, "next-build");
     child = undefined;
     if (buildExitCode !== 0) throw new Error(`Next production build failed with exit code ${buildExitCode}`);
 
-    child = spawn(process.execPath, [nextBin, "start"], {
-      env: { ...process.env, DATABASE_URL: testDatabaseUrl },
-      stdio: "inherit",
-    });
+    child = spawnNext("next-start", [nextBin, "start", "--hostname", serverHost, "--port", String(serverPort)], nextEnv);
+    await waitForReadiness(child);
     const requestStop = (code: number) => {
       requestedExitCode = code;
       if (child?.exitCode === null) child.kill("SIGTERM");
     };
     process.once("SIGINT", () => requestStop(130));
     process.once("SIGTERM", () => requestStop(143));
-    const childExitCode = await waitForProcess(child);
+    const childExitCode = await waitForProcess(child, "next-start");
     await cleanup();
     process.exitCode = requestedExitCode ?? childExitCode;
   } catch (error) {

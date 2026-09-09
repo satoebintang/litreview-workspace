@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { evidence, papers, projects, screeningCriteria, screeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports } from "@/db/schema";
+import { evidence, papers, projects, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports } from "@/db/schema";
 
 type DbTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -30,6 +30,19 @@ export class PaperRepository {
     const [paper] = await this.db.select().from(papers)
       .where(and(eq(papers.projectId, projectId), eq(papers.id, id))).limit(1);
     return paper ?? null;
+  }
+
+  async findForUpdate(tx: DbTransaction, projectId: string, id: string) {
+    const [paper] = await tx.select().from(papers)
+      .where(and(eq(papers.projectId, projectId), eq(papers.id, id))).for("update").limit(1);
+    return paper ?? null;
+  }
+
+  async lockManyForUpdate(tx: DbTransaction, projectId: string, ids: string[]) {
+    if (!ids.length) return [];
+    return tx.select().from(papers)
+      .where(and(eq(papers.projectId, projectId), sql`${papers.id} in (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})`))
+      .orderBy(papers.id).for("update");
   }
 
   async list(projectId: string) {
@@ -277,8 +290,8 @@ export class ScreeningCriterionRepository {
     return criterion;
   }
 
-  async findById(projectId: string, id: string) {
-    const [criterion] = await this.db.select().from(screeningCriteria).where(and(
+  async findById(projectId: string, id: string, tx: DbTransaction | Database = this.db) {
+    const [criterion] = await tx.select().from(screeningCriteria).where(and(
       eq(screeningCriteria.projectId, projectId), eq(screeningCriteria.id, id),
     )).limit(1);
     return criterion ?? null;
@@ -301,13 +314,13 @@ export class ScreeningCriterionRepository {
 export class ScreeningDecisionRepository {
   constructor(private readonly db: Database) {}
 
-  async create(values: typeof screeningDecisions.$inferInsert) {
-    const [decision] = await this.db.insert(screeningDecisions).values(values).returning();
+  async create(values: typeof screeningDecisions.$inferInsert, tx: DbTransaction = this.db as unknown as DbTransaction) {
+    const [decision] = await tx.insert(screeningDecisions).values(values).returning();
     return decision;
   }
 
-  async currentForPaper(projectId: string, paperId: string) {
-    const [decision] = await this.db.select().from(screeningDecisions).where(and(
+  async currentForPaper(projectId: string, paperId: string, tx: DbTransaction | Database = this.db) {
+    const [decision] = await tx.select().from(screeningDecisions).where(and(
       eq(screeningDecisions.projectId, projectId),
       eq(screeningDecisions.paperId, paperId),
       eq(screeningDecisions.stage, "title_abstract"),
@@ -367,6 +380,120 @@ export class ScreeningDecisionRepository {
         screeningState: state as "unscreened" | "included" | "excluded" | "maybe", currentDecision: decision,
       };
     });
+  }
+}
+
+export class FullTextScreeningCriterionRepository {
+  constructor(private readonly db: Database) {}
+
+  async create(values: typeof fullTextScreeningCriteria.$inferInsert) {
+    const [criterion] = await this.db.insert(fullTextScreeningCriteria).values(values).returning();
+    return criterion;
+  }
+
+  async findById(projectId: string, id: string, tx: DbTransaction | Database = this.db) {
+    const [criterion] = await tx.select().from(fullTextScreeningCriteria).where(and(
+      eq(fullTextScreeningCriteria.projectId, projectId), eq(fullTextScreeningCriteria.id, id),
+    )).limit(1);
+    return criterion ?? null;
+  }
+
+  async list(projectId: string, includeArchived = false) {
+    return this.db.select().from(fullTextScreeningCriteria).where(and(
+      eq(fullTextScreeningCriteria.projectId, projectId),
+      includeArchived ? undefined : sql`${fullTextScreeningCriteria.archivedAt} is null`,
+    )).orderBy(fullTextScreeningCriteria.sortOrder, fullTextScreeningCriteria.id);
+  }
+
+  async archive(projectId: string, id: string) {
+    return this.db.update(fullTextScreeningCriteria).set({ archivedAt: new Date() }).where(and(
+      eq(fullTextScreeningCriteria.projectId, projectId), eq(fullTextScreeningCriteria.id, id),
+    )).returning();
+  }
+}
+
+export class FullTextScreeningDecisionRepository {
+  constructor(private readonly db: Database) {}
+
+  async create(values: typeof fullTextScreeningDecisions.$inferInsert, tx: DbTransaction = this.db as unknown as DbTransaction) {
+    const [decision] = await tx.insert(fullTextScreeningDecisions).values(values).returning();
+    return decision;
+  }
+
+  async currentForPaper(projectId: string, paperId: string, tx: DbTransaction | Database = this.db) {
+    const [decision] = await tx.select().from(fullTextScreeningDecisions).where(and(
+      eq(fullTextScreeningDecisions.projectId, projectId), eq(fullTextScreeningDecisions.paperId, paperId),
+    )).orderBy(desc(fullTextScreeningDecisions.sequence)).limit(1);
+    return decision ?? null;
+  }
+
+  async listForPaper(projectId: string, paperId: string, tx: DbTransaction | Database = this.db) {
+    return tx.select().from(fullTextScreeningDecisions).where(and(
+      eq(fullTextScreeningDecisions.projectId, projectId), eq(fullTextScreeningDecisions.paperId, paperId),
+    )).orderBy(fullTextScreeningDecisions.sequence);
+  }
+}
+
+export class PaperReviewRepository {
+  constructor(private readonly db: Database) {}
+
+  async list(projectId: string, tx: DbTransaction | Database = this.db) {
+    return tx.execute(sql`
+      with latest_title_abstract as (
+        select distinct on (project_id, paper_id) project_id, paper_id, decision
+        from screening_decisions
+        where project_id=${projectId} and stage='title_abstract'
+        order by project_id, paper_id, sequence desc
+      ), latest_full_text as (
+        select distinct on (project_id, paper_id) project_id, paper_id, decision
+        from full_text_screening_decisions
+        where project_id=${projectId}
+        order by project_id, paper_id, sequence desc
+      ), analytical_history as (
+        select distinct project_id, paper_id
+        from extraction_value_revisions
+        where project_id=${projectId} and finalized_at is not null
+      )
+      select p.id as paper_id, p.project_id, ta.decision as title_abstract_decision,
+        ft.decision as full_text_decision,
+        (ah.paper_id is not null) as has_analytical_history
+      from papers p
+      left join latest_title_abstract ta on ta.project_id=p.project_id and ta.paper_id=p.id
+      left join latest_full_text ft on ft.project_id=p.project_id and ft.paper_id=p.id
+      left join analytical_history ah on ah.project_id=p.project_id and ah.paper_id=p.id
+      where p.project_id=${projectId}
+      order by p.id
+    `);
+  }
+
+  async find(projectId: string, paperId: string, tx: DbTransaction | Database = this.db) {
+    const rows = await tx.execute(sql`
+      with latest_title_abstract as (
+        select decision
+        from screening_decisions
+        where project_id=${projectId} and paper_id=${paperId} and stage='title_abstract'
+        order by sequence desc
+        limit 1
+      ), latest_full_text as (
+        select decision
+        from full_text_screening_decisions
+        where project_id=${projectId} and paper_id=${paperId}
+        order by sequence desc
+        limit 1
+      ), analytical_history as (
+        select exists (
+          select 1 from extraction_value_revisions
+          where project_id=${projectId} and paper_id=${paperId} and finalized_at is not null
+        ) as has_analytical_history
+      )
+      select
+        (select decision from latest_title_abstract) as title_abstract_decision,
+        (select decision from latest_full_text) as full_text_decision,
+        (select has_analytical_history from analytical_history) as has_analytical_history
+      from papers p
+      where p.project_id=${projectId} and p.id=${paperId}
+    `);
+    return (rows as unknown as Record<string, unknown>[])[0] ?? null;
   }
 }
 
@@ -564,6 +691,7 @@ export class SynthesisRevisionSupportRepository {
         exists(select 1 from extraction_revision_evidence erel where erel.project_id=r.project_id and erel.revision_id=r.id) as has_evidence
       from papers p
       join lateral (select d.decision from screening_decisions d where d.project_id=p.project_id and d.paper_id=p.id and d.stage='title_abstract' order by d.sequence desc limit 1) sd on sd.decision='include'
+      join lateral (select d.decision from full_text_screening_decisions d where d.project_id=p.project_id and d.paper_id=p.id order by d.sequence desc limit 1) ft on ft.decision='include'
       join extraction_fields f on f.project_id=p.project_id and f.id=${fieldId} and f.archived_at is null
       left join extraction_values v on v.project_id=p.project_id and v.paper_id=p.id and v.field_id=f.id
       left join lateral (select r.* from extraction_value_revisions r where r.project_id=p.project_id and r.extraction_value_id=v.id and r.finalized_at is not null order by r.sequence desc limit 1) r on true

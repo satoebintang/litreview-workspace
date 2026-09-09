@@ -85,6 +85,13 @@
       "when": 1788820000000,
       "tag": "0011_deduplication_flow",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788998400000,
+      "tag": "0012_full_text_screening",
+      "breakpoints": true
     }
   ]
 }

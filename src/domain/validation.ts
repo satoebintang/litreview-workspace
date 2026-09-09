@@ -86,6 +86,16 @@ export const recordScreeningDecisionSchema = z.discriminatedUnion("decision", [
   z.object({ decision: z.literal("exclude"), exclusionCriterionId: idSchema, note: optionalText }),
 ]);
 
+export const createFullTextScreeningCriterionSchema = z.object({
+  text: z.string().trim().min(1).max(1000),
+});
+
+export const recordFullTextScreeningDecisionSchema = z.discriminatedUnion("decision", [
+  z.object({ decision: z.literal("include"), note: optionalText }),
+  z.object({ decision: z.literal("maybe"), note: optionalText }),
+  z.object({ decision: z.literal("exclude"), exclusionCriterionId: idSchema, note: optionalText }),
+]);
+
 export const extractionFieldTypeSchema = z.enum(["short_text", "long_text", "number", "boolean", "single_select"]);
 export const extractionValueStateSchema = z.enum(["present", "not_reported", "not_applicable", "cleared"]);
 
@@ -276,6 +286,8 @@ export type CreateClaimRevisionInput = z.input<typeof createClaimRevisionSchema>
 export type WithdrawClaimInput = z.input<typeof withdrawClaimSchema>;
 export type CreateScreeningCriterionInput = z.input<typeof createScreeningCriterionSchema>;
 export type RecordScreeningDecisionInput = z.input<typeof recordScreeningDecisionSchema>;
+export type CreateFullTextScreeningCriterionInput = z.input<typeof createFullTextScreeningCriterionSchema>;
+export type RecordFullTextScreeningDecisionInput = z.input<typeof recordFullTextScreeningDecisionSchema>;
 export type CreateExtractionFieldInput = z.input<typeof createExtractionFieldSchema>;
 export type UpdateExtractionFieldInput = z.input<typeof updateExtractionFieldSchema>;
 export type CreateExtractionOptionInput = z.input<typeof createExtractionOptionSchema>;

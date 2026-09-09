@@ -131,7 +131,11 @@ export class DeduplicationDecisionRepository {
         order by project_id, retrieved_record_id, sequence desc
       ), current_screening as (
         select distinct on (project_id, paper_id) project_id, paper_id, decision, exclusion_criterion_id
-        from screening_decisions where project_id = ${projectId}
+        from screening_decisions where project_id = ${projectId} and stage = 'title_abstract'
+        order by project_id, paper_id, sequence desc
+      ), current_full_text as (
+        select distinct on (project_id, paper_id) project_id, paper_id, decision
+        from full_text_screening_decisions where project_id = ${projectId}
         order by project_id, paper_id, sequence desc
       ), current_decisions as (
         select distinct on (project_id, left_retrieved_record_id, right_retrieved_record_id)
@@ -171,6 +175,15 @@ export class DeduplicationDecisionRepository {
         (select count(*)::int from current_screening where project_id=${projectId} and decision='include') as included,
         (select count(*)::int from current_screening where project_id=${projectId} and decision='exclude') as excluded,
         (select count(*)::int from current_screening where project_id=${projectId} and decision='maybe') as maybe,
+        (select count(*)::int from current_screening where project_id=${projectId} and decision='include') as full_text_eligible,
+        (select count(*)::int from current_screening s where s.project_id=${projectId} and s.decision='include' and not exists (select 1 from current_full_text f where f.project_id=s.project_id and f.paper_id=s.paper_id)) as full_text_awaiting,
+        (select count(*)::int from current_screening s join current_full_text f on f.project_id=s.project_id and f.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and f.decision in ('include','exclude','maybe')) as full_text_assessed,
+        (select count(*)::int from current_screening s join current_full_text f on f.project_id=s.project_id and f.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and f.decision='include') as full_text_included,
+        (select count(*)::int from current_screening s join current_full_text f on f.project_id=s.project_id and f.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and f.decision='exclude') as full_text_excluded,
+        (select count(*)::int from current_screening s join current_full_text f on f.project_id=s.project_id and f.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and f.decision='maybe') as full_text_maybe,
+        (select count(*)::int from current_full_text f left join current_screening s on s.project_id=f.project_id and s.paper_id=f.paper_id where f.project_id=${projectId} and coalesce(s.decision, '') <> 'include') as full_text_conflicts,
+        (select count(*)::int from current_screening s join current_full_text f on f.project_id=s.project_id and f.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and f.decision='include') as finally_included,
+        (select count(distinct r.paper_id)::int from extraction_value_revisions r left join current_full_text f on f.project_id=r.project_id and f.paper_id=r.paper_id where r.project_id=${projectId} and r.finalized_at is not null and f.paper_id is null) as legacy_analysis_awaiting_full_text,
         (select count(*)::int from paper_classification where historical_acquisition and not current_acquisition) as historical_acquisition_only_papers,
         (select count(*)::int from paper_classification where not historical_acquisition) as manual_papers
     `);

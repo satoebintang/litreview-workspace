@@ -35,8 +35,13 @@ import {
   type SynthesisRevisionInput,
   type SynthesisWithdrawalInput,
   type ExtractionComparisonFilter,
+  createFullTextScreeningCriterionSchema,
+  recordFullTextScreeningDecisionSchema,
+  type CreateFullTextScreeningCriterionInput,
+  type RecordFullTextScreeningDecisionInput,
 } from "@/domain/validation";
-import type { ExtractionFieldType } from "@/domain/types";
+import type { ExtractionFieldType, PaperReviewStatus, ScreeningDecisionValue } from "@/domain/types";
+import { derivePaperReviewStatus, isFinallyIncluded } from "@/domain/paper-review";
 import {
   ClaimRepository,
   EvidenceRepository,
@@ -54,6 +59,9 @@ import {
   SynthesisRevisionSupportRepository,
   ClaimRevisionRepository,
   ClaimRevisionSupportRepository,
+  FullTextScreeningCriterionRepository,
+  FullTextScreeningDecisionRepository,
+  PaperReviewRepository,
 } from "./repositories";
 import { createManuscriptServices } from "./manuscript-services";
 import { createAcquisitionServices } from "./acquisition-services";
@@ -98,6 +106,9 @@ export function createReviewServices(db: Database) {
   const synthesisSupportRepo = new SynthesisRevisionSupportRepository(db);
   const claimRevisionRepo = new ClaimRevisionRepository(db);
   const claimRevisionSupportRepo = new ClaimRevisionSupportRepository(db);
+  const fullTextCriterionRepo = new FullTextScreeningCriterionRepository(db);
+  const fullTextDecisionRepo = new FullTextScreeningDecisionRepository(db);
+  const paperReviewRepo = new PaperReviewRepository(db);
 
   async function requireProject(projectId: string) {
     ensureId(projectId);
@@ -147,11 +158,48 @@ export function createReviewServices(db: Database) {
     return field;
   }
 
-  async function requireIncludedPaper(projectId: string, paperId: string) {
-    const paper = await requirePaper(projectId, paperId);
-    const decision = await decisionRepo.currentForPaper(projectId, paperId);
-    if (!decision || decision.decision !== "include") throw new DomainError("VALIDATION_ERROR", "Extraction is available only for included papers");
-    return paper;
+  function rowDecision(row: Record<string, unknown> | null | undefined, key: string): ScreeningDecisionValue | null {
+    const value = row?.[key];
+    return value === "include" || value === "exclude" || value === "maybe" ? value : null;
+  }
+
+  function statusFromRow(row: Record<string, unknown> | null | undefined): PaperReviewStatus {
+    return derivePaperReviewStatus({
+      titleAbstractDecision: rowDecision(row, "title_abstract_decision"),
+      fullTextDecision: rowDecision(row, "full_text_decision"),
+      hasAnalyticalHistory: Boolean(row?.has_analytical_history),
+    });
+  }
+
+  async function requireFinallyIncludedPaperLocked(tx: ReviewTransaction, projectId: string, paperId: string) {
+    const paper = await paperRepo.findForUpdate(tx, projectId, paperId);
+    if (!paper) throw new DomainError("CROSS_PROJECT_REFERENCE", "Paper does not belong to this project");
+    const status = statusFromRow(await paperReviewRepo.find(projectId, paperId, tx) as Record<string, unknown>);
+    if (!isFinallyIncluded(status)) throw new DomainError("VALIDATION_ERROR", "New analytical work is available only for finally included papers");
+    return { paper, status };
+  }
+
+  async function lockExtractionRevisionPapers(tx: ReviewTransaction, projectId: string, extractionRevisionIds: string[]) {
+    if (!extractionRevisionIds.length) return [];
+    const rows = await tx.execute(sql`
+      select distinct paper_id from extraction_value_revisions
+      where project_id=${projectId} and id in (${sql.join(extractionRevisionIds.map((id) => sql`${id}::uuid`), sql`, `)})
+      order by paper_id
+    `) as unknown as Array<Record<string, unknown>>;
+    const paperIds = rows.map((row) => String(row.paper_id)).sort();
+    await paperRepo.lockManyForUpdate(tx, projectId, paperIds);
+    return paperIds;
+  }
+
+  async function getPaperReviewStatusFor(projectId: string, paperId: string, tx: ReviewTransaction | Database = db) {
+    const row = await paperReviewRepo.find(projectId, paperId, tx);
+    if (!row) throw new DomainError("CROSS_PROJECT_REFERENCE", "Paper does not belong to this project");
+    return statusFromRow(row as unknown as Record<string, unknown>);
+  }
+
+  async function listPaperReviewStatusesFor(projectId: string, tx: ReviewTransaction | Database = db) {
+    const rows = await paperReviewRepo.list(projectId, tx);
+    return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({ paperId: String(row.paper_id), status: statusFromRow(row) }));
   }
 
   function typedRevisionPayload(fieldType: ExtractionFieldType, input: ReviseExtractionValueInput) {
@@ -240,7 +288,8 @@ export function createReviewServices(db: Database) {
       select r.id, r.project_id, r.paper_id, r.field_id, r.extraction_value_id, r.field_type, r.value_state,
         r.text_value, r.number_value, r.boolean_value, r.option_id, r.researcher_note, r.created_at, r.finalized_at,
         p.id as paper_id_value,
-        coalesce((select sd.decision from screening_decisions sd where sd.project_id=r.project_id and sd.paper_id=r.paper_id and sd.stage='title_abstract' order by sd.sequence desc limit 1), 'unscreened') as screening_state
+        coalesce((select sd.decision from screening_decisions sd where sd.project_id=r.project_id and sd.paper_id=r.paper_id and sd.stage='title_abstract' order by sd.sequence desc limit 1), 'unscreened') as screening_state,
+        (select fd.decision from full_text_screening_decisions fd where fd.project_id=r.project_id and fd.paper_id=r.paper_id order by fd.sequence desc limit 1) as full_text_state
       from extraction_value_revisions r join papers p on p.project_id=r.project_id and p.id=r.paper_id
       where r.project_id=${projectId} and r.id in (${sql.join(extractionRevisionIds.map((id) => sql`${id}::uuid`), sql`, `)})
     `)) as unknown as Record<string, unknown>[];
@@ -248,7 +297,7 @@ export function createReviewServices(db: Database) {
     for (const row of rows) {
       if (row.finalized_at == null) throw new DomainError("VALIDATION_ERROR", "Synthesis support must use finalized extraction revisions");
       if (String(row.value_state) === "cleared") throw new DomainError("VALIDATION_ERROR", "Cleared extraction revisions cannot support new synthesis");
-      if (String(row.screening_state) !== "include") throw new DomainError("VALIDATION_ERROR", "New synthesis support is limited to currently included papers");
+      if (String(row.screening_state) !== "include" || String(row.full_text_state) !== "include") throw new DomainError("VALIDATION_ERROR", "New synthesis support is limited to currently finally included papers");
     }
     return rows;
   }
@@ -303,11 +352,14 @@ export function createReviewServices(db: Database) {
         const rows = await executor.execute(sql`select id from evidence where project_id=${projectId} and id=${id}`);
         if (!(rows as unknown[]).length) throw new DomainError("CROSS_PROJECT_REFERENCE", "Evidence does not belong to this project");
       } else if (support.kind === "extractionRevision") {
-        const rows = await executor.execute(sql`select r.finalized_at, r.value_state, coalesce((select sd.decision from screening_decisions sd where sd.project_id=r.project_id and sd.paper_id=r.paper_id and sd.stage='title_abstract' order by sd.sequence desc limit 1), 'unscreened') as screening_state from extraction_value_revisions r where r.project_id=${projectId} and r.id=${id}`) as unknown as Record<string, unknown>[];
+        const rows = await executor.execute(sql`select r.finalized_at, r.value_state,
+          coalesce((select sd.decision from screening_decisions sd where sd.project_id=r.project_id and sd.paper_id=r.paper_id and sd.stage='title_abstract' order by sd.sequence desc limit 1), 'unscreened') as screening_state,
+          (select fd.decision from full_text_screening_decisions fd where fd.project_id=r.project_id and fd.paper_id=r.paper_id order by fd.sequence desc limit 1) as full_text_state
+          from extraction_value_revisions r where r.project_id=${projectId} and r.id=${id}`) as unknown as Record<string, unknown>[];
         if (!rows.length) throw new DomainError("CROSS_PROJECT_REFERENCE", "Extraction revision does not belong to this project");
         if (!rows[0].finalized_at) throw new DomainError("VALIDATION_ERROR", "Claim support must use a finalized extraction revision");
         if (String(rows[0].value_state) === "cleared") throw new DomainError("VALIDATION_ERROR", "Cleared extraction revisions cannot support a new claim");
-        if (String(rows[0].screening_state) !== "include") throw new DomainError("VALIDATION_ERROR", "New extraction support is limited to currently included papers");
+        if (String(rows[0].screening_state) !== "include" || String(rows[0].full_text_state) !== "include") throw new DomainError("VALIDATION_ERROR", "New extraction support is limited to currently finally included papers");
       } else {
         const rows = await executor.execute(sql`select r.finalized_at, r.state, (select current_r.state from synthesis_revisions current_r where current_r.project_id=r.project_id and current_r.synthesis_statement_id=r.synthesis_statement_id and current_r.finalized_at is not null order by current_r.sequence desc limit 1) as current_statement_state from synthesis_revisions r where r.project_id=${projectId} and r.id=${id}`) as unknown as Record<string, unknown>[];
         if (!rows.length) throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis revision does not belong to this project");
@@ -319,11 +371,12 @@ export function createReviewServices(db: Database) {
 
   async function createClaimRevisionSnapshot(projectId: string, claimId: string, input: CreateClaimRevisionInput, tx: ReviewTransaction) {
     const values = validate(createClaimRevisionSchema, input);
+    const supports = (values.supports ?? []) as ClaimSupportSnapshot[];
+    await lockExtractionRevisionPapers(tx, projectId, supports.filter((support) => support.kind === "extractionRevision").map((support) => String(support.extractionRevisionId)));
     const locked = await claimRevisionRepo.findForUpdate(tx, projectId, claimId);
     if (!locked) throw new DomainError("CROSS_PROJECT_REFERENCE", "Claim does not belong to this project");
     const current = await currentClaimRevision(tx, projectId, claimId);
     if (values.expectedCurrentRevisionId !== undefined && (values.expectedCurrentRevisionId ?? null) !== (current ? String(current.id) : null)) throw new DomainError("VALIDATION_ERROR", "Claim changed while this revision was being prepared");
-    const supports = (values.supports ?? []) as ClaimSupportSnapshot[];
     await validateClaimSupports(projectId, supports, tx);
     const draft = await claimRevisionRepo.createDraft(tx, { projectId, claimId, state: values.lifecycle ?? "active", claimText: values.claimText ?? null, researcherNote: values.researcherNote ?? null });
     if (!draft) throw new DomainError("DATABASE_CONSTRAINT", "Claim revision could not be created");
@@ -458,6 +511,7 @@ export function createReviewServices(db: Database) {
         currentState: currentDecision ? ({ include: "included", exclude: "excluded", maybe: "maybe" }[currentDecision.decision]) : "unscreened" as const,
         currentDecision,
         history,
+        reviewStatus: await getPaperReviewStatusFor(projectId, paperId),
       };
     },
 
@@ -468,26 +522,114 @@ export function createReviewServices(db: Database) {
     },
 
     async recordScreeningDecision(projectId: string, paperId: string, input: RecordScreeningDecisionInput) {
-      await requirePaper(projectId, paperId);
+      await requireProject(projectId);
       const values = validate(recordScreeningDecisionSchema, input);
-      let exclusionCriterionId: string | null = null;
-      let exclusionCriterionType: "exclusion" | null = null;
-      if (values.decision === "exclude") {
-        const criterion = await requireCriterion(projectId, values.exclusionCriterionId);
-        if (criterion.type !== "exclusion") throw new DomainError("VALIDATION_ERROR", "Exclude decisions require an exclusion criterion");
-        if (criterion.archivedAt) throw new DomainError("VALIDATION_ERROR", "Archived criteria cannot be used for new decisions");
-        exclusionCriterionId = criterion.id;
-        exclusionCriterionType = "exclusion";
-      }
-      try {
-        return await decisionRepo.create({
-          projectId, paperId, stage: "title_abstract", decision: values.decision,
-          exclusionCriterionId, exclusionCriterionType, note: values.note ?? null,
-        });
-      } catch (error) {
-        if (isConstraintError(error)) throw new DomainError("CROSS_PROJECT_REFERENCE", "Screening references an invalid project record");
-        throw error;
-      }
+      return db.transaction(async (tx) => {
+        const paper = await paperRepo.findForUpdate(tx, projectId, paperId);
+        if (!paper) throw new DomainError("CROSS_PROJECT_REFERENCE", "Paper does not belong to this project");
+        let exclusionCriterionId: string | null = null;
+        let exclusionCriterionType: "exclusion" | null = null;
+        if (values.decision === "exclude") {
+          const criterion = await criterionRepo.findById(projectId, values.exclusionCriterionId, tx);
+          if (!criterion) throw new DomainError("CROSS_PROJECT_REFERENCE", "Criterion does not belong to this project");
+          if (criterion.type !== "exclusion") throw new DomainError("VALIDATION_ERROR", "Exclude decisions require an exclusion criterion");
+          if (criterion.archivedAt) throw new DomainError("VALIDATION_ERROR", "Archived criteria cannot be used for new decisions");
+          exclusionCriterionId = criterion.id;
+          exclusionCriterionType = "exclusion";
+        }
+        try {
+          return await decisionRepo.create({
+            projectId, paperId, stage: "title_abstract", decision: values.decision,
+            exclusionCriterionId, exclusionCriterionType, note: values.note ?? null,
+          }, tx);
+        } catch (error) {
+          if (isConstraintError(error)) throw new DomainError("CROSS_PROJECT_REFERENCE", "Screening references an invalid project record");
+          throw error;
+        }
+      });
+    },
+
+    async listFullTextScreeningCriteria(projectId: string, includeArchived = false) {
+      await requireProject(projectId);
+      return fullTextCriterionRepo.list(projectId, includeArchived);
+    },
+
+    async createFullTextScreeningCriterion(projectId: string, input: CreateFullTextScreeningCriterionInput) {
+      await requireProject(projectId);
+      const values = validate(createFullTextScreeningCriterionSchema, input);
+      return fullTextCriterionRepo.create({ projectId, text: values.text });
+    },
+
+    async archiveFullTextScreeningCriterion(projectId: string, criterionId: string) {
+      await requireProject(projectId);
+      ensureId(criterionId);
+      const criterion = await fullTextCriterionRepo.findById(projectId, criterionId);
+      if (!criterion) throw new DomainError("CROSS_PROJECT_REFERENCE", "Full-text criterion does not belong to this project");
+      if (criterion.archivedAt) return criterion;
+      const archived = await fullTextCriterionRepo.archive(projectId, criterionId);
+      return archived[0] ?? criterion;
+    },
+
+    async getPaperReviewStatus(projectId: string, paperId: string) {
+      await requirePaper(projectId, paperId);
+      return getPaperReviewStatusFor(projectId, paperId);
+    },
+
+    async listPaperReviewStatuses(projectId: string) {
+      await requireProject(projectId);
+      return listPaperReviewStatusesFor(projectId);
+    },
+
+    async getPaperFullTextScreening(projectId: string, paperId: string) {
+      const paper = await requirePaper(projectId, paperId);
+      const [criteria, currentDecision, decisions, reviewStatus] = await Promise.all([
+        fullTextCriterionRepo.list(projectId), fullTextDecisionRepo.currentForPaper(projectId, paperId), fullTextDecisionRepo.listForPaper(projectId, paperId), getPaperReviewStatusFor(projectId, paperId),
+      ]);
+      const history = await Promise.all(decisions.map(async (decision) => ({
+        ...decision,
+        exclusionCriterion: decision.exclusionCriterionId ? await fullTextCriterionRepo.findById(projectId, decision.exclusionCriterionId) : null,
+      })));
+      return { paper, criteria, currentState: reviewStatus.fullTextState, currentDecision, history, reviewStatus };
+    },
+
+    async listFullTextScreeningQueue(projectId: string, state?: "awaiting" | "included" | "excluded" | "maybe" | "conflict") {
+      await requireProject(projectId);
+      const [papers, statuses] = await Promise.all([paperRepo.list(projectId), listPaperReviewStatusesFor(projectId)]);
+      const statusByPaperId = new Map(statuses.map((item) => [item.paperId, item.status]));
+      const queue = papers.map((paper) => ({ paper, reviewStatus: statusByPaperId.get(paper.id)! })).filter((item) => {
+        const { reviewStatus } = item;
+        if (state === "conflict") return reviewStatus.crossStageConflict;
+        if (state === "awaiting") return reviewStatus.finalEligibility === "pending_full_text";
+        if (state === "included") return reviewStatus.finalEligibility === "included";
+        if (state === "excluded") return reviewStatus.finalEligibility === "excluded";
+        if (state === "maybe") return reviewStatus.finalEligibility === "unresolved_full_text";
+        return reviewStatus.titleAbstractState === "included" || reviewStatus.crossStageConflict;
+      });
+      return queue;
+    },
+
+    async recordFullTextScreeningDecision(projectId: string, paperId: string, input: RecordFullTextScreeningDecisionInput) {
+      await requireProject(projectId);
+      const values = validate(recordFullTextScreeningDecisionSchema, input);
+      return db.transaction(async (tx) => {
+        const paper = await paperRepo.findForUpdate(tx, projectId, paperId);
+        if (!paper) throw new DomainError("CROSS_PROJECT_REFERENCE", "Paper does not belong to this project");
+        const currentTa = await decisionRepo.currentForPaper(projectId, paperId, tx);
+        if (!currentTa || currentTa.decision !== "include") throw new DomainError("VALIDATION_ERROR", "Full-text screening requires a current title/abstract include decision");
+        let exclusionCriterionId: string | null = null;
+        if (values.decision === "exclude") {
+          const criterion = await fullTextCriterionRepo.findById(projectId, values.exclusionCriterionId, tx);
+          if (!criterion) throw new DomainError("CROSS_PROJECT_REFERENCE", "Full-text criterion does not belong to this project");
+          if (criterion.archivedAt) throw new DomainError("VALIDATION_ERROR", "Archived full-text criteria cannot be used for new decisions");
+          exclusionCriterionId = criterion.id;
+        }
+        try {
+          return await fullTextDecisionRepo.create({ projectId, paperId, decision: values.decision, exclusionCriterionId, note: values.note ?? null }, tx);
+        } catch (error) {
+          if (isConstraintError(error)) throw new DomainError("CROSS_PROJECT_REFERENCE", "Full-text screening references an invalid project record");
+          throw error;
+        }
+      });
     },
 
     async listExtractionFields(projectId: string, includeArchived = false) {
@@ -550,19 +692,20 @@ export function createReviewServices(db: Database) {
     },
 
     async reviseExtractionValue(projectId: string, paperId: string, fieldId: string, input: ReviseExtractionValueInput) {
-      await requireIncludedPaper(projectId, paperId);
-      const field = await requireExtractionField(projectId, fieldId, false);
-      const values = validate(reviseExtractionValueSchema, input);
-      const payload = typedRevisionPayload(field.fieldType as ExtractionFieldType, values);
-      const evidenceIds = [...new Set(values.evidenceIds ?? [])];
-      if (evidenceIds.length !== (values.evidenceIds ?? []).length) throw new DomainError("VALIDATION_ERROR", "Evidence cannot be repeated in one revision");
-      if (payload.optionId) {
-        const option = await extractionOptionRepo.findById(projectId, payload.optionId);
-        if (!option || option.fieldId !== field.id || option.archivedAt) throw new DomainError("CROSS_PROJECT_REFERENCE", "Option does not belong to this active extraction field");
-      }
-      const evidenceItems = await Promise.all(evidenceIds.map((id) => requireEvidence(projectId, id)));
-      if (evidenceItems.some((item) => item.paperId !== paperId)) throw new DomainError("CROSS_PROJECT_REFERENCE", "Evidence must belong to the same paper as the extraction value");
+      await requireProject(projectId);
       return db.transaction(async (tx) => {
+        await requireFinallyIncludedPaperLocked(tx, projectId, paperId);
+        const field = await requireExtractionField(projectId, fieldId, false);
+        const values = validate(reviseExtractionValueSchema, input);
+        const payload = typedRevisionPayload(field.fieldType as ExtractionFieldType, values);
+        const evidenceIds = [...new Set(values.evidenceIds ?? [])];
+        if (evidenceIds.length !== (values.evidenceIds ?? []).length) throw new DomainError("VALIDATION_ERROR", "Evidence cannot be repeated in one revision");
+        if (payload.optionId) {
+          const option = await extractionOptionRepo.findById(projectId, payload.optionId);
+          if (!option || option.fieldId !== field.id || option.archivedAt) throw new DomainError("CROSS_PROJECT_REFERENCE", "Option does not belong to this active extraction field");
+        }
+        const evidenceItems = await Promise.all(evidenceIds.map((id) => requireEvidence(projectId, id)));
+        if (evidenceItems.some((item) => item.paperId !== paperId)) throw new DomainError("CROSS_PROJECT_REFERENCE", "Evidence must belong to the same paper as the extraction value");
         let slot = await tx.select().from(extractionValues).where(and(eq(extractionValues.projectId, projectId), eq(extractionValues.paperId, paperId), eq(extractionValues.fieldId, field.id))).limit(1).then((rows) => rows[0]);
         if (!slot) {
           const rows = await tx.insert(extractionValues).values({ projectId, paperId, fieldId: field.id }).returning();
@@ -612,7 +755,7 @@ export function createReviewServices(db: Database) {
         const support = current ? await extractionEvidenceRepo.listForRevision(projectId, paperId, current.id) : [];
         return { ...(slot ?? { id: "", projectId, paperId, fieldId: field.id, createdAt: null, updatedAt: null }), field, currentRevision: current ? { ...current, evidence: support.map((row) => row.item) } : null, supportStatus: current && current.valueState !== "cleared" && support.length > 0 ? "grounded" as const : "ungrounded" as const };
       }));
-      return { paper, fields, values };
+      return { paper, fields, values, reviewStatus: await getPaperReviewStatusFor(projectId, paperId) };
     },
 
     async getExtractionValueHistory(projectId: string, paperId: string, fieldId: string) {
@@ -626,17 +769,23 @@ export function createReviewServices(db: Database) {
 
     async getProjectExtractionProgress(projectId: string) {
       await requireProject(projectId);
-      const [papersWithState, fields] = await Promise.all([decisionRepo.listPapersWithCurrentState(projectId), extractionFieldRepo.list(projectId)]);
-      const included = papersWithState.filter((paper) => paper.screeningState === "included");
+      const [papersWithState, fields, reviewStatuses] = await Promise.all([decisionRepo.listPapersWithCurrentState(projectId), extractionFieldRepo.list(projectId), listPaperReviewStatusesFor(projectId)]);
+      const reviewStatusByPaperId = new Map(reviewStatuses.map((item) => [item.paperId, item.status]));
+      const included = papersWithState.filter((paper) => reviewStatusByPaperId.get(paper.id)?.finalEligibility === "included");
+      const historical = papersWithState.filter((paper) => {
+        const status = reviewStatusByPaperId.get(paper.id);
+        return status?.finalEligibility !== "included" && status?.warnings.includes("legacy_analysis_precedes_full_text_screening");
+      });
       const required = fields.filter((field) => field.required);
-      const progress = await Promise.all(included.map(async (paper) => {
+      const progress = await Promise.all([...included, ...historical].map(async (paper) => {
         const extraction = await this.getPaperExtraction(projectId, paper.id);
         const completed = extraction.values.filter((value) => value.field.required && value.currentRevision && ["present", "not_reported", "not_applicable"].includes(value.currentRevision.valueState)).length;
         const started = extraction.values.some((value) => value.currentRevision && value.currentRevision.valueState !== "cleared");
         const status = required.length === 0 ? "not_configured" : completed === required.length ? "complete" : started ? "partial" : "not_started";
-        return { paper, completedRequired: completed, requiredCount: required.length, status, percentage: required.length ? Math.round((completed / required.length) * 100) : null };
+        const reviewStatus = reviewStatusByPaperId.get(paper.id)!;
+        return { paper, completedRequired: completed, requiredCount: required.length, status, percentage: required.length ? Math.round((completed / required.length) * 100) : null, reviewStatus, writeEligible: reviewStatus.finalEligibility === "included" };
       }));
-      return { includedPaperCount: included.length, requiredFieldCount: required.length, papers: progress };
+      return { includedPaperCount: included.length, historicalPaperCount: historical.length, requiredFieldCount: required.length, papers: progress };
     },
 
     async createSynthesisStatement(projectId: string, input: SynthesisRevisionInput) {
@@ -644,10 +793,11 @@ export function createReviewServices(db: Database) {
       const values = validate(synthesisRevisionInputSchema, input);
       const ids = values.extractionRevisionIds ?? [];
       return db.transaction(async (tx) => {
+        await lockExtractionRevisionPapers(tx, projectId, ids);
+        await validateSynthesisSupports(projectId, ids, tx);
         const statementRows = await tx.insert(synthesisStatements).values({ projectId }).returning();
         const statement = statementRows[0];
         await synthesisStatementRepo.findForUpdate(tx, projectId, statement.id);
-        await validateSynthesisSupports(projectId, ids, tx);
         const draft = await synthesisRevisionRepo.createDraft(tx, {
           projectId, synthesisStatementId: statement.id, state: "active", title: values.title ?? null,
           statementText: values.statementText, researcherNote: values.researcherNote ?? null,
@@ -664,6 +814,7 @@ export function createReviewServices(db: Database) {
       const values = validate(synthesisRevisionInputSchema, input);
       const ids = values.extractionRevisionIds ?? [];
       const result = await db.transaction(async (tx) => {
+        await lockExtractionRevisionPapers(tx, projectId, ids);
         const statement = await synthesisStatementRepo.findForUpdate(tx, projectId, statementId);
         if (!statement) throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis statement does not belong to this project");
         await validateSynthesisSupports(projectId, ids, tx);
@@ -744,11 +895,13 @@ export function createReviewServices(db: Database) {
             p.created_at as paper_created_at, p.updated_at as paper_updated_at,
             f.id as field_id_value, f.name as field_name, f.description as field_description, f.field_type as field_type_value,
             f.required, f.sort_order, f.created_at as field_created_at, f.updated_at as field_updated_at, f.archived_at as field_archived_at,
-            coalesce((select sd.decision from screening_decisions sd where sd.project_id=r.project_id and sd.paper_id=r.paper_id and sd.stage='title_abstract' order by sd.sequence desc limit 1), 'unscreened') as screening_state
+            coalesce((select sd.decision from screening_decisions sd where sd.project_id=r.project_id and sd.paper_id=r.paper_id and sd.stage='title_abstract' order by sd.sequence desc limit 1), 'unscreened') as screening_state,
+            (select fd.decision from full_text_screening_decisions fd where fd.project_id=r.project_id and fd.paper_id=r.paper_id order by fd.sequence desc limit 1) as full_text_state
           from extraction_value_revisions r join papers p on p.project_id=r.project_id and p.id=r.paper_id
           join extraction_fields f on f.project_id=r.project_id and f.id=r.field_id
           where r.project_id=${projectId} and r.finalized_at is not null and r.value_state <> 'cleared'
             and coalesce((select sd.decision from screening_decisions sd where sd.project_id=r.project_id and sd.paper_id=r.paper_id and sd.stage='title_abstract' order by sd.sequence desc limit 1), 'unscreened')='include'
+            and (select fd.decision from full_text_screening_decisions fd where fd.project_id=r.project_id and fd.paper_id=r.paper_id order by fd.sequence desc limit 1)='include'
           order by r.sequence desc
         `) as unknown as Record<string, unknown>[],
         synthesisRevisionRepo.list(projectId),
