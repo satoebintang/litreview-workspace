@@ -1,6 +1,7 @@
 export type ProjectId = string;
 export type PaperId = string;
 export type EvidenceId = string;
+export type FullTextDocumentId = string;
 export type ClaimId = string;
 export type ClaimRevisionId = string;
 export type ManuscriptId = string;
@@ -26,6 +27,7 @@ export type FullTextDecisionState = "not_started" | "included" | "excluded" | "m
 export type FullTextRetrievalOutcome = "pending" | "unavailable" | "retrieved";
 export type FullTextRetrievalState = "not_sought" | FullTextRetrievalOutcome;
 export type FullTextRetrievalMethod = "publisher" | "bibliographic_database" | "institutional_access" | "library" | "interlibrary_loan" | "author_contact" | "web" | "manual" | "other";
+export type FullTextDocumentMediaType = "application/pdf";
 export type FinalEligibility = "title_abstract_pending" | "title_abstract_unresolved" | "not_eligible" | "pending_full_text" | "included" | "excluded" | "unresolved_full_text";
 export type PaperReviewWarning = "cross_stage_conflict" | "legacy_analysis_precedes_full_text_screening" | "legacy_full_text_decision_without_retrieval_record" | "retrieval_history_without_current_title_abstract_inclusion";
 export type ExtractionFieldType = "short_text" | "long_text" | "number" | "boolean" | "single_select";
@@ -151,10 +153,43 @@ export interface Evidence {
   id: EvidenceId;
   projectId: ProjectId;
   paperId: PaperId;
+  fullTextDocumentId: FullTextDocumentId | null;
+  document?: FullTextDocumentSummary | null;
   sourceText: string;
   pageNumber: number;
   note: string | null;
   createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface FullTextDocument {
+  id: FullTextDocumentId;
+  projectId: ProjectId;
+  paperId: PaperId;
+  storageKey: string;
+  originalFilename: string;
+  mediaType: FullTextDocumentMediaType;
+  byteSize: number;
+  sha256: string;
+  note: string | null;
+  createdAt: Date;
+  archivedAt: Date | null;
+}
+
+export interface FullTextDocumentSummary {
+  id: FullTextDocumentId;
+  originalFilename: string;
+  mediaType: FullTextDocumentMediaType;
+  byteSize: number;
+  sha256: string;
+  createdAt: Date;
+  archivedAt: Date | null;
+}
+
+export interface PaperFullTextPreference {
+  projectId: ProjectId;
+  paperId: PaperId;
+  fullTextDocumentId: FullTextDocumentId;
   updatedAt: Date;
 }
 
@@ -408,6 +443,7 @@ export interface ClaimEvidenceLink {
 export interface EvidenceWithPaper {
   evidence: Evidence;
   paper: Paper;
+  document?: FullTextDocumentSummary | null;
 }
 
 export interface ClaimProvenance {

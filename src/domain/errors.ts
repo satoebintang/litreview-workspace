@@ -6,7 +6,11 @@ export type DomainErrorCode =
   | "DUPLICATE_LINK"
   | "PROTECTED_DELETE"
   | "DATABASE_CONSTRAINT"
-  | "INELIGIBLE_REFERENCE";
+  | "INELIGIBLE_REFERENCE"
+  | "DUPLICATE_DOCUMENT"
+  | "DOCUMENT_ARCHIVED"
+  | "DOCUMENT_NOT_FOUND"
+  | "STORAGE_ERROR";
 
 export class DomainError extends Error {
   constructor(

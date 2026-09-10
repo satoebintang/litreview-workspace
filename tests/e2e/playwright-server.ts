@@ -2,6 +2,7 @@ import "dotenv/config";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import postgres from "postgres";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -26,6 +27,9 @@ const requiredSchema = {
   full_text_screening_criteria: ["id", "project_id", "text", "sort_order", "created_at", "archived_at"],
   full_text_screening_decisions: ["id", "sequence", "project_id", "paper_id", "decision", "exclusion_criterion_id", "note", "created_at"],
   full_text_retrieval_attempts: ["id", "sequence", "project_id", "paper_id", "outcome", "method", "source_reference", "note", "attempted_at", "created_at"],
+  full_text_documents: ["id", "project_id", "paper_id", "storage_key", "original_filename", "media_type", "byte_size", "sha256", "note", "created_at", "archived_at"],
+  paper_full_text_preferences: ["project_id", "paper_id", "full_text_document_id", "updated_at"],
+  evidence: ["id", "project_id", "paper_id", "full_text_document_id", "source_text", "page_number", "note", "created_at", "updated_at"],
 } as const;
 
 type MigrationEntry = { idx: number; tag: string; when: number };
@@ -121,8 +125,8 @@ async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
 async function assertSchema(client: postgres.Sql, databaseName: string) {
   const { migrations } = readExpectedMigrations();
   const expectedLatest = migrations.at(-1);
-  if (!expectedLatest || expectedLatest.tag !== "0013_full_text_retrieval") {
-    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0013_full_text_retrieval, found ${expectedLatest?.tag ?? "none"}`);
+  if (!expectedLatest || expectedLatest.tag !== "0014_full_text_documents") {
+    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0014_full_text_documents, found ${expectedLatest?.tag ?? "none"}`);
   }
 
   const migrationRows = await client.unsafe("select id, hash, created_at from drizzle.__drizzle_migrations order by id") as unknown as MigrationRow[];
@@ -134,7 +138,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
     return [];
   });
   if (migrationRows.length !== migrations.length || migrationMismatches.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0013_full_text_retrieval; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0014_full_text_documents; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
   }
 
   const tableNames = Object.keys(requiredSchema);
@@ -150,17 +154,18 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
   const missingColumns = Object.entries(requiredSchema).flatMap(([tableName, columns]) => columns.filter((columnName) => !actualColumns.get(tableName)?.has(columnName)).map((columnName) => `${tableName}.${columnName}`));
   const legacyColumns = await client.unsafe("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'projects' and column_name = 'research_question'") as unknown as Array<{ column_name: string }>;
   if (missingTables.length > 0 || missingColumns.length > 0 || legacyColumns.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0013_full_text_retrieval; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `projects.${row.column_name}`).join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0014_full_text_documents; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `projects.${row.column_name}`).join(", ") || "none"}`);
   }
 }
 
 async function main() {
   const adminUrl = process.env.PLAYWRIGHT_ADMIN_DATABASE_URL ?? process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
   const databaseName = createDatabaseName();
+  const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "litreview_playwright_storage_"));
   const databaseUrl = new URL(adminUrl);
   databaseUrl.pathname = `/${databaseName}`;
   const testDatabaseUrl = databaseUrl.toString();
-  const nextEnv: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: testDatabaseUrl, PORT: String(serverPort), HOSTNAME: serverHost };
+  const nextEnv: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: testDatabaseUrl, PORT: String(serverPort), HOSTNAME: serverHost, LITREVIEW_DOCUMENT_STORAGE_ROOT: storageRoot };
   delete nextEnv.FORCE_COLOR;
   const admin = postgres(adminUrl, { max: 1 });
   let child: ReturnType<typeof spawn> | undefined;
@@ -180,6 +185,12 @@ async function main() {
     }
     child = undefined;
     await admin.unsafe(`drop database if exists ${quoteIdentifier(databaseName)} with (force)`);
+    const resolvedStorageRoot = path.resolve(storageRoot);
+    const resolvedTempRoot = path.resolve(os.tmpdir());
+    if (!path.basename(resolvedStorageRoot).startsWith("litreview_playwright_storage_") || !resolvedStorageRoot.startsWith(`${resolvedTempRoot}${path.sep}`)) {
+      throw new Error(`Refusing to remove unexpected Playwright storage root: ${resolvedStorageRoot}`);
+    }
+    fs.rmSync(resolvedStorageRoot, { recursive: true, force: true });
     fs.rmSync(databaseMarkerPath, { force: true });
     await admin.end();
     console.error(`[playwright-lifecycle] cleanup complete: database=${databaseName}; elapsedMs=${Date.now() - lifecycleStartedAt}`);
@@ -188,7 +199,7 @@ async function main() {
   try {
     await admin.unsafe(`create database ${quoteIdentifier(databaseName)}`);
     fs.mkdirSync(path.dirname(databaseMarkerPath), { recursive: true });
-    fs.writeFileSync(databaseMarkerPath, JSON.stringify({ adminUrl, databaseName }), "utf8");
+    fs.writeFileSync(databaseMarkerPath, JSON.stringify({ adminUrl, databaseName, storageRoot }), "utf8");
     const database = createDb(testDatabaseUrl);
     try {
       await migrate(database.db, { migrationsFolder: migrationFolder });
@@ -196,7 +207,7 @@ async function main() {
     } finally {
       await database.client.end();
     }
-  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0013_full_text_retrieval verified`);
+  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0014_full_text_documents verified; storage=${storageRoot}`);
 
     child = spawnNext("next-build", [nextBin, "build"], nextEnv);
     const buildExitCode = await waitForProcess(child, "next-build");

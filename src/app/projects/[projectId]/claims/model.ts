@@ -4,7 +4,8 @@ export type ClaimLifecycle = "active" | "withdrawn";
 export type ClaimSupportKind = "evidence" | "extraction" | "synthesis";
 
 export interface PaperView { id: string; title: string; doi?: string | null; authors?: string[]; publicationYear?: number | null; venue?: string | null; }
-export interface EvidenceView { id: string; sourceText: string; pageNumber: number; note?: string | null; paper?: PaperView; }
+export interface EvidenceDocumentView { id: string; originalFilename?: string; sha256?: string; archivedAt?: string | null; }
+export interface EvidenceView { id: string; sourceText: string; pageNumber: number; note?: string | null; fullTextDocumentId?: string | null; document?: EvidenceDocumentView | null; paper?: PaperView; }
 export interface ExtractionView { id: string; sequence?: number; valueState?: string; textValue?: string | null; numberValue?: string | null; booleanValue?: boolean | null; optionId?: string | null; researcherNote?: string | null; evidence: EvidenceView[]; paper?: PaperView; field?: { id: string; name: string }; isCurrent?: boolean; paperScreeningState?: string; }
 export interface SynthesisView { id: string; sequence?: number; state?: ClaimLifecycle; title?: string | null; statementText?: string | null; researcherNote?: string | null; evidence: EvidenceView[]; extractions: ExtractionView[]; paperCount?: number; isCurrent?: boolean; }
 export interface ClaimSupportView { kind: ClaimSupportKind; id: string; evidence?: EvidenceView; extraction?: ExtractionView; synthesis?: SynthesisView; paper?: PaperView; }
@@ -46,7 +47,10 @@ function evidence(value: unknown, fallbackPaper?: PaperView): EvidenceView {
   const row = object(value);
   const nested = object(row.evidence);
   const source = nested.sourceText !== undefined ? nested : row;
-  return { id: string(source.id), sourceText: string(source.sourceText), pageNumber: number(source.pageNumber), note: typeof source.note === "string" ? source.note : null, paper: paper(row.paper) ?? paper(source.paper) ?? fallbackPaper };
+  const documentRow = object(source.document ?? row.document);
+  const documentId = typeof source.fullTextDocumentId === "string" ? source.fullTextDocumentId : typeof row.fullTextDocumentId === "string" ? row.fullTextDocumentId : null;
+  const document = documentId ? { id: documentId, originalFilename: string(documentRow.originalFilename), sha256: string(documentRow.sha256), archivedAt: typeof documentRow.archivedAt === "string" ? documentRow.archivedAt : null } : null;
+  return { id: string(source.id), sourceText: string(source.sourceText), pageNumber: number(source.pageNumber), note: typeof source.note === "string" ? source.note : null, fullTextDocumentId: documentId, document, paper: paper(row.paper) ?? paper(source.paper) ?? fallbackPaper };
 }
 
 export function normalizeExtraction(value: unknown, fallbackPaper?: PaperView): ExtractionView {

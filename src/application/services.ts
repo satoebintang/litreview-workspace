@@ -1,6 +1,6 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { extractionRevisionEvidence, extractionValues, extractionValueRevisions, synthesisStatements, synthesisRevisions, retrievedRecordMatches } from "@/db/schema";
+import { extractionRevisionEvidence, extractionValues, extractionValueRevisions, synthesisStatements, synthesisRevisions, retrievedRecordMatches, fullTextDocuments } from "@/db/schema";
 import { DomainError, isConstraintError } from "@/domain/errors";
 import {
   claimEvidenceInputSchema,
@@ -43,6 +43,7 @@ import {
   type RecordFullTextRetrievalAttemptInput,
 } from "@/domain/validation";
 import type { ExtractionFieldType, PaperReviewStatus, ScreeningDecisionValue } from "@/domain/types";
+import type { DocumentStorage } from "@/infrastructure/document-storage";
 import { derivePaperReviewStatus, isFinallyIncluded } from "@/domain/paper-review";
 import {
   ClaimRepository,
@@ -70,6 +71,7 @@ import { createManuscriptServices } from "./manuscript-services";
 import { createAcquisitionServices } from "./acquisition-services";
 import { createDeduplicationServices } from "./deduplication-services";
 import { createReviewReportingServices } from "./review-reporting";
+import { createFullTextDocumentServices, type FullTextDocumentServices } from "./full-text-document-services";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
   const result = schema.safeParse(input);
@@ -92,7 +94,7 @@ type ClaimSupportSnapshot = {
   synthesisRevisionId?: string;
 };
 
-export function createReviewServices(db: Database) {
+export function createReviewServices(db: Database, options: { documentStorage?: DocumentStorage; maxDocumentBytes?: number } = {}) {
   const projectRepo = new ProjectRepository(db);
   const paperRepo = new PaperRepository(db);
   const evidenceRepo = new EvidenceRepository(db);
@@ -233,11 +235,41 @@ export function createReviewServices(db: Database) {
   }
 
   function mapEvidence(row: Record<string, unknown>) {
+    const documentId = row.full_text_document_id == null ? null : String(row.full_text_document_id);
+    const document = documentId && row.document_original_filename != null ? {
+      id: documentId,
+      originalFilename: String(row.document_original_filename),
+      mediaType: "application/pdf" as const,
+      byteSize: Number(row.document_byte_size),
+      sha256: String(row.document_sha256),
+      createdAt: row.document_created_at as Date,
+      archivedAt: row.document_archived_at as Date | null,
+    } : null;
     return {
       id: String(row.id), projectId: String(row.project_id), paperId: String(row.paper_id),
+      fullTextDocumentId: documentId, document,
       sourceText: String(row.source_text), pageNumber: Number(row.page_number), note: row.note == null ? null : String(row.note),
       createdAt: row.created_at as Date, updatedAt: row.updated_at as Date,
     };
+  }
+
+  async function enrichEvidenceDocuments(items: ReturnType<typeof mapEvidence>[]) {
+    const ids = [...new Set(items.flatMap((item) => item.fullTextDocumentId ? [item.fullTextDocumentId] : []))];
+    if (!ids.length) return items;
+    const rows = await db.select({
+      id: fullTextDocuments.id,
+      originalFilename: fullTextDocuments.originalFilename,
+      mediaType: fullTextDocuments.mediaType,
+      byteSize: fullTextDocuments.byteSize,
+      sha256: fullTextDocuments.sha256,
+      createdAt: fullTextDocuments.createdAt,
+      archivedAt: fullTextDocuments.archivedAt,
+    }).from(fullTextDocuments).where(and(eq(fullTextDocuments.projectId, items[0].projectId), inArray(fullTextDocuments.id, ids)));
+    const byId = new Map(rows.map((row) => [String(row.id), {
+      id: String(row.id), originalFilename: row.originalFilename, mediaType: "application/pdf" as const,
+      byteSize: Number(row.byteSize), sha256: row.sha256, createdAt: row.createdAt, archivedAt: row.archivedAt,
+    }]));
+    return items.map((item) => item.fullTextDocumentId ? { ...item, document: byId.get(item.fullTextDocumentId) ?? null } : item);
   }
 
   function mapPaper(row: Record<string, unknown>) {
@@ -328,11 +360,13 @@ export function createReviewServices(db: Database) {
   async function synthesisViewsForRevisions(projectId: string, statements: Map<string, typeof synthesisStatements.$inferSelect>, revisions: (typeof synthesisRevisions.$inferSelect)[]) {
     const rawRows = (await synthesisSupportRepo.listWithProvenanceForRevisions(projectId, revisions.map((revision) => revision.id))) as unknown as Record<string, unknown>[];
     const evidenceRows = (await synthesisSupportRepo.listEvidenceForRevisions(projectId, rawRows.map((row) => String(row.revision_id)))) as unknown as Record<string, unknown>[];
+    const mappedEvidenceRows = await enrichEvidenceDocuments(evidenceRows.map(mapEvidence));
     const evidenceByRevision = new Map<string, ReturnType<typeof mapEvidence>[]>();
-    for (const row of evidenceRows) {
+    for (let i = 0; i < evidenceRows.length; i += 1) {
+      const row = evidenceRows[i];
       const id = String(row.revision_id);
       const list = evidenceByRevision.get(id) ?? [];
-      list.push(mapEvidence(row)); evidenceByRevision.set(id, list);
+      list.push(mappedEvidenceRows[i]); evidenceByRevision.set(id, list);
     }
     const rowsByRevision = new Map<string, Record<string, unknown>[]>();
     for (const row of rawRows) {
@@ -401,19 +435,24 @@ export function createReviewServices(db: Database) {
   async function claimRevisionView(projectId: string, revisionRow: Record<string, unknown>) {
     const revision = mapClaimRevision(revisionRow);
     const raw = await claimRevisionSupportRepo.listForRevision(projectId, revision.id);
-    const direct = raw.evidence.map((row) => ({
+    const directEvidence = await enrichEvidenceDocuments(raw.evidence.map((row) => mapEvidence(row)));
+    const direct = raw.evidence.map((row, index) => ({
       projectId, claimRevisionId: revision.id, evidenceId: String(row.evidence_id), createdAt: row.support_created_at as Date,
-      evidence: { evidence: mapEvidence(row), paper: mapPaper(row) },
+      evidence: { evidence: directEvidence[index], paper: mapPaper(row) },
     }));
     const extractionIds = raw.extraction.map((row) => String(row.revision_id));
     const extractionEvidenceRows = extractionIds.length ? await db.execute(sql`
-      select x.revision_id, e.id, e.project_id, e.paper_id, e.source_text, e.page_number, e.note, e.created_at, e.updated_at
+      select x.revision_id, e.*
       from extraction_revision_evidence x join evidence e on e.project_id=x.project_id and e.paper_id=x.paper_id and e.id=x.evidence_id
       where x.project_id=${projectId} and x.revision_id in (${sql.join(extractionIds.map((id) => sql`${id}::uuid`), sql`, `)})
       order by x.revision_id, e.page_number, e.created_at
     `) as unknown as Record<string, unknown>[] : [];
+    const mappedExtractionEvidence = await enrichEvidenceDocuments(extractionEvidenceRows.map(mapEvidence));
     const evidenceByRevision = new Map<string, ReturnType<typeof mapEvidence>[]>();
-    for (const row of extractionEvidenceRows) evidenceByRevision.set(String(row.revision_id), [...(evidenceByRevision.get(String(row.revision_id)) ?? []), mapEvidence(row)]);
+    for (let i = 0; i < extractionEvidenceRows.length; i += 1) {
+      const row = extractionEvidenceRows[i];
+      evidenceByRevision.set(String(row.revision_id), [...(evidenceByRevision.get(String(row.revision_id)) ?? []), mappedExtractionEvidence[i]]);
+    }
     const extraction = raw.extraction.map((row) => ({
       projectId, claimRevisionId: revision.id, extractionRevisionId: String(row.revision_id), createdAt: row.support_created_at as Date,
       extractionRevision: mapExtractionRevision(row, evidenceByRevision.get(String(row.revision_id)) ?? []), paper: mapPaper(row), field: mapField(row),
@@ -475,6 +514,7 @@ export function createReviewServices(db: Database) {
 
     getProject(projectId: string) { return requireProject(projectId); },
     listPapers(projectId: string) { return requireProject(projectId).then(() => paperRepo.list(projectId)); },
+    getPaper(projectId: string, paperId: string) { return requirePaper(projectId, paperId); },
     listEvidence(projectId: string) { return requireProject(projectId).then(() => evidenceRepo.list(projectId)); },
     async listClaims(projectId: string) {
       await requireProject(projectId);
@@ -971,9 +1011,15 @@ export function createReviewServices(db: Database) {
       const paperById = new Map(papers.map((paper) => [paper.id, paper]));
       const evidenceOptions = evidence.map((item) => ({ ...item, paper: paperById.get(item.paperId) ?? null }));
       const extractionIds = extractionRows.map((row) => String(row.revision_id));
-      const extractionEvidenceRows = extractionIds.length ? await db.execute(sql`select l.revision_id, e.id, e.project_id, e.paper_id, e.source_text, e.page_number, e.note, e.created_at, e.updated_at from extraction_revision_evidence l join evidence e on e.project_id=l.project_id and e.id=l.evidence_id where l.project_id=${projectId} and l.revision_id in (${sql.join(extractionIds.map((id) => sql`${id}::uuid`), sql`, `)}) order by l.revision_id, e.page_number`) as unknown as Record<string, unknown>[] : [];
+      const extractionEvidenceRows = extractionIds.length ? await db.execute(sql`select l.revision_id, e.*
+        from extraction_revision_evidence l join evidence e on e.project_id=l.project_id and e.id=l.evidence_id
+        where l.project_id=${projectId} and l.revision_id in (${sql.join(extractionIds.map((id) => sql`${id}::uuid`), sql`, `)}) order by l.revision_id, e.page_number`) as unknown as Record<string, unknown>[] : [];
+      const mappedExtractionEvidence = await enrichEvidenceDocuments(extractionEvidenceRows.map(mapEvidence));
       const extractionEvidenceById = new Map<string, ReturnType<typeof mapEvidence>[]>();
-      for (const row of extractionEvidenceRows) extractionEvidenceById.set(String(row.revision_id), [...(extractionEvidenceById.get(String(row.revision_id)) ?? []), mapEvidence(row)]);
+      for (let i = 0; i < extractionEvidenceRows.length; i += 1) {
+        const row = extractionEvidenceRows[i];
+        extractionEvidenceById.set(String(row.revision_id), [...(extractionEvidenceById.get(String(row.revision_id)) ?? []), mappedExtractionEvidence[i]]);
+      }
       const extractionOptions = extractionRows.map((row) => ({ ...mapExtractionRevision(row, extractionEvidenceById.get(String(row.revision_id)) ?? []), paper: mapPaper(row), field: mapField(row), paperScreeningState: mapScreeningState(row.screening_state) }));
       const statementRows = synthesisRows.length ? await db.execute(sql`select id, project_id, created_at from synthesis_statements where project_id=${projectId} and id in (${sql.join(synthesisRows.map((row) => sql`${row.synthesisStatementId}::uuid`), sql`, `)})`) as unknown as typeof synthesisStatements.$inferSelect[] : [];
       const statementMap = new Map(statementRows.map((statement) => [statement.id, statement]));
@@ -1000,9 +1046,11 @@ export function createReviewServices(db: Database) {
       });
       const revisions = rows.filter((row) => row.revision_id != null);
       const evidenceRows = (await synthesisSupportRepo.listEvidenceForRevisions(projectId, revisions.map((row) => String(row.revision_id)))) as unknown as Record<string, unknown>[];
+      const mappedEvidenceRows = await enrichEvidenceDocuments(evidenceRows.map(mapEvidence));
       const evidenceByRevision = new Map<string, ReturnType<typeof mapEvidence>[]>();
-      for (const evidenceRow of evidenceRows) {
-        const id = String(evidenceRow.revision_id); evidenceByRevision.set(id, [...(evidenceByRevision.get(id) ?? []), mapEvidence(evidenceRow)]);
+      for (let i = 0; i < evidenceRows.length; i += 1) {
+        const evidenceRow = evidenceRows[i];
+        const id = String(evidenceRow.revision_id); evidenceByRevision.set(id, [...(evidenceByRevision.get(id) ?? []), mappedEvidenceRows[i]]);
       }
       return rows.map((row) => {
         const revision = row.revision_id == null ? null : mapExtractionRevision(row, evidenceByRevision.get(String(row.revision_id)) ?? []);
@@ -1029,7 +1077,14 @@ export function createReviewServices(db: Database) {
     async recordEvidence(projectId: string, input: RecordEvidenceInput) {
       const values = validate(recordEvidenceSchema, input);
       await requirePaper(projectId, values.paperId);
-      return evidenceRepo.create({ projectId, ...values, note: values.note ?? null });
+      if (values.fullTextDocumentId) {
+        const document = await db.select({ id: fullTextDocuments.id, paperId: fullTextDocuments.paperId, archivedAt: fullTextDocuments.archivedAt })
+          .from(fullTextDocuments)
+          .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.id, values.fullTextDocumentId))).limit(1);
+        if (!document[0] || document[0].paperId !== values.paperId) throw new DomainError("CROSS_PROJECT_REFERENCE", "Full-text document does not belong to this Paper");
+        if (document[0].archivedAt) throw new DomainError("DOCUMENT_ARCHIVED", "New Evidence cannot reference an archived full-text document");
+      }
+      return evidenceRepo.create({ projectId, ...values, fullTextDocumentId: values.fullTextDocumentId ?? null, note: values.note ?? null });
     },
 
     async createClaim(projectId: string, input: CreateClaimInput) {
@@ -1158,7 +1213,10 @@ export function createReviewServices(db: Database) {
     },
   };
   const deduplicationServices = createDeduplicationServices(db);
-  const baseServices = Object.assign(services, createManuscriptServices(db), createAcquisitionServices(db), deduplicationServices);
+  const manuscriptServices = createManuscriptServices(db);
+  const acquisitionServices = createAcquisitionServices(db);
+  const documentServices: FullTextDocumentServices = createFullTextDocumentServices(db, options.documentStorage, options.maxDocumentBytes);
+  const baseServices = Object.assign(services, manuscriptServices, acquisitionServices, deduplicationServices, documentServices as unknown as Record<string, unknown>) as typeof services & typeof manuscriptServices & typeof acquisitionServices & typeof deduplicationServices & FullTextDocumentServices;
   const reportingServices = createReviewReportingServices(db, deduplicationServices);
   return Object.assign(baseServices, reportingServices) as typeof baseServices & typeof reportingServices;
 }

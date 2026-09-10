@@ -9,9 +9,9 @@ import { createReviewServices } from "@/application/services";
 
 const BASE_URL = process.env.DATABASE_URL ?? "postgres://litreview:litreview@127.0.0.1:5432/litreview";
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
-const cleanDatabaseName = `slice13_clean_migration_${Date.now()}`;
-const upgradeDatabaseName = `slice13_upgrade_migration_${Date.now()}`;
-const rollbackDatabaseName = `slice13_rollback_migration_${Date.now()}`;
+const cleanDatabaseName = `slice14_clean_migration_${Date.now()}`;
+const upgradeDatabaseName = `slice14_upgrade_migration_${Date.now()}`;
+const rollbackDatabaseName = `slice14_rollback_migration_${Date.now()}`;
 let upgradeProjectId = "";
 let upgradePaperId = "";
 
@@ -26,7 +26,7 @@ async function runMigrationSql(client: { unsafe: (query: string) => Promise<unkn
   for (const statement of content.split("--> statement-breakpoint").map((value) => value.trim()).filter(Boolean)) await client.unsafe(statement);
 }
 
-describe("Slice 13 migration boundaries", () => {
+describe("Slice 14 migration boundaries", () => {
   let cleanClient: postgres.Sql | undefined;
   let upgradeClient: postgres.Sql | undefined;
   let rollbackClient: postgres.Sql | undefined;
@@ -60,6 +60,7 @@ describe("Slice 13 migration boundaries", () => {
     await upgradeClient`insert into screening_decisions (project_id, paper_id, stage, decision) values (${upgradeProjectId}, ${upgradePaperId}, 'title_abstract', 'include')`;
     await upgradeClient`insert into full_text_screening_decisions (project_id, paper_id, decision) values (${upgradeProjectId}, ${upgradePaperId}, 'include')`;
     await runMigrationSql(upgradeClient, "0013_full_text_retrieval.sql");
+    await runMigrationSql(upgradeClient, "0014_full_text_documents.sql");
 
     rollbackClient = postgres(databaseUrl(rollbackDatabaseName), { max: 1 });
     for (const entry of journal.entries.filter((candidate) => candidate.idx <= 12)) await runMigrationSql(rollbackClient, `${entry.tag}.sql`);
@@ -83,15 +84,18 @@ describe("Slice 13 migration boundaries", () => {
     }
   }, 120_000);
 
-  it("creates the retrieval table and applies all fourteen migrations cleanly", async () => {
-    expect(await cleanClient!`select count(*)::integer as count from drizzle.__drizzle_migrations`).toEqual([{ count: 14 }]);
+  it("creates the document tables and applies all fifteen migrations cleanly", async () => {
+    expect(await cleanClient!`select count(*)::integer as count from drizzle.__drizzle_migrations`).toEqual([{ count: 15 }]);
     expect(await cleanClient!`select to_regclass('public.full_text_retrieval_attempts') as table_name`).toEqual([{ table_name: "full_text_retrieval_attempts" }]);
+    expect(await cleanClient!`select to_regclass('public.full_text_documents') as table_name`).toEqual([{ table_name: "full_text_documents" }]);
+    expect(await cleanClient!`select to_regclass('public.paper_full_text_preferences') as table_name`).toEqual([{ table_name: "paper_full_text_preferences" }]);
     expect(await cleanClient!`select count(*)::integer as count from full_text_retrieval_attempts`).toEqual([{ count: 0 }]);
   });
 
   it("preserves legacy full-text history without synthesizing retrieval attempts", async () => {
     expect(await upgradeClient!`select count(*)::integer as count from full_text_screening_decisions`).toEqual([{ count: 1 }]);
     expect(await upgradeClient!`select count(*)::integer as count from full_text_retrieval_attempts`).toEqual([{ count: 0 }]);
+    expect(await upgradeClient!`select count(*)::integer as count from full_text_documents`).toEqual([{ count: 0 }]);
     expect(await upgradeClient!`select decision from full_text_screening_decisions`).toEqual([{ decision: "include" }]);
     const upgradedDb = createDb(databaseUrl(upgradeDatabaseName));
     try {
@@ -105,12 +109,14 @@ describe("Slice 13 migration boundaries", () => {
     }
   });
 
-  it("rolls back the complete Slice 13 migration atomically", async () => {
+  it("rolls back the complete Slice 14 migration atomically", async () => {
     await expect(rollbackClient!.begin(async (tx) => {
       await runMigrationSql(tx, "0013_full_text_retrieval.sql");
+      await runMigrationSql(tx, "0014_full_text_documents.sql");
       throw new Error("rollback sentinel");
     })).rejects.toThrow("rollback sentinel");
     expect(await rollbackClient!`select to_regclass('public.full_text_retrieval_attempts') as table_name`).toEqual([{ table_name: null }]);
+    expect(await rollbackClient!`select to_regclass('public.full_text_documents') as table_name`).toEqual([{ table_name: null }]);
     expect(await rollbackClient!`select count(*)::integer as count from full_text_screening_decisions`).toEqual([{ count: 1 }]);
   });
 });

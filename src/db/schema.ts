@@ -57,12 +57,72 @@ export const papers = pgTable(
   }),
 );
 
+export const fullTextDocuments = pgTable(
+  "full_text_documents",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    paperId: uuid("paper_id").notNull(),
+    storageKey: text("storage_key").notNull(),
+    originalFilename: text("original_filename").notNull(),
+    mediaType: text("media_type").notNull(),
+    byteSize: bigint("byte_size", { mode: "number" }).notNull(),
+    sha256: text("sha256").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => ({
+    projectIdentity: unique("full_text_documents_project_id_id_unique").on(table.projectId, table.id),
+    projectPaperIdentity: unique("full_text_documents_project_paper_id_id_unique").on(table.projectId, table.paperId, table.id),
+    storageKeyUnique: unique("full_text_documents_storage_key_unique").on(table.storageKey),
+    activeContentUnique: uniqueIndex("full_text_documents_active_content_unique")
+      .on(table.projectId, table.paperId, table.sha256)
+      .where(sql`${table.archivedAt} is null`),
+    paperOwnership: foreignKey({
+      columns: [table.projectId, table.paperId],
+      foreignColumns: [papers.projectId, papers.id],
+      name: "full_text_documents_project_paper_fk",
+    }).onDelete("restrict"),
+    storageKeyNonblank: check("full_text_documents_storage_key_nonblank", sql`btrim(${table.storageKey}) <> ''`),
+    storageKeyFormat: check("full_text_documents_storage_key_format", sql`${table.storageKey} ~ '^projects/[0-9a-f-]{36}/papers/[0-9a-f-]{36}/documents/[0-9a-f-]{36}/source\\.pdf$'`),
+    filenameNonblank: check("full_text_documents_filename_nonblank", sql`btrim(${table.originalFilename}) <> ''`),
+    mediaTypePdf: check("full_text_documents_media_type_pdf", sql`${table.mediaType} = 'application/pdf'`),
+    byteSizePositive: check("full_text_documents_byte_size_positive", sql`${table.byteSize} > 0`),
+    sha256Format: check("full_text_documents_sha256_format", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
+  }),
+);
+
+export const paperFullTextPreferences = pgTable(
+  "paper_full_text_preferences",
+  {
+    projectId: uuid("project_id").notNull(),
+    paperId: uuid("paper_id").notNull(),
+    fullTextDocumentId: uuid("full_text_document_id").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    identity: primaryKey({ columns: [table.projectId, table.paperId] }),
+    paperOwnership: foreignKey({
+      columns: [table.projectId, table.paperId],
+      foreignColumns: [papers.projectId, papers.id],
+      name: "paper_full_text_preferences_project_paper_fk",
+    }).onDelete("restrict"),
+    documentOwnership: foreignKey({
+      columns: [table.projectId, table.paperId, table.fullTextDocumentId],
+      foreignColumns: [fullTextDocuments.projectId, fullTextDocuments.paperId, fullTextDocuments.id],
+      name: "paper_full_text_preferences_document_fk",
+    }).onDelete("restrict"),
+  }),
+);
+
 export const evidence = pgTable(
   "evidence",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
     paperId: uuid("paper_id").notNull(),
+    fullTextDocumentId: uuid("full_text_document_id"),
     sourceText: text("source_text").notNull(),
     pageNumber: integer("page_number").notNull(),
     note: text("note"),
@@ -75,6 +135,11 @@ export const evidence = pgTable(
       columns: [table.projectId, table.paperId],
       foreignColumns: [papers.projectId, papers.id],
       name: "evidence_project_paper_fk",
+    }).onDelete("restrict"),
+    documentOwnership: foreignKey({
+      columns: [table.projectId, table.paperId, table.fullTextDocumentId],
+      foreignColumns: [fullTextDocuments.projectId, fullTextDocuments.paperId, fullTextDocuments.id],
+      name: "evidence_project_paper_document_fk",
     }).onDelete("restrict"),
     projectPaperCreatedAt: index("evidence_project_paper_created_at_idx").on(
       table.projectId,
@@ -1021,4 +1086,4 @@ export const retrievedRecordDeduplicationDecisions = pgTable(
   }),
 );
 
-export const schema = { projects, papers, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };
+export const schema = { projects, papers, fullTextDocuments, paperFullTextPreferences, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };

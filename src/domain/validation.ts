@@ -22,9 +22,16 @@ export const createPaperSchema = z.object({
 
 export const recordEvidenceSchema = z.object({
   paperId: idSchema,
+  fullTextDocumentId: idSchema.nullable().optional(),
   // Validate blankness without transforming the quotation: source text is provenance.
   sourceText: z.string().refine((value) => value.trim().length > 0, "Source text is required"),
   pageNumber: z.number().int().positive(),
+  note: optionalText,
+});
+
+export const fullTextDocumentMetadataSchema = z.object({
+  originalFilename: z.string().min(1).max(255),
+  mediaType: z.literal("application/pdf"),
   note: optionalText,
 });
 
@@ -288,6 +295,7 @@ export const removeProseBlockSchema = z.object({ proseBlockId: idSchema });
 export type CreateProjectInput = z.input<typeof createProjectSchema>;
 export type CreatePaperInput = z.input<typeof createPaperSchema>;
 export type RecordEvidenceInput = z.input<typeof recordEvidenceSchema>;
+export type FullTextDocumentMetadataInput = z.input<typeof fullTextDocumentMetadataSchema>;
 export type CreateClaimInput = z.input<typeof createClaimSchema>;
 export type ClaimSupportInput = z.input<typeof claimSupportSchema>;
 export type ClaimRevisionSnapshotInput = z.input<typeof claimRevisionSnapshotSchema>;

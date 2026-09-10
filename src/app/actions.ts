@@ -66,6 +66,7 @@ export async function recordEvidenceAction(form: FormData) {
   try {
     await reviewServices.recordEvidence(projectId, {
       paperId: text(form, "paperId"),
+      fullTextDocumentId: optional(form, "fullTextDocumentId") || null,
       sourceText: verbatimText(form, "sourceText"),
       pageNumber: Number(text(form, "pageNumber")),
       note: optional(form, "note"),
@@ -74,6 +75,30 @@ export async function recordEvidenceAction(form: FormData) {
     fail(`/projects/${projectId}`, error);
   }
   redirect(`/projects/${projectId}?saved=evidence`);
+}
+
+export async function setPreferredFullTextDocumentAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  try { await reviewServices.setPreferredFullTextDocument(projectId, paperId, text(form, "documentId")); }
+  catch (error) { fail(`/projects/${projectId}/papers/${paperId}/documents`, error); }
+  redirect(`/projects/${projectId}/papers/${paperId}/documents?saved=preferred`);
+}
+
+export async function clearPreferredFullTextDocumentAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  try { await reviewServices.clearPreferredFullTextDocument(projectId, paperId); }
+  catch (error) { fail(`/projects/${projectId}/papers/${paperId}/documents`, error); }
+  redirect(`/projects/${projectId}/papers/${paperId}/documents?saved=preference-cleared`);
+}
+
+export async function archiveFullTextDocumentAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  try { await reviewServices.archiveFullTextDocument(projectId, text(form, "documentId")); }
+  catch (error) { fail(`/projects/${projectId}/papers/${paperId}/documents`, error); }
+  redirect(`/projects/${projectId}/papers/${paperId}/documents?saved=archived`);
 }
 
 export async function createClaimAction(form: FormData) {

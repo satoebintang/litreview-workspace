@@ -99,6 +99,13 @@
       "when": 1788998460000,
       "tag": "0013_full_text_retrieval",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789023939424,
+      "tag": "0014_full_text_documents",
+      "breakpoints": true
     }
   ]
 }

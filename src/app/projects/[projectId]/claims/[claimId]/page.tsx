@@ -54,7 +54,7 @@ function freshnessLabel(support: ClaimSupportView) {
 function SupportEvidence({ support }: { support: ClaimSupportView }) {
   const item = support.evidence;
   if (!item) return null;
-  return <article className="item support-item"><div className="support-kind">Supporting Evidence</div><p className="quote">“{item.sourceText}”</p><div className="item-meta"><span>Page {item.pageNumber}</span>{item.paper ? <> · <span className="paper-chip">{item.paper.title}</span></> : null}</div>{item.note && <div className="item-meta">Researcher note: {item.note}</div>}</article>;
+  return <article className="item support-item"><div className="support-kind">Supporting Evidence</div><p className="quote">“{item.sourceText}”</p><div className="item-meta"><span>Page {item.pageNumber}</span>{item.paper ? <> · <span className="paper-chip">{item.paper.title}</span></> : null}</div><div className="item-meta">{item.fullTextDocumentId ? `Document artifact: ${item.document?.originalFilename || item.fullTextDocumentId}${item.document?.archivedAt ? " (archived)" : ""}` : "Document artifact: none recorded"}</div>{item.note && <div className="item-meta">Researcher note: {item.note}</div>}</article>;
 }
 
 function SupportExtraction({ support }: { support: ClaimSupportView }) {

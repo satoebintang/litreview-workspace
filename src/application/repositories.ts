@@ -1,6 +1,6 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { evidence, papers, projects, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports } from "@/db/schema";
+import { evidence, papers, projects, screeningCriteria, screeningDecisions, fullTextDocuments, paperFullTextPreferences, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports } from "@/db/schema";
 
 type DbTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -84,6 +84,60 @@ export class EvidenceRepository {
   async delete(projectId: string, id: string) {
     return this.db.delete(evidence)
       .where(and(eq(evidence.projectId, projectId), eq(evidence.id, id))).returning({ id: evidence.id });
+  }
+}
+
+export class FullTextDocumentRepository {
+  constructor(private readonly db: Database) {}
+
+  async findById(projectId: string, id: string) {
+    const [item] = await this.db.select().from(fullTextDocuments)
+      .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.id, id))).limit(1);
+    return item ?? null;
+  }
+
+  async listForPaper(projectId: string, paperId: string) {
+    return this.db.select().from(fullTextDocuments)
+      .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.paperId, paperId)))
+      .orderBy(desc(fullTextDocuments.createdAt));
+  }
+
+  async activeBySha(tx: DbTransaction, projectId: string, paperId: string, sha256: string) {
+    const [item] = await tx.select().from(fullTextDocuments)
+      .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.paperId, paperId), eq(fullTextDocuments.sha256, sha256), isNull(fullTextDocuments.archivedAt))).limit(1);
+    return item ?? null;
+  }
+
+  async create(tx: DbTransaction, values: typeof fullTextDocuments.$inferInsert) {
+    const [item] = await tx.insert(fullTextDocuments).values(values).returning();
+    return item;
+  }
+
+  async archive(projectId: string, id: string) {
+    return this.db.update(fullTextDocuments)
+      .set({ archivedAt: new Date() })
+      .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.id, id)))
+      .returning();
+  }
+
+  async getPreference(projectId: string, paperId: string) {
+    const [item] = await this.db.select().from(paperFullTextPreferences)
+      .where(and(eq(paperFullTextPreferences.projectId, projectId), eq(paperFullTextPreferences.paperId, paperId))).limit(1);
+    return item ?? null;
+  }
+
+  async setPreference(projectId: string, paperId: string, fullTextDocumentId: string) {
+    const [item] = await this.db.insert(paperFullTextPreferences)
+      .values({ projectId, paperId, fullTextDocumentId })
+      .onConflictDoUpdate({ target: [paperFullTextPreferences.projectId, paperFullTextPreferences.paperId], set: { fullTextDocumentId, updatedAt: new Date() } })
+      .returning();
+    return item;
+  }
+
+  async clearPreference(projectId: string, paperId: string) {
+    return this.db.delete(paperFullTextPreferences)
+      .where(and(eq(paperFullTextPreferences.projectId, projectId), eq(paperFullTextPreferences.paperId, paperId)))
+      .returning();
   }
 }
 
@@ -232,8 +286,7 @@ export class ClaimRevisionSupportRepository {
   async listForRevision(projectId: string, claimRevisionId: string) {
     const evidenceRows = await this.db.execute(sql`
       select s.project_id, s.claim_revision_id, s.evidence_id, s.created_at as support_created_at,
-        e.id, e.paper_id, e.source_text, e.page_number, e.note,
-        e.created_at, e.updated_at, p.id as paper_id_value, p.title as paper_title, p.authors,
+        e.*, p.id as paper_id_value, p.title as paper_title, p.authors,
         p.publication_year, p.venue, p.doi, p.abstract, p.bibliographic_note,
         p.created_at as paper_created_at, p.updated_at as paper_updated_at
       from claim_revision_evidence_supports s
@@ -742,7 +795,7 @@ export class SynthesisRevisionSupportRepository {
   async listEvidenceForRevisions(projectId: string, revisionIds: string[]) {
     if (!revisionIds.length) return [];
     return this.db.execute(sql`
-      select l.project_id, l.revision_id, e.id, e.paper_id, e.source_text, e.page_number, e.note, e.created_at, e.updated_at
+      select l.project_id, l.revision_id, e.*
       from extraction_revision_evidence l join evidence e on e.project_id=l.project_id and e.paper_id=l.paper_id and e.id=l.evidence_id
       where l.project_id=${projectId} and l.revision_id in (${sql.join(revisionIds.map((id) => sql`${id}::uuid`), sql`, `)})
       order by l.revision_id, e.page_number, e.created_at
