@@ -14,7 +14,7 @@ describe("Slice 5 manuscript Claims and citation grounding", () => {
   beforeAll(async () => { await migrate(db, { migrationsFolder: "./drizzle" }); });
   beforeEach(async () => { projectId = (await services.createProject({ title: `Claims project ${crypto.randomUUID()}` })).id; });
   afterAll(async () => {
-    await client.unsafe("TRUNCATE TABLE synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents, evidence_set_composition_members, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects");
+    await client.unsafe("TRUNCATE TABLE synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents, evidence_set_composition_members, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects");
     await client.end();
   });
 
@@ -117,5 +117,70 @@ describe("Slice 5 manuscript Claims and citation grounding", () => {
     await expect(db.update(claimRevisions).set({ claimText: "mutated" }).where(eq(claimRevisions.id, revised.revision.id))).rejects.toThrow();
     await expect(db.delete(claimRevisions).where(eq(claimRevisions.id, revised.revision.id))).rejects.toThrow();
     await expect(db.delete(claimRevisionEvidenceSupports).where(eq(claimRevisionEvidenceSupports.claimRevisionId, revised.revision.id))).rejects.toThrow();
+  });
+
+  it("proves Claim persistence boundary: interpretation context is transient and yields identical support structures", async () => {
+    const paper = await includedPaper("Study Paper");
+    const evidence = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "Empirical finding", pageNumber: 10 });
+    const field = await services.createExtractionField(projectId, { name: "Finding", fieldType: "short_text" });
+    const extraction = await services.reviseExtractionValue(projectId, paper.id, field.id, { value: "Observed Effect", evidenceIds: [evidence.id] });
+    const synthesis = await services.createSynthesisStatement(projectId, { statementText: "Synthesized finding.", extractionRevisionIds: [extraction.id] });
+
+    // 1. Author an interpretation snapshot
+    const interp = await services.appendSynthesisInterpretation(projectId, synthesis.statement.id, synthesis.revision.id, {
+      convergenceState: "convergent",
+      summary: "Interpretation note",
+      limitations: [{ category: "methodological", body: "Observation bias" }],
+      questions: [{ body: "Generalizability?" }],
+    });
+
+    // 2. Draft claim directly via createClaimWithSynthesisSupport
+    const directClaim = await services.createClaimWithSynthesisSupport(projectId, {
+      claimText: "Direct claim from synthesis",
+      researcherNote: "Note direct",
+      synthesisRevisionId: synthesis.revision.id,
+    });
+
+    // 3. Draft claim via createClaimFromInterpretation
+    const interpClaim = await services.createClaimFromInterpretation(projectId, {
+      interpretationId: interp.id,
+      claimText: "Claim drafted from interpretation",
+      researcherNote: "Note from interp",
+      synthesisRevisionId: synthesis.revision.id,
+    });
+
+    // Both must have identical support structure pointing only to synthesisRevisionId
+    const directProv = await services.getClaimProvenance(projectId, directClaim.id);
+    const interpProv = await services.getClaimProvenance(projectId, interpClaim.id);
+
+    expect(directProv.supportStatus).toBe("supported");
+    expect(interpProv.supportStatus).toBe("supported");
+
+    const directCurrent = await services.getCurrentClaim(projectId, directClaim.id);
+    const interpCurrent = await services.getCurrentClaim(projectId, interpClaim.id);
+
+    expect(directCurrent.currentRevision.supports.synthesisRevisions).toHaveLength(1);
+    expect(interpCurrent.currentRevision.supports.synthesisRevisions).toHaveLength(1);
+    expect(directCurrent.currentRevision.supports.synthesisRevisions[0].synthesisRevisionId).toBe(synthesis.revision.id);
+    expect(interpCurrent.currentRevision.supports.synthesisRevisions[0].synthesisRevisionId).toBe(synthesis.revision.id);
+
+    // Verify raw DB rows: no interpretation columns exist on claims, claim_revisions, or claim_revision_synthesis_supports
+    const cols = await client`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name IN ('claims', 'claim_revisions', 'claim_revision_synthesis_supports')
+        AND column_name LIKE '%interpretation%'
+    `;
+    expect(cols).toHaveLength(0);
+
+    // Verify mismatch rejection when passed synthesisRevisionId does not match interpretation's revision
+    const otherSynthesis = await services.createSynthesisStatement(projectId, { statementText: "Other finding.", extractionRevisionIds: [extraction.id] });
+    await expect(
+      services.createClaimFromInterpretation(projectId, {
+        interpretationId: interp.id,
+        claimText: "Mismatched claim",
+        synthesisRevisionId: otherSynthesis.revision.id,
+      }),
+    ).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
   });
 });

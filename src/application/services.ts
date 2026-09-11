@@ -7,6 +7,8 @@ import {
   createClaimRevisionSchema,
   withdrawClaimSchema,
   createClaimSchema,
+  createClaimWithSynthesisSupportSchema,
+  createClaimFromInterpretationSchema,
   createPaperSchema,
   createProjectSchema,
   idSchema,
@@ -18,6 +20,8 @@ import {
   createExtractionOptionSchema,
   reviseExtractionValueSchema,
   type CreateClaimInput,
+  type CreateClaimWithSynthesisSupportInput,
+  type CreateClaimFromInterpretationInput,
   type CreateClaimRevisionInput,
   type WithdrawClaimInput,
   type CreatePaperInput,
@@ -41,7 +45,7 @@ import {
   type RecordFullTextScreeningDecisionInput,
   type RecordFullTextRetrievalAttemptInput,
 } from "@/domain/validation";
-import type { EvidenceReviewState, ExtractionFieldType, PaperReviewStatus, ScreeningDecisionValue } from "@/domain/types";
+import type { EvidenceReviewState, ExtractionFieldType, PaperReviewStatus, ScreeningDecisionValue, SynthesisState } from "@/domain/types";
 import type { DocumentStorage } from "@/infrastructure/document-storage";
 import { derivePaperReviewStatus, isFinallyIncluded } from "@/domain/paper-review";
 import {
@@ -79,6 +83,7 @@ import {
 import { createEvidenceCurationServices, requireEvidenceUsableForNewDirectSupport } from "./evidence-curation-services";
 import { createEvidenceSetServices } from "./evidence-set-services";
 import { createSynthesisPreparationServices } from "./synthesis-preparation-services";
+import { createSynthesisInterpretationServices } from "./synthesis-interpretation-services";
 import {
   writeActiveSynthesisRevision,
   lockExtractionRevisionPapers,
@@ -344,7 +349,7 @@ export function createReviewServices(db: Database, options: {
   function mapField(row: Record<string, unknown>) {
     return {
       id: String(row.field_id_value ?? row.field_id), projectId: String(row.project_id), name: String(row.field_name ?? row.name),
-      description: row.field_description as string | null, fieldType: row.field_type_value ?? row.field_type as ExtractionFieldType,
+      description: row.field_description as string | null, fieldType: (row.field_type_value ?? row.field_type) as ExtractionFieldType,
       required: Boolean(row.required), sortOrder: Number(row.sort_order), createdAt: row.field_created_at as Date,
       updatedAt: row.field_updated_at as Date, archivedAt: row.field_archived_at as Date | null,
     };
@@ -354,10 +359,10 @@ export function createReviewServices(db: Database, options: {
     return {
       id: String(row.revision_id ?? row.id), sequence: Number(row.revision_sequence ?? row.sequence), projectId: String(row.project_id),
       paperId: String(row.paper_id), fieldId: String(row.field_id), extractionValueId: String(row.extraction_value_id),
-      fieldType: String(row.field_type) as ExtractionFieldType, valueState: String(row.value_state) as "present" | "not_reported" | "not_applicable" | "cleared",
+      fieldType: (row.field_type_value ?? row.field_type) as ExtractionFieldType, valueState: String(row.value_state) as "present" | "not_reported" | "not_applicable" | "cleared",
       textValue: row.text_value as string | null, numberValue: row.number_value as string | null, booleanValue: row.boolean_value as boolean | null,
       optionId: row.option_id as string | null, researcherNote: (row.revision_note ?? row.researcher_note) as string | null,
-      createdAt: (row.revision_created_at ?? row.created_at) as Date, finalizedAt: row.revision_finalized_at ?? row.finalized_at as Date | null,
+      createdAt: (row.revision_created_at ?? row.created_at) as Date, finalizedAt: (row.revision_finalized_at ?? row.finalized_at) as Date | null,
       evidence,
     };
   }
@@ -387,7 +392,10 @@ export function createReviewServices(db: Database, options: {
       isCurrentExtractionRevision: !Boolean(row.has_newer_revision),
     }));
     return {
-      ...revision, statement, supports,
+      ...revision,
+      state: revision.state as SynthesisState,
+      statement,
+      supports,
       supportStatus: supports.length ? "supported" as const : "unsupported" as const,
       supportingRevisionCount: supports.length,
       supportingPaperCount: new Set(supports.map((support) => support.paper.id)).size,
@@ -549,6 +557,17 @@ export function createReviewServices(db: Database, options: {
 
   async function synthesisView(projectId: string, statement: typeof synthesisStatements.$inferSelect, revision: typeof synthesisRevisions.$inferSelect) {
     return (await synthesisViewsForRevisions(projectId, new Map([[statement.id, statement]]), [revision]))[0];
+  }
+
+  let synthesisInterpretationServicesInstance: ReturnType<typeof createSynthesisInterpretationServices> | null = null;
+  function getSynthesisInterpretationServices() {
+    if (!synthesisInterpretationServicesInstance) {
+      synthesisInterpretationServicesInstance = createSynthesisInterpretationServices(db, {
+        requireProject,
+        getSynthesisProvenance: (projectId, statementId, revisionId) => services.getSynthesisProvenance(projectId, statementId, revisionId),
+      });
+    }
+    return synthesisInterpretationServicesInstance;
   }
 
   const services = {
@@ -1155,6 +1174,61 @@ export function createReviewServices(db: Database, options: {
       return { id: String(result.claim.id), projectId, claimText: values.claimText, createdAt: result.claim.created_at as Date, updatedAt: result.claim.created_at as Date, claim: { id: String(result.claim.id), projectId, claimText: values.claimText, createdAt: result.claim.created_at as Date, updatedAt: result.claim.created_at as Date }, revision: result.revision };
     },
 
+    async createClaimWithSynthesisSupport(projectId: string, input: CreateClaimWithSynthesisSupportInput) {
+      await requireProject(projectId);
+      const values = validate(createClaimWithSynthesisSupportSchema, input);
+      const result = await db.transaction(async (tx) => {
+        const claim = await claimRevisionRepo.createClaim(tx, projectId);
+        if (!claim) throw new DomainError("DATABASE_CONSTRAINT", "Claim could not be created");
+        const revision = await createClaimRevisionSnapshot(
+          projectId,
+          String(claim.id),
+          {
+            lifecycle: "active",
+            claimText: values.claimText,
+            researcherNote: values.researcherNote ?? null,
+            supports: [
+              {
+                kind: "synthesisRevision",
+                synthesisRevisionId: values.synthesisRevisionId,
+              },
+            ],
+          },
+          tx,
+        );
+        return { claim, revision };
+      });
+      return {
+        id: String(result.claim.id),
+        projectId,
+        claimText: values.claimText,
+        createdAt: result.claim.created_at as Date,
+        updatedAt: result.claim.created_at as Date,
+        claim: {
+          id: String(result.claim.id),
+          projectId,
+          claimText: values.claimText,
+          createdAt: result.claim.created_at as Date,
+          updatedAt: result.claim.created_at as Date,
+        },
+        revision: result.revision,
+      };
+    },
+
+    async createClaimFromInterpretation(projectId: string, input: CreateClaimFromInterpretationInput) {
+      await requireProject(projectId);
+      const values = validate(createClaimFromInterpretationSchema, input);
+      const interp = await getSynthesisInterpretationServices().getSynthesisInterpretationSnapshot(projectId, values.interpretationId);
+      if (values.synthesisRevisionId && values.synthesisRevisionId !== interp.synthesisRevisionId) {
+        throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis revision does not match the interpretation snapshot");
+      }
+      return this.createClaimWithSynthesisSupport(projectId, {
+        claimText: values.claimText,
+        researcherNote: values.researcherNote ?? null,
+        synthesisRevisionId: interp.synthesisRevisionId,
+      });
+    },
+
     async createClaimRevision(projectId: string, claimId: string, input: CreateClaimRevisionInput) {
       await requireProject(projectId); ensureId(claimId);
       const revision = await db.transaction((tx) => createClaimRevisionSnapshot(projectId, claimId, input, tx));
@@ -1315,6 +1389,7 @@ export function createReviewServices(db: Database, options: {
     synthesisSupportRepo,
     extractionFieldRepo,
   });
+  const synthesisInterpretationServices = getSynthesisInterpretationServices();
   return Object.assign(
     baseServices,
     textExtractionServices,
@@ -1322,10 +1397,14 @@ export function createReviewServices(db: Database, options: {
     curationServices,
     evidenceSetServices,
     synthesisPreparationServices,
+    synthesisInterpretationServices,
   ) as typeof baseServices &
     typeof reportingServices &
     DocumentTextExtractionServices &
     typeof curationServices &
     typeof evidenceSetServices &
-    typeof synthesisPreparationServices;
+    typeof synthesisPreparationServices &
+    typeof synthesisInterpretationServices;
 }
+
+export { createSynthesisInterpretationServices };

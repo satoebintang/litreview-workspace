@@ -920,3 +920,121 @@ export interface FinalizeSynthesisPreparationInput {
   statementText: string;
   researcherNote?: string | null;
 }
+
+export type ConvergenceState = "convergent" | "mixed" | "contradictory" | "inconclusive";
+
+export type LimitationCategory =
+  | "methodological"
+  | "population"
+  | "measurement"
+  | "generalizability"
+  | "missing_data"
+  | "heterogeneity"
+  | "reporting"
+  | "other";
+
+export type EvidenceCurationWarning = "never_reviewed" | "needs_review" | "currently_rejected" | null;
+
+export interface SynthesisInterpretationLimitation {
+  id: string;
+  projectId: ProjectId;
+  interpretationId: string;
+  sortOrder: number;
+  category: LimitationCategory;
+  body: string;
+  createdAt: Date;
+}
+
+export interface SynthesisInterpretationQuestion {
+  id: string;
+  projectId: ProjectId;
+  interpretationId: string;
+  sortOrder: number;
+  body: string;
+  createdAt: Date;
+}
+
+export interface SynthesisInterpretationContradiction {
+  id: string;
+  projectId: ProjectId;
+  interpretationId: string;
+  synthesisRevisionId: string;
+  sortOrder: number;
+  leftExtractionRevisionId: string;
+  rightExtractionRevisionId: string;
+  note: string | null;
+  createdAt: Date;
+}
+
+export interface SynthesisInterpretationSnapshot {
+  id: string;
+  sequence: number;
+  projectId: ProjectId;
+  synthesisStatementId: string;
+  synthesisRevisionId: string;
+  convergenceState: ConvergenceState;
+  summary: string;
+  researcherNote: string | null;
+  createdAt: Date;
+  finalizedAt: Date;
+  limitations: SynthesisInterpretationLimitation[];
+  questions: SynthesisInterpretationQuestion[];
+  contradictions: SynthesisInterpretationContradiction[];
+}
+
+export interface AppendSynthesisInterpretationLimitationInput {
+  category: LimitationCategory;
+  body: string;
+}
+
+export interface AppendSynthesisInterpretationQuestionInput {
+  body: string;
+}
+
+export interface AppendSynthesisInterpretationContradictionInput {
+  leftExtractionRevisionId: string;
+  rightExtractionRevisionId: string;
+  note?: string | null;
+}
+
+export interface AppendSynthesisInterpretationInput {
+  convergenceState: ConvergenceState;
+  summary: string;
+  researcherNote?: string | null;
+  limitations?: AppendSynthesisInterpretationLimitationInput[];
+  questions?: AppendSynthesisInterpretationQuestionInput[];
+  contradictions?: AppendSynthesisInterpretationContradictionInput[];
+}
+
+export interface SynthesisInterpretationContradictionView extends SynthesisInterpretationContradiction {
+  leftSupport: SynthesisSupport | null;
+  rightSupport: SynthesisSupport | null;
+}
+
+export interface SynthesisInterpretationSnapshotView extends Omit<SynthesisInterpretationSnapshot, "contradictions"> {
+  contradictions: SynthesisInterpretationContradictionView[];
+}
+
+export interface SynthesisInterpretationProjection {
+  revision: SynthesisRevisionView;
+  currentInterpretation: SynthesisInterpretationSnapshotView | null;
+  history: SynthesisInterpretationSnapshotView[];
+  supportsLookup: Record<string, SynthesisSupport>;
+  evidenceWarnings: {
+    evidenceId: string;
+    warning: EvidenceCurationWarning;
+  }[];
+}
+
+export interface CreateClaimWithSynthesisSupportInput {
+  claimText: string;
+  researcherNote?: string | null;
+  synthesisRevisionId: string;
+}
+
+export interface CreateClaimFromInterpretationInput {
+  interpretationId: string;
+  synthesisRevisionId?: string;
+  claimText: string;
+  researcherNote?: string | null;
+}

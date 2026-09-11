@@ -23,10 +23,11 @@ export default async function SynthesisStatementPage({ params, searchParams }: {
     throw error;
   }
   if (!current) notFound();
-  const [history, screeningPapers, currentPrepContext] = await Promise.all([
+  const [history, screeningPapers, currentPrepContext, currentInterpretationProjection] = await Promise.all([
     reviewServices.getSynthesisHistory(projectId, statementId),
     reviewServices.listScreeningPapers(projectId),
     reviewServices.getSynthesisPreparationContextForRevision(projectId, current.id),
+    reviewServices.getSynthesisInterpretationProjection(projectId, statementId, current.id),
   ]);
   const historyPrepContexts = await Promise.all(
     history.map((r) => reviewServices.getSynthesisPreparationContextForRevision(projectId, r.id))
@@ -37,7 +38,7 @@ export default async function SynthesisStatementPage({ params, searchParams }: {
   const replacementRows = await Promise.all([...new Map(current.supports.map((support) => [support.field.id, support.field])).values()].map(async (field) => [field.id, await reviewServices.listExtractionComparison(projectId, field.id)] as const));
   const replacementByKey = new Map(replacementRows.flatMap(([, rows]) => rows.map((row) => [`${row.paper.id}:${row.field.id}`, row] as const)));
   const screeningByPaperId = new Map(screeningPapers.map((paper) => [paper.id, paper.screeningState]));
-  const savedMessage = query.saved === "created" ? "Synthesis statement created." : query.saved === "revised" ? "New synthesis revision saved." : query.saved === "withdrawn" ? "Synthesis withdrawn. Its history remains available." : query.saved === "finalized_from_preparation" ? "Synthesis statement finalized from preparation workspace." : undefined;
+  const savedMessage = query.saved === "created" ? "Synthesis statement created." : query.saved === "revised" ? "New synthesis revision saved." : query.saved === "withdrawn" ? "Synthesis withdrawn. Its history remains available." : query.saved === "finalized_from_preparation" ? "Synthesis statement finalized from preparation workspace." : query.saved === "interpretation" ? "Interpretation snapshot saved." : undefined;
   const active = current.state === "active";
 
   return <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
@@ -45,7 +46,40 @@ export default async function SynthesisStatementPage({ params, searchParams }: {
       <div className="workspace-header"><div><p className="eyebrow">Synthesis provenance</p><h1>{current.title ?? "Untitled synthesis"}</h1><p>Revision {current.sequence} · {current.supportingRevisionCount} supporting observations across {current.supportingPaperCount} {current.supportingPaperCount === 1 ? "Paper" : "Papers"}</p></div><span className={`status ${active ? (current.supportStatus === "supported" ? "supported" : "unsupported") : "unsupported"}`}>{active ? (current.supportStatus === "supported" ? "● Supported observations" : "○ Unsupported") : "Withdrawn"}</span></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{savedMessage && <div className="success-note" role="status">{savedMessage}</div>}
       <div className="workspace-grid">
-        <section className="card section-card full"><div className="section-heading"><h2>Current synthesis</h2><span className="count">Revision {current.sequence}</span></div>
+        <section className="card section-card full">
+          <div className="section-heading">
+            <h2>Current synthesis</h2>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <span className="count">Revision {current.sequence}</span>
+              <Link
+                className="button ghost small"
+                href={`/projects/${projectId}/synthesis/${statementId}/revisions/${current.id}`}
+              >
+                Inspect exact revision & interpretation →
+              </Link>
+            </div>
+          </div>
+          {currentInterpretationProjection.currentInterpretation && (
+            <div
+              style={{
+                marginBottom: 16,
+                padding: "10px 14px",
+                background: "#f0fdf4",
+                border: "1px solid #bbf7d0",
+                borderRadius: 6,
+              }}
+            >
+              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 6 }}>
+                <span className={`badge-convergence ${currentInterpretationProjection.currentInterpretation.convergenceState}`}>
+                  {currentInterpretationProjection.currentInterpretation.convergenceState}
+                </span>
+                <strong>Interpretation snapshot {currentInterpretationProjection.currentInterpretation.sequence}</strong>
+              </div>
+              <p style={{ margin: 0, fontSize: "0.95rem" }}>
+                {currentInterpretationProjection.currentInterpretation.summary}
+              </p>
+            </div>
+          )}
           {currentPrepContext && (
             <div
               className="card"
@@ -90,7 +124,7 @@ export default async function SynthesisStatementPage({ params, searchParams }: {
           <form action={reviseSynthesisStatementAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="statementId" value={statementId} /><div className="field"><label htmlFor="revision-title">Topic or title <span className="hint">optional</span></label><input id="revision-title" name="title" defaultValue={current.title ?? ""} /></div><div className="field"><label htmlFor="revision-text">Synthesis statement</label><textarea id="revision-text" name="statementText" required defaultValue={current.statementText ?? ""} /></div><div className="field"><label htmlFor="revision-note">Researcher note <span className="hint">optional</span></label><textarea id="revision-note" name="researcherNote" defaultValue={current.researcherNote ?? ""} /></div><div className="item-list">{current.supports.map((support) => { const included = screeningByPaperId.get(support.paper.id) === "included"; const replacement = replacementByKey.get(`${support.paper.id}:${support.field.id}`); const canReplace = included && Boolean(replacement?.extractionRevision && replacement.extractionRevision.id !== support.extractionRevisionId); return <div className="item" key={support.extractionRevisionId}><label className="checkbox-row"><input type="checkbox" name="extractionRevisionIds" value={support.extractionRevisionId} defaultChecked={included} disabled={!included} /><span><strong>{support.paper.title}</strong><br /><span className="hint">{support.field.name}: {displayExtraction(support)} · {support.isCurrentExtractionRevision ? "Current extraction" : "Superseded support — replace explicitly if desired"}{!included ? " · Paper excluded" : ""}</span></span></label>{canReplace && replacement?.extractionRevision && <label className="checkbox-row"><input type="checkbox" name="extractionRevisionIds" value={replacement.extractionRevision.id} aria-label={`Use current extraction from ${support.paper.title}`} /><span><strong>Use current extraction</strong><br /><span className="hint">{support.field.name}: {replacement.displayValue ?? replacement.valueState.replaceAll("_", " ")} · Explicit replacement for superseded revision</span></span></label>}</div>; })}</div><button className="button" type="submit">Save new synthesis revision</button></form></section>}
         {active && <section className="card section-card"><div className="section-heading"><h2>Withdraw conclusion</h2></div><p className="hint">Withdrawal preserves every prior statement and support set. Repeating withdrawal is safe and returns the existing withdrawn revision.</p><form action={withdrawSynthesisStatementAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="statementId" value={statementId} /><div className="field"><label htmlFor="withdraw-note">Withdrawal note <span className="hint">optional</span></label><textarea id="withdraw-note" name="researcherNote" placeholder="Why is this conclusion being withdrawn?" /></div><button className="button secondary" type="submit">Withdraw synthesis</button></form></section>}
         {!active && <section className="card section-card"><div className="section-heading"><h2>Withdrawn</h2></div><p className="hint">This conclusion is already withdrawn. No additional revision is created by repeating the operation.</p></section>}
-        <section className="card section-card full"><div className="section-heading"><h2>Complete synthesis history</h2><span className="count">{history.length} revisions</span></div><div className="item-list">{history.map((revision) => { const prepCtx = prepContextByRevisionId.get(revision.id); return <article className="item" key={revision.id}><div className="item-row"><div><div className="item-title">Revision {revision.sequence} · {revision.state === "withdrawn" ? "Withdrawn" : revision.supportStatus === "supported" ? "Supported observations" : "Unsupported"}</div><div className="item-meta">{revision.statementText ?? "Conclusion withdrawn"}</div></div><span className="status">{revision.supportingRevisionCount} revisions · {revision.supportingPaperCount} Papers</span></div>{prepCtx && <div className="item-meta" style={{ fontStyle: "italic", marginTop: 4 }}>↳ Preparation context: Evidence Set &ldquo;{prepCtx.evidenceSetName}&rdquo; (pinned seq {prepCtx.pinnedCompositionSequence})</div>}{revision.supports.map((support) => <div className="item-meta" key={support.extractionRevisionId}>↳ {support.paper.title} · {support.field.name}: {displayExtraction(support)} · Extraction revision {support.extractionRevision.sequence}{support.isCurrentExtractionRevision ? "" : " · superseded support"}</div>)}</article>; })}</div></section>
+        <section className="card section-card full"><div className="section-heading"><h2>Complete synthesis history</h2><span className="count">{history.length} revisions</span></div><div className="item-list">{history.map((revision) => { const prepCtx = prepContextByRevisionId.get(revision.id); return <article className="item" key={revision.id}><div className="item-row"><div><div className="item-title">Revision {revision.sequence} · {revision.state === "withdrawn" ? "Withdrawn" : revision.supportStatus === "supported" ? "Supported observations" : "Unsupported"}</div><div className="item-meta">{revision.statementText ?? "Conclusion withdrawn"}</div></div><div style={{ display: "flex", gap: 10, alignItems: "center" }}><span className="status">{revision.supportingRevisionCount} revisions · {revision.supportingPaperCount} Papers</span><Link className="button ghost small" href={`/projects/${projectId}/synthesis/${statementId}/revisions/${revision.id}`}>Inspect revision & interpretation →</Link></div></div>{prepCtx && <div className="item-meta" style={{ fontStyle: "italic", marginTop: 4 }}>↳ Preparation context: Evidence Set &ldquo;{prepCtx.evidenceSetName}&rdquo; (pinned seq {prepCtx.pinnedCompositionSequence})</div>}{revision.supports.map((support) => <div className="item-meta" key={support.extractionRevisionId}>↳ {support.paper.title} · {support.field.name}: {displayExtraction(support)} · Extraction revision {support.extractionRevision.sequence}{support.isCurrentExtractionRevision ? "" : " · superseded support"}</div>)}</article>; })}</div></section>
       </div>
       <p className="footer-note">Source-backed observations remain distinct from the researcher-authored synthesis statement.</p>
     </div></main>;

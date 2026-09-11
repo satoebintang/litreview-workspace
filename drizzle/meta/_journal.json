@@ -134,6 +134,13 @@
       "when": 1789126641199,
       "tag": "0018_synthesis_preparations",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789135837540,
+      "tag": "0019_synthesis_interpretation",
+      "breakpoints": true
     }
   ]
 }

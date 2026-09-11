@@ -117,6 +117,19 @@ export const createClaimSchema = z.object({
   researcherNote: optionalText,
 });
 
+export const createClaimWithSynthesisSupportSchema = z.object({
+  claimText: z.string().trim().min(1).max(10000),
+  researcherNote: optionalText,
+  synthesisRevisionId: idSchema,
+});
+
+export const createClaimFromInterpretationSchema = z.object({
+  interpretationId: idSchema,
+  synthesisRevisionId: idSchema.optional(),
+  claimText: z.string().trim().min(1).max(10000),
+  researcherNote: optionalText,
+});
+
 export const claimEvidenceInputSchema = z.object({
   claimId: idSchema,
   evidenceId: idSchema,
@@ -260,6 +273,98 @@ export const finalizeSynthesisPreparationSchema = z.object({
   statementText: synthesisText.max(10000),
   researcherNote: synthesisText.max(10000).nullable().optional(),
 });
+
+export const limitationCategorySchema = z.enum([
+  "methodological",
+  "population",
+  "measurement",
+  "generalizability",
+  "missing_data",
+  "heterogeneity",
+  "reporting",
+  "other",
+]);
+
+export const synthesisInterpretationLimitationInputSchema = z.object({
+  category: limitationCategorySchema,
+  body: z.string().trim().min(1, "Limitation body is required").max(5000, "Limitation cannot exceed 5000 characters"),
+});
+
+export const synthesisInterpretationQuestionInputSchema = z.object({
+  body: z.string().trim().min(1, "Question body is required").max(5000, "Question cannot exceed 5000 characters"),
+});
+
+export const synthesisInterpretationContradictionInputSchema = z.object({
+  leftExtractionRevisionId: idSchema,
+  rightExtractionRevisionId: idSchema,
+  note: z.preprocess((val) => {
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+    return val ?? null;
+  }, z.string().max(5000, "Contradiction note cannot exceed 5000 characters").nullable().optional()),
+}).superRefine((data, ctx) => {
+  if (data.leftExtractionRevisionId === data.rightExtractionRevisionId) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["rightExtractionRevisionId"],
+      message: "Self-pairs are not allowed: left and right extraction revisions must be distinct",
+    });
+  }
+}).transform((data) => {
+  const isCanonical = data.leftExtractionRevisionId < data.rightExtractionRevisionId;
+  return {
+    leftExtractionRevisionId: isCanonical ? data.leftExtractionRevisionId : data.rightExtractionRevisionId,
+    rightExtractionRevisionId: isCanonical ? data.rightExtractionRevisionId : data.leftExtractionRevisionId,
+    note: data.note ?? null,
+  };
+});
+
+export const appendSynthesisInterpretationSchema = z.object({
+  convergenceState: z.enum(["convergent", "mixed", "contradictory", "inconclusive"]),
+  summary: z.string().trim().min(1, "Interpretation summary is required").max(20000, "Summary cannot exceed 20000 characters"),
+  researcherNote: z.preprocess((val) => {
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+    return val ?? null;
+  }, z.string().max(10000, "Researcher note cannot exceed 10000 characters").nullable().optional()),
+  limitations: z.array(synthesisInterpretationLimitationInputSchema).max(100, "Limitations cannot exceed 100 items").default([]),
+  questions: z.array(synthesisInterpretationQuestionInputSchema).max(100, "Questions cannot exceed 100 items").default([]),
+  contradictions: z.array(synthesisInterpretationContradictionInputSchema).max(500, "Contradictions cannot exceed 500 items").default([]),
+}).superRefine((data, ctx) => {
+  const seenPairs = new Set<string>();
+  data.contradictions.forEach((pair, index) => {
+    const key = `${pair.leftExtractionRevisionId}:${pair.rightExtractionRevisionId}`;
+    if (seenPairs.has(key)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["contradictions", index],
+        message: "Duplicate contradiction pair is not allowed",
+      });
+    } else {
+      seenPairs.add(key);
+    }
+  });
+
+  if (data.convergenceState === "convergent" && data.contradictions.length > 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["contradictions"],
+      message: "Convergent state requires exactly 0 contradiction pairs",
+    });
+  }
+  if (data.convergenceState === "contradictory" && data.contradictions.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["contradictions"],
+      message: "Contradictory state requires at least 1 contradiction pair",
+    });
+  }
+});
+
 
 export const extractionComparisonFilterSchema = z.object({
   paperIds: z.array(idSchema).optional(),
@@ -448,3 +553,9 @@ export type CreateSynthesisPreparationSchemaInput = z.input<typeof createSynthes
 export type UpdateSynthesisPreparationSchemaInput = z.input<typeof updateSynthesisPreparationSchema>;
 export type ReplaceSynthesisPreparationSelectionsSchemaInput = z.input<typeof replaceSynthesisPreparationSelectionsSchema>;
 export type FinalizeSynthesisPreparationSchemaInput = z.input<typeof finalizeSynthesisPreparationSchema>;
+export type AppendSynthesisInterpretationSchemaInput = z.input<typeof appendSynthesisInterpretationSchema>;
+export type SynthesisInterpretationLimitationSchemaInput = z.input<typeof synthesisInterpretationLimitationInputSchema>;
+export type SynthesisInterpretationQuestionSchemaInput = z.input<typeof synthesisInterpretationQuestionInputSchema>;
+export type SynthesisInterpretationContradictionSchemaInput = z.input<typeof synthesisInterpretationContradictionInputSchema>;
+export type CreateClaimWithSynthesisSupportInput = z.input<typeof createClaimWithSynthesisSupportSchema>;
+export type CreateClaimFromInterpretationInput = z.input<typeof createClaimFromInterpretationSchema>;

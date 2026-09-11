@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { DomainError } from "@/domain/errors";
-import type { FullTextRetrievalMethod } from "@/domain/types";
+import type { FullTextRetrievalMethod, ConvergenceState, LimitationCategory } from "@/domain/types";
 import { reviewServices } from "./server";
 
 function text(form: FormData, key: string) {
@@ -921,4 +921,93 @@ export async function finalizeSynthesisPreparationAction(form: FormData) {
     fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
   }
   redirect(`/projects/${projectId}/synthesis/${result.statement.id}?saved=finalized_from_preparation`);
+}
+
+export async function appendSynthesisInterpretationAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const synthesisStatementId = text(form, "synthesisStatementId");
+  const synthesisRevisionId = text(form, "synthesisRevisionId");
+  try {
+    let limitations: { category: LimitationCategory; body: string }[] = [];
+    if (form.get("limitationsJson")) {
+      limitations = JSON.parse(text(form, "limitationsJson"));
+    } else {
+      const categories = form.getAll("limitationCategory").map((c) => String(c).trim());
+      const bodies = form.getAll("limitationBody").map((b) => String(b).trim());
+      limitations = categories
+        .map((category, index) => ({
+          category: category as LimitationCategory,
+          body: bodies[index] ?? "",
+        }))
+        .filter((item) => item.body.length > 0);
+    }
+
+    let questions: { body: string }[] = [];
+    if (form.get("questionsJson")) {
+      questions = JSON.parse(text(form, "questionsJson"));
+    } else {
+      const bodies = form.getAll("questionBody").map((b) => String(b).trim());
+      questions = bodies.map((body) => ({ body })).filter((item) => item.body.length > 0);
+    }
+
+    let contradictions: { leftExtractionRevisionId: string; rightExtractionRevisionId: string; note?: string | null }[] = [];
+    if (form.get("contradictionsJson")) {
+      contradictions = JSON.parse(text(form, "contradictionsJson"));
+    } else if (form.getAll("contradictionPairs").length > 0) {
+      contradictions = form
+        .getAll("contradictionPairs")
+        .map((pair) => String(pair).split(":"))
+        .filter((parts) => parts.length === 2)
+        .map(([left, right]) => ({
+          leftExtractionRevisionId: left.trim(),
+          rightExtractionRevisionId: right.trim(),
+        }));
+    } else {
+      const lefts = form.getAll("contradictionLeftId").map((id) => String(id).trim());
+      const rights = form.getAll("contradictionRightId").map((id) => String(id).trim());
+      const notes = form.getAll("contradictionNote").map((n) => String(n).trim());
+      contradictions = lefts
+        .map((left, index) => ({
+          leftExtractionRevisionId: left,
+          rightExtractionRevisionId: rights[index] ?? "",
+          note: notes[index] || null,
+        }))
+        .filter((item) => item.leftExtractionRevisionId && item.rightExtractionRevisionId);
+    }
+
+    await reviewServices.appendSynthesisInterpretation(
+      projectId,
+      synthesisStatementId,
+      synthesisRevisionId,
+      {
+        convergenceState: text(form, "convergenceState") as ConvergenceState,
+        summary: verbatimText(form, "summary"),
+        researcherNote: optional(form, "researcherNote"),
+        limitations,
+        questions,
+        contradictions,
+      },
+    );
+  } catch (error) {
+    fail(`/projects/${projectId}/synthesis/${synthesisStatementId}/revisions/${synthesisRevisionId}`, error);
+  }
+  redirect(`/projects/${projectId}/synthesis/${synthesisStatementId}/revisions/${synthesisRevisionId}?saved=interpretation`);
+}
+
+export async function createClaimFromInterpretationAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const interpretationId = text(form, "interpretationId");
+  const synthesisRevisionId = optional(form, "synthesisRevisionId");
+  let claim;
+  try {
+    claim = await reviewServices.createClaimFromInterpretation(projectId, {
+      interpretationId,
+      synthesisRevisionId,
+      claimText: verbatimText(form, "claimText"),
+      researcherNote: optional(form, "researcherNote"),
+    });
+  } catch (error) {
+    fail(`/projects/${projectId}/claims?interpretationId=${interpretationId}${synthesisRevisionId ? `&synthesisRevisionId=${synthesisRevisionId}` : ""}`, error);
+  }
+  redirect(`/projects/${projectId}/claims/${claim.id}?saved=created_from_interpretation`);
 }
