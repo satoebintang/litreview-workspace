@@ -29,7 +29,6 @@ import {
   type UpdateExtractionFieldInput,
   type CreateExtractionOptionInput,
   type ReviseExtractionValueInput,
-  synthesisRevisionInputSchema,
   synthesisWithdrawalSchema,
   extractionComparisonFilterSchema,
   type SynthesisRevisionInput,
@@ -79,6 +78,11 @@ import {
 } from "./document-text-extraction-services";
 import { createEvidenceCurationServices, requireEvidenceUsableForNewDirectSupport } from "./evidence-curation-services";
 import { createEvidenceSetServices } from "./evidence-set-services";
+import { createSynthesisPreparationServices } from "./synthesis-preparation-services";
+import {
+  writeActiveSynthesisRevision,
+  lockExtractionRevisionPapers,
+} from "./synthesis-writer";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
   const result = schema.safeParse(input);
@@ -219,18 +223,6 @@ export function createReviewServices(db: Database, options: {
     const status = statusFromRow(await paperReviewRepo.find(projectId, paperId, tx) as Record<string, unknown>);
     if (!isFinallyIncluded(status)) throw new DomainError("VALIDATION_ERROR", "New analytical work is available only for finally included papers");
     return { paper, status };
-  }
-
-  async function lockExtractionRevisionPapers(tx: ReviewTransaction, projectId: string, extractionRevisionIds: string[]) {
-    if (!extractionRevisionIds.length) return [];
-    const rows = await tx.execute(sql`
-      select distinct paper_id from extraction_value_revisions
-      where project_id=${projectId} and id in (${sql.join(extractionRevisionIds.map((id) => sql`${id}::uuid`), sql`, `)})
-      order by paper_id
-    `) as unknown as Array<Record<string, unknown>>;
-    const paperIds = rows.map((row) => String(row.paper_id)).sort();
-    await paperRepo.lockManyForUpdate(tx, projectId, paperIds);
-    return paperIds;
   }
 
   async function getPaperReviewStatusFor(projectId: string, paperId: string, tx: ReviewTransaction | Database = db) {
@@ -388,27 +380,6 @@ export function createReviewServices(db: Database, options: {
     return state === "include" ? "included" : state === "exclude" ? "excluded" : state === "maybe" ? "maybe" : "unscreened";
   }
 
-  async function validateSynthesisSupports(projectId: string, extractionRevisionIds: string[], executor: SqlExecutor = db) {
-    extractionRevisionIds.forEach(ensureId);
-    if (!extractionRevisionIds.length) return [] as Record<string, unknown>[];
-    const rows = (await executor.execute(sql`
-      select r.id, r.project_id, r.paper_id, r.field_id, r.extraction_value_id, r.field_type, r.value_state,
-        r.text_value, r.number_value, r.boolean_value, r.option_id, r.researcher_note, r.created_at, r.finalized_at,
-        p.id as paper_id_value,
-        coalesce((select sd.decision from screening_decisions sd where sd.project_id=r.project_id and sd.paper_id=r.paper_id and sd.stage='title_abstract' order by sd.sequence desc limit 1), 'unscreened') as screening_state,
-        (select fd.decision from full_text_screening_decisions fd where fd.project_id=r.project_id and fd.paper_id=r.paper_id order by fd.sequence desc limit 1) as full_text_state
-      from extraction_value_revisions r join papers p on p.project_id=r.project_id and p.id=r.paper_id
-      where r.project_id=${projectId} and r.id in (${sql.join(extractionRevisionIds.map((id) => sql`${id}::uuid`), sql`, `)})
-    `)) as unknown as Record<string, unknown>[];
-    if (rows.length !== extractionRevisionIds.length) throw new DomainError("CROSS_PROJECT_REFERENCE", "One or more extraction revisions do not belong to this project");
-    for (const row of rows) {
-      if (row.finalized_at == null) throw new DomainError("VALIDATION_ERROR", "Synthesis support must use finalized extraction revisions");
-      if (String(row.value_state) === "cleared") throw new DomainError("VALIDATION_ERROR", "Cleared extraction revisions cannot support new synthesis");
-      if (String(row.screening_state) !== "include" || String(row.full_text_state) !== "include") throw new DomainError("VALIDATION_ERROR", "New synthesis support is limited to currently finally included papers");
-    }
-    return rows;
-  }
-
   function synthesisViewFromRows(projectId: string, statement: typeof synthesisStatements.$inferSelect, revision: typeof synthesisRevisions.$inferSelect, rawRows: Record<string, unknown>[], evidenceByRevision: Map<string, ReturnType<typeof mapEvidence>[]>) {
     const supports = rawRows.map((row) => ({
       projectId, synthesisRevisionId: revision.id, extractionRevisionId: String(row.extraction_revision_id), createdAt: row.support_created_at as Date,
@@ -488,7 +459,7 @@ export function createReviewServices(db: Database, options: {
   async function createClaimRevisionSnapshot(projectId: string, claimId: string, input: CreateClaimRevisionInput, tx: ReviewTransaction) {
     const values = validate(createClaimRevisionSchema, input);
     const supports = (values.supports ?? []) as ClaimSupportSnapshot[];
-    await lockExtractionRevisionPapers(tx, projectId, supports.filter((support) => support.kind === "extractionRevision").map((support) => String(support.extractionRevisionId)));
+    await lockExtractionRevisionPapers(tx, projectId, supports.filter((support) => support.kind === "extractionRevision").map((support) => String(support.extractionRevisionId)), paperRepo);
     const locked = await claimRevisionRepo.findForUpdate(tx, projectId, claimId);
     if (!locked) throw new DomainError("CROSS_PROJECT_REFERENCE", "Claim does not belong to this project");
     const current = await currentClaimRevision(tx, projectId, claimId);
@@ -981,44 +952,31 @@ export function createReviewServices(db: Database, options: {
 
     async createSynthesisStatement(projectId: string, input: SynthesisRevisionInput) {
       await requireProject(projectId);
-      const values = validate(synthesisRevisionInputSchema, input);
-      const ids = values.extractionRevisionIds ?? [];
       return db.transaction(async (tx) => {
-        await lockExtractionRevisionPapers(tx, projectId, ids);
-        await validateSynthesisSupports(projectId, ids, tx);
-        const statementRows = await tx.insert(synthesisStatements).values({ projectId }).returning();
-        const statement = statementRows[0];
-        await synthesisStatementRepo.findForUpdate(tx, projectId, statement.id);
-        const draft = await synthesisRevisionRepo.createDraft(tx, {
-          projectId, synthesisStatementId: statement.id, state: "active", title: values.title ?? null,
-          statementText: values.statementText, researcherNote: values.researcherNote ?? null,
-        });
-        await synthesisSupportRepo.createMany(tx, projectId, draft.id, ids);
-        const finalized = await synthesisRevisionRepo.finalize(tx, projectId, draft.id);
-        if (!finalized) throw new DomainError("DATABASE_CONSTRAINT", "Synthesis revision could not be finalized");
-        return { statement, revision: finalized };
+        const { statement, revision } = await writeActiveSynthesisRevision(
+          tx,
+          projectId,
+          { kind: "new" },
+          input,
+          { paperRepo, synthesisStatementRepo, synthesisRevisionRepo, synthesisSupportRepo },
+        );
+        return { statement, revision };
       });
     },
 
     async reviseSynthesisStatement(projectId: string, statementId: string, input: SynthesisRevisionInput) {
-      await requireProject(projectId); ensureId(statementId);
-      const values = validate(synthesisRevisionInputSchema, input);
-      const ids = values.extractionRevisionIds ?? [];
-      const result = await db.transaction(async (tx) => {
-        await lockExtractionRevisionPapers(tx, projectId, ids);
-        const statement = await synthesisStatementRepo.findForUpdate(tx, projectId, statementId);
-        if (!statement) throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis statement does not belong to this project");
-        await validateSynthesisSupports(projectId, ids, tx);
-        const draft = await synthesisRevisionRepo.createDraft(tx, {
-          projectId, synthesisStatementId: statementId, state: "active", title: values.title ?? null,
-          statementText: values.statementText, researcherNote: values.researcherNote ?? null,
-        });
-        await synthesisSupportRepo.createMany(tx, projectId, draft.id, ids);
-        const finalized = await synthesisRevisionRepo.finalize(tx, projectId, draft.id);
-        if (!finalized) throw new DomainError("DATABASE_CONSTRAINT", "Synthesis revision could not be finalized");
-        return { statement, revision: finalized };
+      await requireProject(projectId);
+      ensureId(statementId);
+      return db.transaction(async (tx) => {
+        const { statement, revision } = await writeActiveSynthesisRevision(
+          tx,
+          projectId,
+          { kind: "existing", statementId },
+          input,
+          { paperRepo, synthesisStatementRepo, synthesisRevisionRepo, synthesisSupportRepo },
+        );
+        return { statement, revision };
       });
-      return result;
     },
 
     async withdrawSynthesisStatement(projectId: string, statementId: string, input?: SynthesisWithdrawalInput) {
@@ -1349,5 +1307,25 @@ export function createReviewServices(db: Database, options: {
   const reportingServices = createReviewReportingServices(db, deduplicationServices);
   const curationServices = createEvidenceCurationServices(db, { requireProject, requireEvidence });
   const evidenceSetServices = createEvidenceSetServices(db, { requireProject, requireEvidence });
-  return Object.assign(baseServices, textExtractionServices, reportingServices, curationServices, evidenceSetServices) as typeof baseServices & typeof reportingServices & DocumentTextExtractionServices & typeof curationServices & typeof evidenceSetServices;
+  const synthesisPreparationServices = createSynthesisPreparationServices(db, {
+    requireProject,
+    paperRepo,
+    synthesisStatementRepo,
+    synthesisRevisionRepo,
+    synthesisSupportRepo,
+    extractionFieldRepo,
+  });
+  return Object.assign(
+    baseServices,
+    textExtractionServices,
+    reportingServices,
+    curationServices,
+    evidenceSetServices,
+    synthesisPreparationServices,
+  ) as typeof baseServices &
+    typeof reportingServices &
+    DocumentTextExtractionServices &
+    typeof curationServices &
+    typeof evidenceSetServices &
+    typeof synthesisPreparationServices;
 }

@@ -844,3 +844,81 @@ export async function correctDifferentWorkAndResolveAction(form: FormData) {
   } catch (error) { fail(path, error); }
   redirect(`${path}?saved=different_work_resolved`);
 }
+
+export async function createSynthesisPreparationAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const evidenceSetId = text(form, "evidenceSetId");
+  const extractionFieldId = text(form, "extractionFieldId");
+  let preparation;
+  try {
+    preparation = await reviewServices.createSynthesisPreparation(projectId, {
+      evidenceSetId,
+      extractionFieldId,
+      workingTitle: optional(form, "workingTitle"),
+      workingNote: optional(form, "workingNote"),
+    });
+  } catch (error) {
+    fail(`/projects/${projectId}/evidence-sets/${evidenceSetId}`, error);
+  }
+  redirect(`/projects/${projectId}/synthesis/preparations/${preparation.id}`);
+}
+
+export async function updateSynthesisPreparationAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const preparationId = text(form, "preparationId");
+  try {
+    const rawTarget = form.get("targetSynthesisStatementId");
+    await reviewServices.updateSynthesisPreparation(projectId, preparationId, {
+      workingTitle: optional(form, "workingTitle"),
+      workingNote: optional(form, "workingNote"),
+      targetSynthesisStatementId: rawTarget !== null ? (optional(form, "targetSynthesisStatementId") ?? null) : undefined,
+    });
+  } catch (error) {
+    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
+  }
+  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=updated`);
+}
+
+export async function replaceSynthesisPreparationSelectionsAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const preparationId = text(form, "preparationId");
+  try {
+    const extractionRevisionIds = form
+      .getAll("extractionRevisionIds")
+      .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+      .map((v) => v.trim());
+    await reviewServices.replaceSynthesisPreparationSelections(projectId, preparationId, {
+      extractionRevisionIds,
+    });
+  } catch (error) {
+    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
+  }
+  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=selections`);
+}
+
+export async function abandonSynthesisPreparationAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const preparationId = text(form, "preparationId");
+  try {
+    await reviewServices.abandonSynthesisPreparation(projectId, preparationId);
+  } catch (error) {
+    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
+  }
+  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=abandoned`);
+}
+
+export async function finalizeSynthesisPreparationAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const preparationId = text(form, "preparationId");
+  let result;
+  try {
+    result = await reviewServices.finalizeSynthesisPreparation(projectId, preparationId, {
+      statementText: verbatimText(form, "statementText"),
+      title: optional(form, "title"),
+      researcherNote: optional(form, "researcherNote"),
+    });
+  } catch (error) {
+    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
+  }
+  redirect(`/projects/${projectId}/synthesis/${result.statement.id}?saved=finalized_from_preparation`);
+}

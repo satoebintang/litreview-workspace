@@ -42,9 +42,11 @@ test.describe("Slice 3 structured extraction", () => {
     await expect(page.getByText("Extraction option saved.")).toBeVisible();
     await page.getByLabel("New option for Attack technique").fill("Evasion");
     await page.getByRole("button", { name: "Add option" }).click();
-    await expect(page.getByText("Extraction option saved.")).toBeVisible();
+    await expect(page.getByLabel("New option for Attack technique")).toHaveValue("");
+    await expect(page.getByText("Evasion", { exact: true })).toBeVisible();
 
     await page.getByRole("link", { name: /Poisoning Attacks in Vision Models/ }).click();
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+\/extraction\/[0-9a-f-]+$/);
     const field = page.locator(".extraction-value").filter({ hasText: "Attack technique" });
     await field.getByLabel("Structured value").selectOption({ label: "Data poisoning" });
     await field.getByRole("button", { name: "Save new revision" }).click();

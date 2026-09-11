@@ -9,6 +9,8 @@ export type EvidenceSetId = string;
 export type EvidenceSetMembershipId = string;
 export type EvidenceSetCompositionRevisionId = string;
 export type EvidenceSetAnnotationId = string;
+export type SynthesisPreparationId = string;
+export type ExtractionFieldId = string;
 export type FullTextDocumentId = string;
 export type DocumentTextExtractionId = string;
 export type ClaimId = string;
@@ -786,4 +788,135 @@ export interface ExtractionFieldSummary {
   field: ExtractionField;
   totalIncludedPapers: number;
   counts: Record<string, number>;
+}
+
+export type SynthesisPreparationStatus = "active" | "finalized" | "abandoned";
+
+export interface SynthesisPreparation {
+  id: SynthesisPreparationId;
+  projectId: ProjectId;
+  evidenceSetId: EvidenceSetId;
+  evidenceSetCompositionRevisionId: EvidenceSetCompositionRevisionId;
+  extractionFieldId: ExtractionFieldId;
+  workingTitle: string | null;
+  workingNote: string | null;
+  targetSynthesisStatementId: string | null;
+  status: SynthesisPreparationStatus;
+  finalizedSynthesisRevisionId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  finalizedAt: Date | null;
+  abandonedAt: Date | null;
+}
+
+export interface SynthesisPreparationSelection {
+  projectId: ProjectId;
+  preparationId: SynthesisPreparationId;
+  extractionRevisionId: string;
+  createdAt: Date;
+}
+
+export interface SynthesisCandidateConnectingEvidence {
+  membershipId: EvidenceSetMembershipId;
+  membershipOrder: number;
+  evidenceId: EvidenceId;
+  sourceText: string;
+  pageNumber: number;
+  document?: FullTextDocumentSummary | null;
+  curationState: EvidenceReviewState;
+  curationWarning?: "never_reviewed" | "needs_review" | "currently_rejected" | null;
+}
+
+export type SynthesisCandidateWarning =
+  | "underlying_evidence_unreviewed"
+  | "underlying_evidence_needs_review"
+  | "underlying_evidence_rejected"
+  | "paper_not_finally_included"
+  | "extraction_revision_superseded"
+  | "extraction_revision_cleared";
+
+export interface SynthesisCandidate {
+  extractionRevision: ExtractionRevisionWithEvidence;
+  paper: Paper;
+  paperScreeningState: string;
+  isFinallyIncluded: boolean;
+  isCurrentExtractionRevision: boolean;
+  connectingEvidence: SynthesisCandidateConnectingEvidence[];
+  selected: boolean;
+  selectable: boolean;
+  eligibilityReasons: string[];
+  warnings: SynthesisCandidateWarning[];
+}
+
+export interface SynthesisPreparationSummary {
+  id: SynthesisPreparationId;
+  projectId: ProjectId;
+  evidenceSetId: EvidenceSetId;
+  evidenceSetName: string;
+  evidenceSetArchivedAt: Date | null;
+  evidenceSetCompositionRevisionId: EvidenceSetCompositionRevisionId;
+  pinnedCompositionSequence: number;
+  extractionFieldId: ExtractionFieldId;
+  extractionFieldName: string;
+  extractionFieldType: ExtractionFieldType;
+  workingTitle: string | null;
+  workingNote: string | null;
+  targetSynthesisStatementId: string | null;
+  status: SynthesisPreparationStatus;
+  finalizedSynthesisRevisionId: string | null;
+  sourceSetChanged: boolean;
+  candidateCount: number;
+  selectedCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  finalizedAt: Date | null;
+  abandonedAt: Date | null;
+}
+
+export interface SynthesisPreparationWorkspace {
+  preparation: SynthesisPreparation;
+  evidenceSet: EvidenceSet;
+  pinnedCompositionSequence: number;
+  latestCompositionSequence: number;
+  sourceSetChanged: boolean;
+  field: ExtractionField;
+  targetStatement: SynthesisStatement | null;
+  currentTargetRevision: SynthesisRevision | null;
+  finalizedRevision: SynthesisRevision | null;
+  candidateCount: number;
+  selectedCount: number;
+  candidates: SynthesisCandidate[];
+}
+
+export interface SynthesisPreparationContext {
+  preparationId: SynthesisPreparationId;
+  evidenceSetId: EvidenceSetId;
+  evidenceSetName: string;
+  evidenceSetArchivedAt: Date | null;
+  pinnedCompositionRevisionId: EvidenceSetCompositionRevisionId;
+  pinnedCompositionSequence: number;
+  finalizedAt: Date;
+}
+
+export interface CreateSynthesisPreparationInput {
+  evidenceSetId: string;
+  extractionFieldId: string;
+  workingTitle?: string | null;
+  workingNote?: string | null;
+}
+
+export interface UpdateSynthesisPreparationInput {
+  workingTitle?: string | null;
+  workingNote?: string | null;
+  targetSynthesisStatementId?: string | null;
+}
+
+export interface ReplaceSynthesisPreparationSelectionsInput {
+  extractionRevisionIds: string[];
+}
+
+export interface FinalizeSynthesisPreparationInput {
+  title?: string | null;
+  statementText: string;
+  researcherNote?: string | null;
 }

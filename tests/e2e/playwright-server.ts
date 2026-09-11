@@ -41,6 +41,8 @@ const requiredSchema = {
   evidence_set_composition_revisions: ["id", "sequence", "project_id", "evidence_set_id", "operation_kind", "created_at"],
   evidence_set_composition_members: ["project_id", "evidence_set_id", "composition_revision_id", "membership_id", "sort_order"],
   evidence_set_annotations: ["id", "sequence", "project_id", "evidence_set_id", "body", "created_at"],
+  synthesis_preparations: ["id", "project_id", "evidence_set_id", "evidence_set_composition_revision_id", "extraction_field_id", "working_title", "working_note", "target_synthesis_statement_id", "status", "finalized_synthesis_revision_id", "created_at", "updated_at", "finalized_at", "abandoned_at"],
+  synthesis_preparation_selections: ["project_id", "preparation_id", "extraction_revision_id", "created_at"],
 } as const;
 
 type MigrationEntry = { idx: number; tag: string; when: number };
@@ -136,8 +138,8 @@ async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
 async function assertSchema(client: postgres.Sql, databaseName: string) {
   const { migrations } = readExpectedMigrations();
   const expectedLatest = migrations.at(-1);
-  if (!expectedLatest || expectedLatest.tag !== "0017_evidence_sets") {
-    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0017_evidence_sets, found ${expectedLatest?.tag ?? "none"}`);
+  if (!expectedLatest || expectedLatest.tag !== "0018_synthesis_preparations") {
+    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0018_synthesis_preparations, found ${expectedLatest?.tag ?? "none"}`);
   }
 
   const migrationRows = await client.unsafe("select id, hash, created_at from drizzle.__drizzle_migrations order by id") as unknown as MigrationRow[];
@@ -149,7 +151,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
     return [];
   });
   if (migrationRows.length !== migrations.length || migrationMismatches.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0017_evidence_sets; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0018_synthesis_preparations; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
   }
 
   const tableNames = Object.keys(requiredSchema);
@@ -165,7 +167,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
   const missingColumns = Object.entries(requiredSchema).flatMap(([tableName, columns]) => columns.filter((columnName) => !actualColumns.get(tableName)?.has(columnName)).map((columnName) => `${tableName}.${columnName}`));
   const legacyColumns = await client.unsafe("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'projects' and column_name = 'research_question'") as unknown as Array<{ column_name: string }>;
   if (missingTables.length > 0 || missingColumns.length > 0 || legacyColumns.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0017_evidence_sets; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `projects.${row.column_name}`).join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0018_synthesis_preparations; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `projects.${row.column_name}`).join(", ") || "none"}`);
   }
 }
 

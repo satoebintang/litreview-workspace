@@ -234,6 +234,33 @@ export const synthesisWithdrawalSchema = z.object({
   researcherNote: synthesisText.max(10000).nullable().optional(),
 });
 
+export const createSynthesisPreparationSchema = z.object({
+  evidenceSetId: idSchema,
+  extractionFieldId: idSchema,
+  workingTitle: synthesisText.max(500).nullable().optional(),
+  workingNote: synthesisText.max(10000).nullable().optional(),
+});
+
+export const updateSynthesisPreparationSchema = z.object({
+  workingTitle: synthesisText.max(500).nullable().optional(),
+  workingNote: synthesisText.max(10000).nullable().optional(),
+  targetSynthesisStatementId: idSchema.nullable().optional(),
+});
+
+export const replaceSynthesisPreparationSelectionsSchema = z.object({
+  extractionRevisionIds: z.array(idSchema).default([]),
+}).superRefine((value, ctx) => {
+  if (new Set(value.extractionRevisionIds).size !== value.extractionRevisionIds.length) {
+    ctx.addIssue({ code: "custom", path: ["extractionRevisionIds"], message: "Selections cannot contain duplicate extraction revisions" });
+  }
+});
+
+export const finalizeSynthesisPreparationSchema = z.object({
+  title: synthesisText.max(500).nullable().optional(),
+  statementText: synthesisText.max(10000),
+  researcherNote: synthesisText.max(10000).nullable().optional(),
+});
+
 export const extractionComparisonFilterSchema = z.object({
   paperIds: z.array(idSchema).optional(),
   valueState: z.enum(["present", "not_reported", "not_applicable", "cleared", "not_extracted"]).optional(),
@@ -417,3 +444,7 @@ export type UpdateEvidenceSetMetadataInput = z.input<typeof updateEvidenceSetMet
 export type EvidenceSetMembershipInput = z.input<typeof evidenceSetMembershipInputSchema>;
 export type ReorderEvidenceSetInput = z.input<typeof reorderEvidenceSetSchema>;
 export type AppendEvidenceSetAnnotationInput = z.input<typeof appendEvidenceSetAnnotationSchema>;
+export type CreateSynthesisPreparationSchemaInput = z.input<typeof createSynthesisPreparationSchema>;
+export type UpdateSynthesisPreparationSchemaInput = z.input<typeof updateSynthesisPreparationSchema>;
+export type ReplaceSynthesisPreparationSelectionsSchemaInput = z.input<typeof replaceSynthesisPreparationSelectionsSchema>;
+export type FinalizeSynthesisPreparationSchemaInput = z.input<typeof finalizeSynthesisPreparationSchema>;

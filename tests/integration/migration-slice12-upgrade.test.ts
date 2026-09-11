@@ -67,7 +67,7 @@ describe("Slice 12 migration boundaries", () => {
   }, 120_000);
 
   it("applies a clean database through the current journal while preserving the 0012 boundary", async () => {
-    expect(await cleanClient!`select count(*)::integer as count from drizzle.__drizzle_migrations`).toEqual([{ count: 18 }]);
+    expect(await cleanClient!`select count(*)::integer as count from drizzle.__drizzle_migrations`).toEqual([{ count: 19 }]);
     expect(await cleanClient!`select column_name from information_schema.columns where table_schema = 'public' and table_name = 'full_text_screening_decisions' order by ordinal_position`).toHaveLength(8);
     expect(await cleanClient!`select column_name from information_schema.columns where table_schema = 'public' and table_name = 'full_text_retrieval_attempts' order by ordinal_position`).toHaveLength(10);
   });

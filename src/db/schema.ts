@@ -940,6 +940,108 @@ export const synthesisRevisionSupports = pgTable(
   }),
 );
 
+export const synthesisPreparations = pgTable(
+  "synthesis_preparations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    evidenceSetId: uuid("evidence_set_id").notNull(),
+    evidenceSetCompositionRevisionId: uuid("evidence_set_composition_revision_id").notNull(),
+    extractionFieldId: uuid("extraction_field_id").notNull(),
+    workingTitle: text("working_title"),
+    workingNote: text("working_note"),
+    targetSynthesisStatementId: uuid("target_synthesis_statement_id"),
+    status: text("status").notNull().default("active"),
+    finalizedSynthesisRevisionId: uuid("finalized_synthesis_revision_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    abandonedAt: timestamp("abandoned_at", { withTimezone: true }),
+  },
+  (table) => ({
+    projectIdentity: unique("synthesis_preparations_project_id_id_unique").on(table.projectId, table.id),
+    projectCreatedAt: index("synthesis_preparations_project_created_at_idx").on(table.projectId, table.createdAt),
+    projectStatus: index("synthesis_preparations_project_status_idx").on(table.projectId, table.status),
+    projectSet: index("synthesis_preparations_project_set_idx").on(table.projectId, table.evidenceSetId),
+    projectField: index("synthesis_preparations_project_field_idx").on(table.projectId, table.extractionFieldId),
+    finalizedRevisionUnique: uniqueIndex("synthesis_preparations_finalized_revision_unique")
+      .on(table.projectId, table.finalizedSynthesisRevisionId)
+      .where(sql`${table.finalizedSynthesisRevisionId} is not null`),
+    projectOwnership: foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.id],
+      name: "synthesis_preparations_project_id_projects_id_fk",
+    }).onDelete("restrict"),
+    evidenceSetOwnership: foreignKey({
+      columns: [table.projectId, table.evidenceSetId],
+      foreignColumns: [evidenceSets.projectId, evidenceSets.id],
+      name: "synthesis_preparations_project_evidence_set_fk",
+    }).onDelete("restrict"),
+    compositionRevisionOwnership: foreignKey({
+      columns: [table.projectId, table.evidenceSetId, table.evidenceSetCompositionRevisionId],
+      foreignColumns: [evidenceSetCompositionRevisions.projectId, evidenceSetCompositionRevisions.evidenceSetId, evidenceSetCompositionRevisions.id],
+      name: "synthesis_preparations_project_composition_revision_fk",
+    }).onDelete("restrict"),
+    fieldOwnership: foreignKey({
+      columns: [table.projectId, table.extractionFieldId],
+      foreignColumns: [extractionFields.projectId, extractionFields.id],
+      name: "synthesis_preparations_project_field_fk",
+    }).onDelete("restrict"),
+    targetStatementOwnership: foreignKey({
+      columns: [table.projectId, table.targetSynthesisStatementId],
+      foreignColumns: [synthesisStatements.projectId, synthesisStatements.id],
+      name: "synthesis_preparations_project_target_statement_fk",
+    }).onDelete("restrict"),
+    finalizedRevisionOwnership: foreignKey({
+      columns: [table.projectId, table.targetSynthesisStatementId, table.finalizedSynthesisRevisionId],
+      foreignColumns: [synthesisRevisions.projectId, synthesisRevisions.synthesisStatementId, synthesisRevisions.id],
+      name: "synthesis_preparations_project_finalized_revision_fk",
+    }).onDelete("restrict"),
+    statusValid: check("synthesis_preparations_status_valid", sql`${table.status} in ('active', 'finalized', 'abandoned')`),
+    workingTitleShape: check(
+      "synthesis_preparations_working_title_shape",
+      sql`${table.workingTitle} is null or (btrim(${table.workingTitle}) <> '' and char_length(${table.workingTitle}) <= 500)`,
+    ),
+    workingNoteShape: check(
+      "synthesis_preparations_working_note_shape",
+      sql`${table.workingNote} is null or (btrim(${table.workingNote}) <> '' and char_length(${table.workingNote}) <= 10000)`,
+    ),
+    statusIntegrity: check(
+      "synthesis_preparations_status_integrity",
+      sql`(
+        (${table.status} = 'active' and ${table.finalizedSynthesisRevisionId} is null and ${table.finalizedAt} is null and ${table.abandonedAt} is null)
+        or (${table.status} = 'finalized' and ${table.targetSynthesisStatementId} is not null and ${table.finalizedSynthesisRevisionId} is not null and ${table.finalizedAt} is not null and ${table.abandonedAt} is null)
+        or (${table.status} = 'abandoned' and ${table.finalizedSynthesisRevisionId} is null and ${table.finalizedAt} is null and ${table.abandonedAt} is not null)
+      )`,
+    ),
+  }),
+);
+
+export const synthesisPreparationSelections = pgTable(
+  "synthesis_preparation_selections",
+  {
+    projectId: uuid("project_id").notNull(),
+    preparationId: uuid("preparation_id").notNull(),
+    extractionRevisionId: uuid("extraction_revision_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    identity: primaryKey({ columns: [table.projectId, table.preparationId, table.extractionRevisionId] }),
+    preparationOwnership: foreignKey({
+      columns: [table.projectId, table.preparationId],
+      foreignColumns: [synthesisPreparations.projectId, synthesisPreparations.id],
+      name: "synthesis_preparation_selections_project_preparation_fk",
+    }).onDelete("restrict"),
+    extractionRevisionOwnership: foreignKey({
+      columns: [table.projectId, table.extractionRevisionId],
+      foreignColumns: [extractionValueRevisions.projectId, extractionValueRevisions.id],
+      name: "synthesis_preparation_selections_project_extraction_revision_fk",
+    }).onDelete("restrict"),
+    preparationLookup: index("synthesis_preparation_selections_project_preparation_idx").on(table.projectId, table.preparationId),
+    extractionRevisionLookup: index("synthesis_preparation_selections_project_extraction_revision_idx").on(table.projectId, table.extractionRevisionId),
+  }),
+);
+
 export const claimRevisionExtractionSupports = pgTable(
   "claim_revision_extraction_supports",
   {
@@ -1435,4 +1537,4 @@ export const retrievedRecordDeduplicationDecisions = pgTable(
   }),
 );
 
-export const schema = { projects, papers, fullTextDocuments, paperFullTextPreferences, documentTextExtractions, documentTextExtractionPages, evidence, evidenceReviewDecisions, evidenceAnnotations, evidenceLabels, evidenceLabelEvents, evidenceSets, evidenceSetMemberships, evidenceSetCompositionRevisions, evidenceSetCompositionMembers, evidenceSetAnnotations, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };
+export const schema = { projects, papers, fullTextDocuments, paperFullTextPreferences, documentTextExtractions, documentTextExtractionPages, evidence, evidenceReviewDecisions, evidenceAnnotations, evidenceLabels, evidenceLabelEvents, evidenceSets, evidenceSetMemberships, evidenceSetCompositionRevisions, evidenceSetCompositionMembers, evidenceSetAnnotations, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, synthesisPreparations, synthesisPreparationSelections, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };

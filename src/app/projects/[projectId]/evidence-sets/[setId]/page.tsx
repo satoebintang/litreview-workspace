@@ -4,6 +4,7 @@ import {
   addEvidenceToSetAction,
   appendEvidenceSetAnnotationAction,
   archiveEvidenceSetAction,
+  createSynthesisPreparationAction,
   removeEvidenceFromSetAction,
   reorderEvidenceSetAction,
   updateEvidenceSetMetadataAction,
@@ -29,7 +30,10 @@ export default async function EvidenceSetDetailPage({
     throw error;
   }
   const active = !detail.set.archivedAt;
-  const candidates = active ? await reviewServices.listCandidateEvidenceForSet(projectId, setId) : [];
+  const [candidates, synthesisFields] = await Promise.all([
+    active ? reviewServices.listCandidateEvidenceForSet(projectId, setId) : Promise.resolve([]),
+    active ? reviewServices.listEvidenceSetSynthesisFields(projectId, setId) : Promise.resolve([]),
+  ]);
   const savedMessage = query.saved === "created" ? "Evidence Set created." : query.saved === "metadata" ? "Evidence Set metadata saved." : query.saved === "member" ? "Evidence Set membership saved." : query.saved === "reordered" ? "Evidence Set order saved." : query.saved === "annotation" ? "Evidence Set annotation saved." : query.saved === "archived" ? "Evidence Set archived and frozen." : undefined;
   const historyEvidenceLabel = new Map(detail.members.filter((item): item is typeof item & { evidence: NonNullable<typeof item.evidence> } => Boolean(item.evidence)).map((item) => [item.evidence!.id, item.evidence!.sourceText]));
   return <main className="shell">
@@ -51,6 +55,49 @@ export default async function EvidenceSetDetailPage({
         {active && <section className="card section-card"><div className="section-heading"><h2>Add Evidence</h2><span className="count">{candidates.length} available</span></div>{candidates.length === 0 ? <div className="empty">Every Evidence item in this Project is already in the set.</div> : <form action={addEvidenceToSetAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="evidenceSetId" value={setId} /><div className="field"><label htmlFor="candidate-evidence">Evidence from this Project</label><select id="candidate-evidence" name="evidenceId" required defaultValue=""><option value="" disabled>Select an Evidence passage</option>{candidates.map((item) => <option key={item.id} value={item.id}>{item.paper?.title ?? item.paperId} · page {item.pageNumber} · {item.sourceText.slice(0, 90)}</option>)}</select></div><button className="button secondary" type="submit">Add to this set</button></form>}</section>}
 
         <section className="card section-card"><div className="section-heading"><h2>Composition history</h2><span className="count">{detail.compositionHistory.length} snapshots</span></div><div className="item-list">{detail.compositionHistory.map((entry) => <details className="item" key={entry.revision.id}><summary><strong>{entry.revision.operationKind}</strong> · sequence {entry.revision.sequence} · {entry.evidenceIds.length} active</summary><div className="item-meta">{entry.revision.createdAt.toLocaleString()}</div>{entry.evidenceIds.length > 0 && <ol>{entry.evidenceIds.map((evidenceId) => <li key={evidenceId}>{historyEvidenceLabel.get(evidenceId) ? `“${historyEvidenceLabel.get(evidenceId)!.slice(0, 120)}”` : evidenceId}</li>)}</ol>}</details>)}</div></section>
+
+        <section className="card section-card full">
+          <div className="section-heading">
+            <div>
+              <h2>Prepare synthesis workspace</h2>
+              <p className="hint">
+                Start a saved synthesis preparation workspace from this Evidence Set composition and one ExtractionField.
+              </p>
+            </div>
+            <span className="count">{synthesisFields.length} available fields</span>
+          </div>
+          {synthesisFields.length === 0 ? (
+            <div className="empty">
+              No ExtractionRevisions connect to Evidence in this set yet. Link Evidence to extraction fields first.
+            </div>
+          ) : (
+            <div className="item-list">
+              {synthesisFields.map((fieldSummary) => (
+                <article className="item item-row" key={fieldSummary.field.id}>
+                  <div>
+                    <div className="item-title">{fieldSummary.field.name}</div>
+                    <div className="item-meta">
+                      Field type: {fieldSummary.field.fieldType} · {fieldSummary.candidateRevisionCount} candidate{" "}
+                      {fieldSummary.candidateRevisionCount === 1 ? "revision" : "revisions"} across{" "}
+                      {fieldSummary.candidatePaperCount}{" "}
+                      {fieldSummary.candidatePaperCount === 1 ? "Paper" : "Papers"}
+                    </div>
+                  </div>
+                  {active && (
+                    <form action={createSynthesisPreparationAction}>
+                      <input type="hidden" name="projectId" value={projectId} />
+                      <input type="hidden" name="evidenceSetId" value={setId} />
+                      <input type="hidden" name="extractionFieldId" value={fieldSummary.field.id} />
+                      <button className="button" type="submit">
+                        Prepare synthesis →
+                      </button>
+                    </form>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
         <section className="card section-card"><div className="section-heading"><h2>Related ExtractionRevisions</h2><span className="count">{detail.relatedExtractionRevisions.length}</span></div>{detail.relatedExtractionRevisions.length === 0 ? <div className="empty">No ExtractionRevisions currently reference these Evidence passages.</div> : <div className="item-list">{detail.relatedExtractionRevisions.map((revision) => <article className="item" key={revision.id}><div className="item-row"><div><div className="item-title">{revision.fieldName} · {revision.paperTitle}</div><div className="item-meta">Revision {revision.sequence} · {revision.valueState}{revision.isCurrent ? " · current" : " · superseded"}</div></div><div style={{ display: "flex", gap: 8 }}><Link className="button ghost" href={`/projects/${projectId}/extraction/${revision.paperId}`}>Open extraction</Link><Link className="button ghost" href={`/projects/${projectId}/synthesis?fieldId=${revision.fieldId}`}>Open synthesis field</Link></div></div></article>)}</div>}<p className="hint" style={{ marginTop: 14 }}>These are navigation links only. No Synthesis or Claim support is created by set membership.</p></section>
       </div>
