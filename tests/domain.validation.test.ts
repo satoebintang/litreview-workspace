@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createClaimSchema, createPaperSchema, recordEvidenceSchema } from "@/domain/validation";
+import {
+  createClaimSchema,
+  createEvidenceSetSchema,
+  createPaperSchema,
+  recordEvidenceSchema,
+  reorderEvidenceSetSchema,
+  updateEvidenceSetMetadataSchema,
+} from "@/domain/validation";
 
 describe("Slice 1 input validation", () => {
   it("preserves the ordered author array", () => {
@@ -19,5 +26,12 @@ describe("Slice 1 input validation", () => {
 
   it("rejects blank claim text", () => {
     expect(createClaimSchema.safeParse({ claimText: "  " }).success).toBe(false);
+  });
+
+  it("normalizes Evidence Set metadata and rejects duplicate order entries", () => {
+    expect(createEvidenceSetSchema.parse({ name: "  Outcomes  ", description: "  Compare effects  " })).toEqual({ name: "Outcomes", description: "Compare effects" });
+    expect(createEvidenceSetSchema.parse({ name: "Outcomes", description: "   " })).toEqual({ name: "Outcomes", description: null });
+    expect(updateEvidenceSetMetadataSchema.safeParse({}).success).toBe(false);
+    expect(reorderEvidenceSetSchema.safeParse({ evidenceIds: ["00000000-0000-4000-8000-000000000000", "00000000-0000-4000-8000-000000000000"] }).success).toBe(false);
   });
 });

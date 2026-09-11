@@ -78,6 +78,7 @@ import {
   type DocumentTextExtractionServices,
 } from "./document-text-extraction-services";
 import { createEvidenceCurationServices, requireEvidenceUsableForNewDirectSupport } from "./evidence-curation-services";
+import { createEvidenceSetServices } from "./evidence-set-services";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
   const result = schema.safeParse(input);
@@ -1299,12 +1300,13 @@ export function createReviewServices(db: Database, options: {
           union all select 1 from evidence_review_decisions where project_id=${projectId} and evidence_id=${evidenceId}
           union all select 1 from evidence_annotations where project_id=${projectId} and evidence_id=${evidenceId}
           union all select 1 from evidence_label_events where project_id=${projectId} and evidence_id=${evidenceId}
+          union all select 1 from evidence_set_memberships where project_id=${projectId} and evidence_id=${evidenceId}
           limit 1
         `) as unknown as unknown[];
       } catch (error) {
         // Preserve the pre-Slice-16 delete behavior for callers operating at
         // the migration boundary before the curation tables exist.
-        if (!isMissingRelationError(error, "evidence_review_decisions")) throw error;
+        if (!isMissingRelationError(error, "evidence_review_decisions") && !isMissingRelationError(error, "evidence_set_memberships")) throw error;
         historyRows = await db.execute(sql`
           select 1 from claim_revision_evidence_supports where project_id=${projectId} and evidence_id=${evidenceId}
           union all select 1 from extraction_revision_evidence where project_id=${projectId} and evidence_id=${evidenceId}
@@ -1346,5 +1348,6 @@ export function createReviewServices(db: Database, options: {
   });
   const reportingServices = createReviewReportingServices(db, deduplicationServices);
   const curationServices = createEvidenceCurationServices(db, { requireProject, requireEvidence });
-  return Object.assign(baseServices, textExtractionServices, reportingServices, curationServices) as typeof baseServices & typeof reportingServices & DocumentTextExtractionServices & typeof curationServices;
+  const evidenceSetServices = createEvidenceSetServices(db, { requireProject, requireEvidence });
+  return Object.assign(baseServices, textExtractionServices, reportingServices, curationServices, evidenceSetServices) as typeof baseServices & typeof reportingServices & DocumentTextExtractionServices & typeof curationServices & typeof evidenceSetServices;
 }

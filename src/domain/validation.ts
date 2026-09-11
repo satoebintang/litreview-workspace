@@ -63,6 +63,32 @@ export const createEvidenceLabelSchema = z.object({
   description: z.string().trim().max(500, "Label descriptions cannot exceed 500 characters").nullable().optional(),
 });
 
+export const createEvidenceSetSchema = z.object({
+  name: z.string().trim().min(1, "Evidence Set name is required").max(100, "Evidence Set names cannot exceed 100 characters"),
+  description: z.string().trim().max(500, "Evidence Set descriptions cannot exceed 500 characters").transform((value) => value || null).nullable().optional(),
+});
+
+export const updateEvidenceSetMetadataSchema = z.object({
+  name: z.string().trim().min(1, "Evidence Set name is required").max(100, "Evidence Set names cannot exceed 100 characters").optional(),
+  description: z.string().trim().max(500, "Evidence Set descriptions cannot exceed 500 characters").transform((value) => value || null).nullable().optional(),
+}).refine((value) => value.name !== undefined || value.description !== undefined, "Evidence Set metadata cannot be empty");
+
+export const evidenceSetMembershipInputSchema = z.object({
+  evidenceId: idSchema,
+});
+
+export const reorderEvidenceSetSchema = z.object({
+  evidenceIds: z.array(idSchema),
+}).superRefine((value, ctx) => {
+  if (new Set(value.evidenceIds).size !== value.evidenceIds.length) {
+    ctx.addIssue({ code: "custom", path: ["evidenceIds"], message: "Evidence Set order cannot contain duplicates" });
+  }
+});
+
+export const appendEvidenceSetAnnotationSchema = z.object({
+  body: z.string().trim().min(1, "Evidence Set annotation is required").max(10000, "Evidence Set annotations cannot exceed 10000 characters"),
+});
+
 export const evidenceWorkspaceFilterSchema = z.object({
   state: z.enum(["attention", "unreviewed", "needs_review", "accepted", "rejected", "all"]).default("attention"),
   paperId: idSchema.optional(),
@@ -386,3 +412,8 @@ export type ReorderSectionItemsInput = z.input<typeof reorderSectionItemsSchema>
 export type CreateProseBlockInput = z.input<typeof createProseBlockSchema>;
 export type UpdateProseBlockInput = z.input<typeof updateProseBlockSchema>;
 export type RemoveProseBlockInput = z.input<typeof removeProseBlockSchema>;
+export type CreateEvidenceSetInput = z.input<typeof createEvidenceSetSchema>;
+export type UpdateEvidenceSetMetadataInput = z.input<typeof updateEvidenceSetMetadataSchema>;
+export type EvidenceSetMembershipInput = z.input<typeof evidenceSetMembershipInputSchema>;
+export type ReorderEvidenceSetInput = z.input<typeof reorderEvidenceSetSchema>;
+export type AppendEvidenceSetAnnotationInput = z.input<typeof appendEvidenceSetAnnotationSchema>;

@@ -5,6 +5,10 @@ export type EvidenceReviewDecisionId = string;
 export type EvidenceAnnotationId = string;
 export type EvidenceLabelId = string;
 export type EvidenceLabelEventId = string;
+export type EvidenceSetId = string;
+export type EvidenceSetMembershipId = string;
+export type EvidenceSetCompositionRevisionId = string;
+export type EvidenceSetAnnotationId = string;
 export type FullTextDocumentId = string;
 export type DocumentTextExtractionId = string;
 export type ClaimId = string;
@@ -40,6 +44,7 @@ export type ExtractionValueState = "present" | "not_reported" | "not_applicable"
 export type EvidenceReviewDecisionValue = "needs_review" | "accepted" | "rejected";
 export type EvidenceReviewState = "unreviewed" | EvidenceReviewDecisionValue;
 export type EvidenceLabelEventType = "assigned" | "removed";
+export type EvidenceSetCompositionOperationKind = "created" | "added" | "readded" | "removed" | "reordered";
 
 export type SupportStatus = "supported" | "unsupported";
 export type ClaimLifecycle = "active" | "withdrawn";
@@ -212,6 +217,50 @@ export interface EvidenceLabelEvent {
   evidenceId: EvidenceId;
   labelId: EvidenceLabelId;
   event: EvidenceLabelEventType;
+  createdAt: Date;
+}
+
+export interface EvidenceSet {
+  id: EvidenceSetId;
+  projectId: ProjectId;
+  name: string;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  archivedAt: Date | null;
+}
+
+export interface EvidenceSetMembership {
+  id: EvidenceSetMembershipId;
+  projectId: ProjectId;
+  evidenceSetId: EvidenceSetId;
+  evidenceId: EvidenceId;
+  createdAt: Date;
+}
+
+export interface EvidenceSetCompositionRevision {
+  id: EvidenceSetCompositionRevisionId;
+  sequence: number;
+  projectId: ProjectId;
+  evidenceSetId: EvidenceSetId;
+  operationKind: EvidenceSetCompositionOperationKind;
+  createdAt: Date;
+}
+
+export interface EvidenceSetCompositionMember {
+  projectId: ProjectId;
+  evidenceSetId: EvidenceSetId;
+  compositionRevisionId: EvidenceSetCompositionRevisionId;
+  membershipId: EvidenceSetMembershipId;
+  sortOrder: number;
+}
+
+export interface EvidenceSetAnnotation {
+  id: EvidenceSetAnnotationId;
+  sequence: number;
+  projectId: ProjectId;
+  evidenceSetId: EvidenceSetId;
+  body: string;
   createdAt: Date;
 }
 
