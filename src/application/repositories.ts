@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { evidence, papers, projects, screeningCriteria, screeningDecisions, fullTextDocuments, paperFullTextPreferences, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports } from "@/db/schema";
+import { evidence, papers, projects, screeningCriteria, screeningDecisions, fullTextDocuments, paperFullTextPreferences, documentTextExtractions, documentTextExtractionPages, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports } from "@/db/schema";
 
 type DbTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -138,6 +138,49 @@ export class FullTextDocumentRepository {
     return this.db.delete(paperFullTextPreferences)
       .where(and(eq(paperFullTextPreferences.projectId, projectId), eq(paperFullTextPreferences.paperId, paperId)))
       .returning();
+  }
+}
+
+export class DocumentTextExtractionRepository {
+  constructor(private readonly db: Database) {}
+
+  async create(tx: DbTransaction, values: typeof documentTextExtractions.$inferInsert) {
+    const [item] = await tx.insert(documentTextExtractions).values(values).returning();
+    return item;
+  }
+
+  async createPages(tx: DbTransaction, values: (typeof documentTextExtractionPages.$inferInsert)[]) {
+    if (!values.length) return [];
+    return tx.insert(documentTextExtractionPages).values(values).returning();
+  }
+
+  async findById(projectId: string, id: string) {
+    const [item] = await this.db.select().from(documentTextExtractions)
+      .where(and(eq(documentTextExtractions.projectId, projectId), eq(documentTextExtractions.id, id))).limit(1);
+    return item ?? null;
+  }
+
+  async listForDocument(projectId: string, fullTextDocumentId: string) {
+    return this.db.select().from(documentTextExtractions)
+      .where(and(eq(documentTextExtractions.projectId, projectId), eq(documentTextExtractions.fullTextDocumentId, fullTextDocumentId)))
+      .orderBy(desc(documentTextExtractions.sequence));
+  }
+
+  async listPages(projectId: string, extractionId: string) {
+    return this.db.select().from(documentTextExtractionPages)
+      .where(and(eq(documentTextExtractionPages.projectId, projectId), eq(documentTextExtractionPages.documentTextExtractionId, extractionId)))
+      .orderBy(documentTextExtractionPages.pageNumber);
+  }
+
+  async latestNonFailed(projectId: string, fullTextDocumentId: string) {
+    const [item] = await this.db.select().from(documentTextExtractions)
+      .where(and(
+        eq(documentTextExtractions.projectId, projectId),
+        eq(documentTextExtractions.fullTextDocumentId, fullTextDocumentId),
+        sql`${documentTextExtractions.status} <> 'failed'`,
+      ))
+      .orderBy(desc(documentTextExtractions.sequence)).limit(1);
+    return item ?? null;
   }
 }
 

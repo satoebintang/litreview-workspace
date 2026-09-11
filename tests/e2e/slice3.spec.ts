@@ -24,6 +24,10 @@ test.describe("Slice 3 structured extraction", () => {
     await page.getByRole("button", { name: "Include", exact: true }).click();
     await expect(page.locator(".status.screening-included")).toBeVisible();
     const paperId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/screening/full-text/retrieval/${paperId}`);
+    await page.getByLabel("Outcome").selectOption("retrieved");
+    await page.getByRole("button", { name: "Record attempt" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Retrieval attempt recorded" })).toBeVisible();
     await page.goto(`/projects/${projectId}/screening/full-text/${paperId}`);
     await page.getByRole("button", { name: "Include", exact: true }).click();
     await expect(page.getByText("Full-text decision recorded in screening history.")).toBeVisible();

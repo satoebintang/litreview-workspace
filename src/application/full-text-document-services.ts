@@ -203,14 +203,19 @@ export function createFullTextDocumentServices(db: Database, storage?: DocumentS
     async listEvidenceForFullTextDocument(projectId: string, documentId: string) {
       const document = await getDocument(projectId, documentId);
       const rows = await db.execute(sql`
-        select e.id, e.project_id, e.paper_id, e.full_text_document_id, e.source_text, e.page_number, e.note, e.created_at, e.updated_at
+        select e.id, e.project_id, e.paper_id, e.full_text_document_id, e.document_text_extraction_id,
+          e.source_text, e.page_number, e.extraction_start_offset, e.extraction_end_offset,
+          e.note, e.created_at, e.updated_at
         from evidence e
         where e.project_id=${projectId} and e.paper_id=${document.paperId} and e.full_text_document_id=${document.id}
         order by e.page_number, e.created_at
       `) as unknown as Record<string, unknown>[];
       return rows.map((row) => ({
         id: String(row.id), projectId: String(row.project_id), paperId: String(row.paper_id), fullTextDocumentId: String(row.full_text_document_id),
+        documentTextExtractionId: row.document_text_extraction_id == null ? null : String(row.document_text_extraction_id),
         sourceText: String(row.source_text), pageNumber: Number(row.page_number), note: row.note == null ? null : String(row.note),
+        extractionStartOffset: row.extraction_start_offset == null ? null : Number(row.extraction_start_offset),
+        extractionEndOffset: row.extraction_end_offset == null ? null : Number(row.extraction_end_offset),
         createdAt: row.created_at as Date, updatedAt: row.updated_at as Date,
       }));
     },

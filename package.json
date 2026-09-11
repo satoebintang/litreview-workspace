@@ -2,6 +2,9 @@
   "name": "litreview-workspace",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -25,6 +28,7 @@
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.44.5",
     "next": "^15.5.2",
+    "pdfjs-dist": "6.3.289",
     "postgres": "^3.4.7",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

@@ -29,6 +29,27 @@ export const recordEvidenceSchema = z.object({
   note: optionalText,
 });
 
+/** Input for the dedicated extracted-page Evidence path. The source text is
+ * intentionally absent: the application derives it from the immutable stored
+ * page text after validating this exact page/range. */
+export const recordExtractedEvidenceSchema = z.object({
+  paperId: idSchema,
+  fullTextDocumentId: idSchema,
+  documentTextExtractionId: idSchema,
+  pageNumber: z.number().int().positive(),
+  startOffset: z.number().int().nonnegative(),
+  endOffset: z.number().int().positive(),
+  note: optionalText,
+}).superRefine((value, ctx) => {
+  if (value.endOffset <= value.startOffset) {
+    ctx.addIssue({ code: "custom", path: ["endOffset"], message: "Evidence range must be non-empty and forward" });
+  }
+});
+
+export const createDocumentTextExtractionSchema = z.object({
+  fullTextDocumentId: idSchema,
+});
+
 export const fullTextDocumentMetadataSchema = z.object({
   originalFilename: z.string().min(1).max(255),
   mediaType: z.literal("application/pdf"),
@@ -295,6 +316,8 @@ export const removeProseBlockSchema = z.object({ proseBlockId: idSchema });
 export type CreateProjectInput = z.input<typeof createProjectSchema>;
 export type CreatePaperInput = z.input<typeof createPaperSchema>;
 export type RecordEvidenceInput = z.input<typeof recordEvidenceSchema>;
+export type RecordExtractedEvidenceInput = z.input<typeof recordExtractedEvidenceSchema>;
+export type CreateDocumentTextExtractionInput = z.input<typeof createDocumentTextExtractionSchema>;
 export type FullTextDocumentMetadataInput = z.input<typeof fullTextDocumentMetadataSchema>;
 export type CreateClaimInput = z.input<typeof createClaimSchema>;
 export type ClaimSupportInput = z.input<typeof claimSupportSchema>;

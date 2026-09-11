@@ -43,6 +43,10 @@ test.describe("Slice 4 evidence synthesis", () => {
     const nextScreening = await page.getByRole("link", { name: "Next →" }).getAttribute("href");
     await page.getByRole("button", { name: "Include", exact: true }).click();
     await expect(page.locator(".status.screening-included")).toBeVisible();
+    await page.goto(`/projects/${projectId}/screening/full-text/retrieval/${firstPaperId}`);
+    await page.getByLabel("Outcome").selectOption("retrieved");
+    await page.getByRole("button", { name: "Record attempt" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Retrieval attempt recorded" })).toBeVisible();
     await page.goto(`/projects/${projectId}/screening/full-text/${firstPaperId}`);
     await page.getByRole("button", { name: "Include", exact: true }).click();
     await expect(page.getByText("Full-text decision recorded in screening history.")).toBeVisible();
@@ -50,6 +54,10 @@ test.describe("Slice 4 evidence synthesis", () => {
     const secondPaperId = new URL(page.url()).pathname.split("/").pop()!;
     await page.getByRole("button", { name: "Include", exact: true }).click();
     await expect(page.locator(".status.screening-included")).toBeVisible();
+    await page.goto(`/projects/${projectId}/screening/full-text/retrieval/${secondPaperId}`);
+    await page.getByLabel("Outcome").selectOption("retrieved");
+    await page.getByRole("button", { name: "Record attempt" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Retrieval attempt recorded" })).toBeVisible();
     await page.goto(`/projects/${projectId}/screening/full-text/${secondPaperId}`);
     await page.getByRole("button", { name: "Include", exact: true }).click();
     await expect(page.getByText("Full-text decision recorded in screening history.")).toBeVisible();

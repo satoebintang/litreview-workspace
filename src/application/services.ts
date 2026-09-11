@@ -72,6 +72,11 @@ import { createAcquisitionServices } from "./acquisition-services";
 import { createDeduplicationServices } from "./deduplication-services";
 import { createReviewReportingServices } from "./review-reporting";
 import { createFullTextDocumentServices, type FullTextDocumentServices } from "./full-text-document-services";
+import {
+  createDocumentTextExtractionServices,
+  type DocumentTextExtractionParser,
+  type DocumentTextExtractionServices,
+} from "./document-text-extraction-services";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
   const result = schema.safeParse(input);
@@ -94,7 +99,11 @@ type ClaimSupportSnapshot = {
   synthesisRevisionId?: string;
 };
 
-export function createReviewServices(db: Database, options: { documentStorage?: DocumentStorage; maxDocumentBytes?: number } = {}) {
+export function createReviewServices(db: Database, options: {
+  documentStorage?: DocumentStorage;
+  maxDocumentBytes?: number;
+  documentTextExtractor?: DocumentTextExtractionParser;
+} = {}) {
   const projectRepo = new ProjectRepository(db);
   const paperRepo = new PaperRepository(db);
   const evidenceRepo = new EvidenceRepository(db);
@@ -248,7 +257,10 @@ export function createReviewServices(db: Database, options: { documentStorage?: 
     return {
       id: String(row.id), projectId: String(row.project_id), paperId: String(row.paper_id),
       fullTextDocumentId: documentId, document,
+      documentTextExtractionId: row.document_text_extraction_id == null ? null : String(row.document_text_extraction_id),
       sourceText: String(row.source_text), pageNumber: Number(row.page_number), note: row.note == null ? null : String(row.note),
+      extractionStartOffset: row.extraction_start_offset == null ? null : Number(row.extraction_start_offset),
+      extractionEndOffset: row.extraction_end_offset == null ? null : Number(row.extraction_end_offset),
       createdAt: row.created_at as Date, updatedAt: row.updated_at as Date,
     };
   }
@@ -1217,6 +1229,19 @@ export function createReviewServices(db: Database, options: { documentStorage?: 
   const acquisitionServices = createAcquisitionServices(db);
   const documentServices: FullTextDocumentServices = createFullTextDocumentServices(db, options.documentStorage, options.maxDocumentBytes);
   const baseServices = Object.assign(services, manuscriptServices, acquisitionServices, deduplicationServices, documentServices as unknown as Record<string, unknown>) as typeof services & typeof manuscriptServices & typeof acquisitionServices & typeof deduplicationServices & FullTextDocumentServices;
+  const textExtractionParser: DocumentTextExtractionParser = options.documentTextExtractor ?? {
+    extractorKey: "unconfigured",
+    extractorVersion: "unconfigured",
+    algorithmVersion: "unconfigured",
+    async extract() {
+      throw new DomainError("STORAGE_ERROR", "PDF text extraction is not configured");
+    },
+  };
+  const textExtractionServices: DocumentTextExtractionServices = createDocumentTextExtractionServices(db, {
+    storage: options.documentStorage,
+    parser: textExtractionParser,
+    maxBytes: options.maxDocumentBytes,
+  });
   const reportingServices = createReviewReportingServices(db, deduplicationServices);
-  return Object.assign(baseServices, reportingServices) as typeof baseServices & typeof reportingServices;
+  return Object.assign(baseServices, textExtractionServices, reportingServices) as typeof baseServices & typeof reportingServices & DocumentTextExtractionServices;
 }

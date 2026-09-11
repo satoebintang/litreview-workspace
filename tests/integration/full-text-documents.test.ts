@@ -36,7 +36,7 @@ describe("Slice 14 full-text document identity and provenance", () => {
     } catch {
       ready = false;
     }
-  });
+  }, 120_000);
 
   afterAll(async () => {
     if (appClient) await appClient.end();
@@ -46,7 +46,7 @@ describe("Slice 14 full-text document identity and provenance", () => {
       await admin.end();
     }
     if (storageRoot) await rm(storageRoot, { recursive: true, force: true });
-  });
+  }, 120_000);
 
   it("rejects active duplicates, permits a new identity after archival, and preserves exact Evidence provenance", async () => {
     if (!ready) return;

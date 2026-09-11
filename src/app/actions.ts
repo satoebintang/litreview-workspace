@@ -101,6 +101,40 @@ export async function archiveFullTextDocumentAction(form: FormData) {
   redirect(`/projects/${projectId}/papers/${paperId}/documents?saved=archived`);
 }
 
+export async function extractDocumentTextAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  const documentId = text(form, "documentId");
+  let extraction;
+  try {
+    extraction = await reviewServices.extractDocumentText(projectId, documentId);
+  } catch (error) {
+    fail(`/projects/${projectId}/papers/${paperId}/documents/${documentId}`, error);
+  }
+  redirect(`/projects/${projectId}/papers/${paperId}/documents/${documentId}/extractions/${extraction.id}?saved=extracted`);
+}
+
+export async function recordExtractedEvidenceAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  const documentId = text(form, "documentId");
+  const extractionId = text(form, "extractionId");
+  try {
+    await reviewServices.recordEvidenceFromExtractedPage(projectId, {
+      paperId,
+      fullTextDocumentId: documentId,
+      documentTextExtractionId: extractionId,
+      pageNumber: Number(text(form, "pageNumber")),
+      startOffset: Number(text(form, "startOffset")),
+      endOffset: Number(text(form, "endOffset")),
+      note: optional(form, "note"),
+    });
+  } catch (error) {
+    fail(`/projects/${projectId}/papers/${paperId}/documents/${documentId}/extractions/${extractionId}`, error);
+  }
+  redirect(`/projects/${projectId}/papers/${paperId}/documents/${documentId}/extractions/${extractionId}?saved=evidence`);
+}
+
 export async function createClaimAction(form: FormData) {
   const projectId = text(form, "projectId");
   let claim;

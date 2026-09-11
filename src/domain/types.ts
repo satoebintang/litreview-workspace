@@ -2,6 +2,7 @@ export type ProjectId = string;
 export type PaperId = string;
 export type EvidenceId = string;
 export type FullTextDocumentId = string;
+export type DocumentTextExtractionId = string;
 export type ClaimId = string;
 export type ClaimRevisionId = string;
 export type ManuscriptId = string;
@@ -46,6 +47,8 @@ export type CitationStyle = "numeric" | "author_year";
 export type SearchRunStatus = "completed" | "failed";
 export type RetrievedRecordMatchAction = "linked" | "unlinked";
 export type ManuscriptWarningCode = "unsupported_claim_revision" | "superseded_claim_revision" | "withdrawn_parent_claim" | "no_citation_candidates" | "incomplete_bibliography";
+export type DocumentTextExtractionStatus = "succeeded" | "partial" | "failed";
+export type DocumentTextExtractionPageStatus = "succeeded" | "failed";
 
 export interface Project {
   id: ProjectId;
@@ -154,12 +157,44 @@ export interface Evidence {
   projectId: ProjectId;
   paperId: PaperId;
   fullTextDocumentId: FullTextDocumentId | null;
+  documentTextExtractionId: DocumentTextExtractionId | null;
   document?: FullTextDocumentSummary | null;
   sourceText: string;
   pageNumber: number;
+  extractionStartOffset: number | null;
+  extractionEndOffset: number | null;
   note: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface DocumentTextExtractionPage {
+  extractionId: DocumentTextExtractionId;
+  pageNumber: number;
+  status: DocumentTextExtractionPageStatus;
+  text: string;
+  characterCount: number;
+  errorCode: string | null;
+  errorMessage: string | null;
+}
+
+export interface DocumentTextExtraction {
+  id: DocumentTextExtractionId;
+  projectId: ProjectId;
+  paperId: PaperId;
+  fullTextDocumentId: FullTextDocumentId;
+  sequence: number;
+  extractorKey: string;
+  extractorVersion: string;
+  algorithmVersion: string;
+  status: DocumentTextExtractionStatus;
+  pageCount: number | null;
+  characterCount: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: Date;
+  completedAt: Date | null;
+  pages?: DocumentTextExtractionPage[];
 }
 
 export interface FullTextDocument {

@@ -116,6 +116,109 @@ export const paperFullTextPreferences = pgTable(
   }),
 );
 
+export const documentTextExtractions = pgTable(
+  "document_text_extractions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    projectId: uuid("project_id").notNull(),
+    paperId: uuid("paper_id").notNull(),
+    fullTextDocumentId: uuid("full_text_document_id").notNull(),
+    extractorKey: text("extractor_key").notNull(),
+    extractorVersion: text("extractor_version").notNull(),
+    algorithmVersion: text("algorithm_version").notNull(),
+    status: text("status").notNull(),
+    pageCount: integer("page_count"),
+    characterCount: integer("character_count"),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("document_text_extractions_project_id_id_unique").on(table.projectId, table.id),
+    projectPaperIdentity: unique("document_text_extractions_project_paper_id_id_unique").on(table.projectId, table.paperId, table.id),
+    projectDocumentSequence: index("document_text_extractions_project_document_sequence_idx").on(table.projectId, table.fullTextDocumentId, table.sequence),
+    projectPaperSequence: index("document_text_extractions_project_paper_sequence_idx").on(table.projectId, table.paperId, table.sequence),
+    projectOwnership: foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.id],
+      name: "document_text_extractions_project_id_projects_id_fk",
+    }).onDelete("restrict"),
+    paperOwnership: foreignKey({
+      columns: [table.projectId, table.paperId],
+      foreignColumns: [papers.projectId, papers.id],
+      name: "document_text_extractions_project_paper_fk",
+    }).onDelete("restrict"),
+    documentOwnership: foreignKey({
+      columns: [table.projectId, table.paperId, table.fullTextDocumentId],
+      foreignColumns: [fullTextDocuments.projectId, fullTextDocuments.paperId, fullTextDocuments.id],
+      name: "document_text_extractions_project_paper_document_fk",
+    }).onDelete("restrict"),
+    extractorKeyNonblank: check("document_text_extractions_extractor_key_nonblank", sql`btrim(${table.extractorKey}) <> ''`),
+    extractorVersionNonblank: check("document_text_extractions_extractor_version_nonblank", sql`btrim(${table.extractorVersion}) <> ''`),
+    algorithmVersionNonblank: check("document_text_extractions_algorithm_version_nonblank", sql`btrim(${table.algorithmVersion}) <> ''`),
+    statusValid: check("document_text_extractions_status_valid", sql`${table.status} in ('succeeded', 'partial', 'failed')`),
+    pageCountShape: check("document_text_extractions_page_count_shape", sql`(
+      (${table.status} in ('succeeded', 'partial') and ${table.pageCount} is not null and ${table.pageCount} > 0 and ${table.pageCount} <= 2000)
+      or (${table.status} = 'failed' and (${table.pageCount} is null or (${table.pageCount} > 0 and ${table.pageCount} <= 2000)))
+    )`),
+    characterCountShape: check("document_text_extractions_character_count_shape", sql`(
+      (${table.status} in ('succeeded', 'partial') and ${table.characterCount} is not null and ${table.characterCount} >= 0 and ${table.characterCount} <= 10000000)
+      or (${table.status} = 'failed' and ${table.characterCount} is null)
+    )`),
+    errorCodeNonblank: check("document_text_extractions_error_code_nonblank", sql`${table.errorCode} is null or btrim(${table.errorCode}) <> ''`),
+    errorMessageLimit: check("document_text_extractions_error_message_limit", sql`${table.errorMessage} is null or char_length(${table.errorMessage}) <= 1000`),
+    timesOrdered: check("document_text_extractions_times_ordered", sql`${table.completedAt} is null or ${table.startedAt} is null or ${table.completedAt} >= ${table.startedAt}`),
+  }),
+);
+
+export const documentTextExtractionPages = pgTable(
+  "document_text_extraction_pages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    paperId: uuid("paper_id").notNull(),
+    documentTextExtractionId: uuid("document_text_extraction_id").notNull(),
+    pageNumber: integer("page_number").notNull(),
+    status: text("status").notNull(),
+    text: text("text").notNull(),
+    characterCount: integer("character_count").notNull(),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("document_text_extraction_pages_project_id_id_unique").on(table.projectId, table.id),
+    extractionPageIdentity: unique("document_text_extraction_pages_project_paper_extraction_page_unique").on(table.projectId, table.paperId, table.documentTextExtractionId, table.pageNumber),
+    projectOwnership: foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.id],
+      name: "document_text_extraction_pages_project_id_projects_id_fk",
+    }).onDelete("restrict"),
+    paperOwnership: foreignKey({
+      columns: [table.projectId, table.paperId],
+      foreignColumns: [papers.projectId, papers.id],
+      name: "document_text_extraction_pages_project_paper_fk",
+    }).onDelete("restrict"),
+    extractionOwnership: foreignKey({
+      columns: [table.projectId, table.paperId, table.documentTextExtractionId],
+      foreignColumns: [documentTextExtractions.projectId, documentTextExtractions.paperId, documentTextExtractions.id],
+      name: "document_text_extraction_pages_project_paper_extraction_fk",
+    }).onDelete("restrict"),
+    pagePositive: check("document_text_extraction_pages_page_positive", sql`${table.pageNumber} > 0 and ${table.pageNumber} <= 2000`),
+    statusValid: check("document_text_extraction_pages_status_valid", sql`${table.status} in ('succeeded', 'failed')`),
+    textNormalized: check("document_text_extraction_pages_text_normalized", sql`${table.text} !~ E'\\r'`),
+    characterCountShape: check("document_text_extraction_pages_character_count_shape", sql`${table.characterCount} = char_length(${table.text}) and ${table.characterCount} >= 0 and ${table.characterCount} <= 500000`),
+    failedPlaceholderShape: check("document_text_extraction_pages_failed_placeholder_shape", sql`(
+      (${table.status} = 'succeeded' and ${table.errorCode} is null and ${table.errorMessage} is null)
+      or (${table.status} = 'failed' and ${table.text} = '' and ${table.characterCount} = 0 and ${table.errorCode} is not null and btrim(${table.errorCode}) <> '')
+    )`),
+    errorMessageLimit: check("document_text_extraction_pages_error_message_limit", sql`${table.errorMessage} is null or char_length(${table.errorMessage}) <= 1000`),
+  }),
+);
+
 export const evidence = pgTable(
   "evidence",
   {
@@ -123,6 +226,9 @@ export const evidence = pgTable(
     projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
     paperId: uuid("paper_id").notNull(),
     fullTextDocumentId: uuid("full_text_document_id"),
+    documentTextExtractionId: uuid("document_text_extraction_id"),
+    extractionStartOffset: integer("extraction_start_offset"),
+    extractionEndOffset: integer("extraction_end_offset"),
     sourceText: text("source_text").notNull(),
     pageNumber: integer("page_number").notNull(),
     note: text("note"),
@@ -141,6 +247,16 @@ export const evidence = pgTable(
       foreignColumns: [fullTextDocuments.projectId, fullTextDocuments.paperId, fullTextDocuments.id],
       name: "evidence_project_paper_document_fk",
     }).onDelete("restrict"),
+    extractionOwnership: foreignKey({
+      columns: [table.projectId, table.paperId, table.documentTextExtractionId],
+      foreignColumns: [documentTextExtractions.projectId, documentTextExtractions.paperId, documentTextExtractions.id],
+      name: "evidence_project_paper_extraction_fk",
+    }).onDelete("restrict"),
+    extractionPageOwnership: foreignKey({
+      columns: [table.projectId, table.paperId, table.documentTextExtractionId, table.pageNumber],
+      foreignColumns: [documentTextExtractionPages.projectId, documentTextExtractionPages.paperId, documentTextExtractionPages.documentTextExtractionId, documentTextExtractionPages.pageNumber],
+      name: "evidence_project_paper_extraction_page_fk",
+    }).onDelete("restrict"),
     projectPaperCreatedAt: index("evidence_project_paper_created_at_idx").on(
       table.projectId,
       table.paperId,
@@ -148,6 +264,10 @@ export const evidence = pgTable(
     ),
     sourceTextNonblank: check("evidence_source_text_nonblank", sql`btrim(${table.sourceText}) <> ''`),
     pagePositive: check("evidence_page_positive", sql`${table.pageNumber} > 0`),
+    extractionOffsetShape: check("evidence_extraction_offset_nonnegative", sql`(
+      (${table.extractionStartOffset} is null and ${table.extractionEndOffset} is null)
+      or (${table.extractionStartOffset} is not null and ${table.extractionEndOffset} is not null and ${table.extractionStartOffset} >= 0 and ${table.extractionEndOffset} > ${table.extractionStartOffset})
+    )`),
   }),
 );
 
@@ -1086,4 +1206,4 @@ export const retrievedRecordDeduplicationDecisions = pgTable(
   }),
 );
 
-export const schema = { projects, papers, fullTextDocuments, paperFullTextPreferences, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };
+export const schema = { projects, papers, fullTextDocuments, paperFullTextPreferences, documentTextExtractions, documentTextExtractionPages, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };
