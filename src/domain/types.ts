@@ -1,6 +1,10 @@
 export type ProjectId = string;
 export type PaperId = string;
 export type EvidenceId = string;
+export type EvidenceReviewDecisionId = string;
+export type EvidenceAnnotationId = string;
+export type EvidenceLabelId = string;
+export type EvidenceLabelEventId = string;
 export type FullTextDocumentId = string;
 export type DocumentTextExtractionId = string;
 export type ClaimId = string;
@@ -33,6 +37,9 @@ export type FinalEligibility = "title_abstract_pending" | "title_abstract_unreso
 export type PaperReviewWarning = "cross_stage_conflict" | "legacy_analysis_precedes_full_text_screening" | "legacy_full_text_decision_without_retrieval_record" | "retrieval_history_without_current_title_abstract_inclusion";
 export type ExtractionFieldType = "short_text" | "long_text" | "number" | "boolean" | "single_select";
 export type ExtractionValueState = "present" | "not_reported" | "not_applicable" | "cleared";
+export type EvidenceReviewDecisionValue = "needs_review" | "accepted" | "rejected";
+export type EvidenceReviewState = "unreviewed" | EvidenceReviewDecisionValue;
+export type EvidenceLabelEventType = "assigned" | "removed";
 
 export type SupportStatus = "supported" | "unsupported";
 export type ClaimLifecycle = "active" | "withdrawn";
@@ -164,8 +171,48 @@ export interface Evidence {
   extractionStartOffset: number | null;
   extractionEndOffset: number | null;
   note: string | null;
+  reviewState?: EvidenceReviewState;
+  curationWarning?: "never_reviewed" | "needs_review" | "currently_rejected" | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface EvidenceReviewDecision {
+  id: EvidenceReviewDecisionId;
+  sequence: number;
+  projectId: ProjectId;
+  evidenceId: EvidenceId;
+  decision: EvidenceReviewDecisionValue;
+  note: string | null;
+  createdAt: Date;
+}
+
+export interface EvidenceAnnotation {
+  id: EvidenceAnnotationId;
+  sequence: number;
+  projectId: ProjectId;
+  evidenceId: EvidenceId;
+  body: string;
+  createdAt: Date;
+}
+
+export interface EvidenceLabel {
+  id: EvidenceLabelId;
+  projectId: ProjectId;
+  name: string;
+  description: string | null;
+  createdAt: Date;
+  archivedAt: Date | null;
+}
+
+export interface EvidenceLabelEvent {
+  id: EvidenceLabelEventId;
+  sequence: number;
+  projectId: ProjectId;
+  evidenceId: EvidenceId;
+  labelId: EvidenceLabelId;
+  event: EvidenceLabelEventType;
+  createdAt: Date;
 }
 
 export interface DocumentTextExtractionPage {

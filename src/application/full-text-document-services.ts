@@ -205,8 +205,13 @@ export function createFullTextDocumentServices(db: Database, storage?: DocumentS
       const rows = await db.execute(sql`
         select e.id, e.project_id, e.paper_id, e.full_text_document_id, e.document_text_extraction_id,
           e.source_text, e.page_number, e.extraction_start_offset, e.extraction_end_offset,
-          e.note, e.created_at, e.updated_at
+          e.note, e.created_at, e.updated_at, current_review.decision as review_decision
         from evidence e
+        left join lateral (
+          select decision from evidence_review_decisions r
+          where r.project_id=e.project_id and r.evidence_id=e.id
+          order by r.sequence desc limit 1
+        ) current_review on true
         where e.project_id=${projectId} and e.paper_id=${document.paperId} and e.full_text_document_id=${document.id}
         order by e.page_number, e.created_at
       `) as unknown as Record<string, unknown>[];
@@ -216,6 +221,8 @@ export function createFullTextDocumentServices(db: Database, storage?: DocumentS
         sourceText: String(row.source_text), pageNumber: Number(row.page_number), note: row.note == null ? null : String(row.note),
         extractionStartOffset: row.extraction_start_offset == null ? null : Number(row.extraction_start_offset),
         extractionEndOffset: row.extraction_end_offset == null ? null : Number(row.extraction_end_offset),
+        reviewState: row.review_decision == null ? "unreviewed" as const : String(row.review_decision) as "needs_review" | "accepted" | "rejected",
+        curationWarning: row.review_decision == null ? "never_reviewed" as const : row.review_decision === "needs_review" ? "needs_review" as const : row.review_decision === "rejected" ? "currently_rejected" as const : null,
         createdAt: row.created_at as Date, updatedAt: row.updated_at as Date,
       }));
     },

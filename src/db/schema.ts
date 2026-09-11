@@ -271,6 +271,108 @@ export const evidence = pgTable(
   }),
 );
 
+export const evidenceReviewDecisions = pgTable(
+  "evidence_review_decisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    projectId: uuid("project_id").notNull(),
+    evidenceId: uuid("evidence_id").notNull(),
+    decision: text("decision").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("evidence_review_decisions_project_id_id_unique").on(table.projectId, table.id),
+    evidenceSequence: index("evidence_review_decisions_project_evidence_sequence_idx").on(table.projectId, table.evidenceId, table.sequence),
+    evidenceOwnership: foreignKey({
+      columns: [table.projectId, table.evidenceId],
+      foreignColumns: [evidence.projectId, evidence.id],
+      name: "evidence_review_decisions_project_evidence_fk",
+    }).onDelete("restrict"),
+    decisionValid: check("evidence_review_decisions_decision_valid", sql`${table.decision} in ('needs_review', 'accepted', 'rejected')`),
+    noteShape: check("evidence_review_decisions_note_shape", sql`${table.note} is null or (btrim(${table.note}) <> '' and char_length(${table.note}) <= 2000)`),
+  }),
+);
+
+export const evidenceAnnotations = pgTable(
+  "evidence_annotations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    projectId: uuid("project_id").notNull(),
+    evidenceId: uuid("evidence_id").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("evidence_annotations_project_id_id_unique").on(table.projectId, table.id),
+    evidenceSequence: index("evidence_annotations_project_evidence_sequence_idx").on(table.projectId, table.evidenceId, table.sequence),
+    evidenceOwnership: foreignKey({
+      columns: [table.projectId, table.evidenceId],
+      foreignColumns: [evidence.projectId, evidence.id],
+      name: "evidence_annotations_project_evidence_fk",
+    }).onDelete("restrict"),
+    bodyShape: check("evidence_annotations_body_shape", sql`btrim(${table.body}) <> '' and char_length(${table.body}) <= 10000`),
+  }),
+);
+
+export const evidenceLabels = pgTable(
+  "evidence_labels",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => ({
+    projectIdentity: unique("evidence_labels_project_id_id_unique").on(table.projectId, table.id),
+    projectCreatedAt: index("evidence_labels_project_created_at_idx").on(table.projectId, table.createdAt),
+    activeNameUnique: uniqueIndex("evidence_labels_active_name_unique")
+      .on(table.projectId, sql`lower(btrim(${table.name}))`)
+      .where(sql`${table.archivedAt} is null`),
+    projectOwnership: foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.id],
+      name: "evidence_labels_project_id_projects_id_fk",
+    }).onDelete("restrict"),
+    nameShape: check("evidence_labels_name_shape", sql`btrim(${table.name}) <> '' and char_length(${table.name}) <= 100`),
+    descriptionShape: check("evidence_labels_description_shape", sql`${table.description} is null or char_length(${table.description}) <= 500`),
+  }),
+);
+
+export const evidenceLabelEvents = pgTable(
+  "evidence_label_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    projectId: uuid("project_id").notNull(),
+    evidenceId: uuid("evidence_id").notNull(),
+    labelId: uuid("label_id").notNull(),
+    event: text("event").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("evidence_label_events_project_id_id_unique").on(table.projectId, table.id),
+    pairSequence: index("evidence_label_events_project_pair_sequence_idx").on(table.projectId, table.evidenceId, table.labelId, table.sequence),
+    evidenceLookup: index("evidence_label_events_project_evidence_idx").on(table.projectId, table.evidenceId),
+    labelLookup: index("evidence_label_events_project_label_idx").on(table.projectId, table.labelId),
+    evidenceOwnership: foreignKey({
+      columns: [table.projectId, table.evidenceId],
+      foreignColumns: [evidence.projectId, evidence.id],
+      name: "evidence_label_events_project_evidence_fk",
+    }).onDelete("restrict"),
+    labelOwnership: foreignKey({
+      columns: [table.projectId, table.labelId],
+      foreignColumns: [evidenceLabels.projectId, evidenceLabels.id],
+      name: "evidence_label_events_project_label_fk",
+    }).onDelete("restrict"),
+    eventValid: check("evidence_label_events_event_valid", sql`${table.event} in ('assigned', 'removed')`),
+  }),
+);
+
 export const claims = pgTable(
   "claims",
   {
@@ -1206,4 +1308,4 @@ export const retrievedRecordDeduplicationDecisions = pgTable(
   }),
 );
 
-export const schema = { projects, papers, fullTextDocuments, paperFullTextPreferences, documentTextExtractions, documentTextExtractionPages, evidence, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };
+export const schema = { projects, papers, fullTextDocuments, paperFullTextPreferences, documentTextExtractions, documentTextExtractionPages, evidence, evidenceReviewDecisions, evidenceAnnotations, evidenceLabels, evidenceLabelEvents, claims, claimRevisions, claimRevisionEvidenceSupports, claimRevisionExtractionSupports, claimRevisionSynthesisSupports, screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts, extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence, synthesisStatements, synthesisRevisions, synthesisRevisionSupports, manuscripts, manuscriptSections, manuscriptClaimPlacements, manuscriptSectionItems, manuscriptSectionItemClaims, manuscriptProseBlocks, manuscriptClaimPlacementEvents, researchQuestions, searchSources, searchStrategies, searchRuns, retrievedRecords, retrievedRecordMatches, retrievedRecordDeduplicationDecisions };

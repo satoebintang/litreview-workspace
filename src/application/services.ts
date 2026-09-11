@@ -42,7 +42,7 @@ import {
   type RecordFullTextScreeningDecisionInput,
   type RecordFullTextRetrievalAttemptInput,
 } from "@/domain/validation";
-import type { ExtractionFieldType, PaperReviewStatus, ScreeningDecisionValue } from "@/domain/types";
+import type { EvidenceReviewState, ExtractionFieldType, PaperReviewStatus, ScreeningDecisionValue } from "@/domain/types";
 import type { DocumentStorage } from "@/infrastructure/document-storage";
 import { derivePaperReviewStatus, isFinallyIncluded } from "@/domain/paper-review";
 import {
@@ -77,6 +77,7 @@ import {
   type DocumentTextExtractionParser,
   type DocumentTextExtractionServices,
 } from "./document-text-extraction-services";
+import { createEvidenceCurationServices, requireEvidenceUsableForNewDirectSupport } from "./evidence-curation-services";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
   const result = schema.safeParse(input);
@@ -88,6 +89,27 @@ function ensureId(id: string): string {
   const result = idSchema.safeParse(id);
   if (!result.success) throw new DomainError("VALIDATION_ERROR", "Identifier must be a UUID", result.error.issues);
   return result.data;
+}
+
+type EvidenceCurationWarning = "never_reviewed" | "needs_review" | "currently_rejected" | null;
+
+function evidenceReviewState(value: string | undefined): EvidenceReviewState {
+  return value === "needs_review" || value === "accepted" || value === "rejected" ? value : "unreviewed";
+}
+
+function evidenceCurationWarning(state: EvidenceReviewState): EvidenceCurationWarning {
+  return state === "unreviewed" ? "never_reviewed" : state === "needs_review" ? "needs_review" : state === "rejected" ? "currently_rejected" : null;
+}
+
+function isMissingRelationError(error: unknown, relation: string): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 3 && current && typeof current === "object"; depth += 1) {
+    const candidate = current as { code?: unknown; relation?: unknown; cause?: unknown; message?: unknown };
+    if (String(candidate.code ?? "") === "42P01" && (!candidate.relation || String(candidate.relation) === relation)) return true;
+    if (typeof candidate.message === "string" && candidate.message.includes(`relation \"${relation}\" does not exist`)) return true;
+    current = candidate.cause;
+  }
+  return false;
 }
 
 type SqlExecutor = Pick<Database, "execute">;
@@ -261,27 +283,59 @@ export function createReviewServices(db: Database, options: {
       sourceText: String(row.source_text), pageNumber: Number(row.page_number), note: row.note == null ? null : String(row.note),
       extractionStartOffset: row.extraction_start_offset == null ? null : Number(row.extraction_start_offset),
       extractionEndOffset: row.extraction_end_offset == null ? null : Number(row.extraction_end_offset),
+      reviewState: undefined as "unreviewed" | "needs_review" | "accepted" | "rejected" | undefined,
+      curationWarning: undefined as "never_reviewed" | "needs_review" | "currently_rejected" | null | undefined,
       createdAt: row.created_at as Date, updatedAt: row.updated_at as Date,
     };
   }
 
+  async function currentEvidenceReviewRows(projectId: string, evidenceIds?: string[]) {
+    if (evidenceIds && evidenceIds.length === 0) return [] as Record<string, unknown>[];
+    const evidenceFilter = evidenceIds ? sql`and evidence_id in (${sql.join(evidenceIds.map((id) => sql`${id}::uuid`), sql`, `)})` : sql``;
+    try {
+      return await db.execute(sql`
+        select distinct on (project_id, evidence_id) evidence_id, decision
+        from evidence_review_decisions
+        where project_id=${projectId} ${evidenceFilter}
+        order by project_id, evidence_id, sequence desc
+      `) as unknown as Record<string, unknown>[];
+    } catch (error) {
+      // A service facade can be constructed against a pre-Slice-16 schema by
+      // migration-boundary tests. Such Evidence has no curation history yet.
+      if (isMissingRelationError(error, "evidence_review_decisions")) return [];
+      throw error;
+    }
+  }
+
   async function enrichEvidenceDocuments(items: ReturnType<typeof mapEvidence>[]) {
     const ids = [...new Set(items.flatMap((item) => item.fullTextDocumentId ? [item.fullTextDocumentId] : []))];
-    if (!ids.length) return items;
-    const rows = await db.select({
-      id: fullTextDocuments.id,
-      originalFilename: fullTextDocuments.originalFilename,
-      mediaType: fullTextDocuments.mediaType,
-      byteSize: fullTextDocuments.byteSize,
-      sha256: fullTextDocuments.sha256,
-      createdAt: fullTextDocuments.createdAt,
-      archivedAt: fullTextDocuments.archivedAt,
-    }).from(fullTextDocuments).where(and(eq(fullTextDocuments.projectId, items[0].projectId), inArray(fullTextDocuments.id, ids)));
-    const byId = new Map(rows.map((row) => [String(row.id), {
+    const reviewRowsPromise = items.length ? currentEvidenceReviewRows(items[0].projectId, items.map((item) => item.id)) : Promise.resolve([] as Record<string, unknown>[]);
+    const [documentRows, reviewRows] = await Promise.all([
+      ids.length ? db.select({
+        id: fullTextDocuments.id,
+        originalFilename: fullTextDocuments.originalFilename,
+        mediaType: fullTextDocuments.mediaType,
+        byteSize: fullTextDocuments.byteSize,
+        sha256: fullTextDocuments.sha256,
+        createdAt: fullTextDocuments.createdAt,
+        archivedAt: fullTextDocuments.archivedAt,
+      }).from(fullTextDocuments).where(and(eq(fullTextDocuments.projectId, items[0].projectId), inArray(fullTextDocuments.id, ids))) : Promise.resolve([]),
+      reviewRowsPromise,
+    ]);
+    const byId = new Map(documentRows.map((row) => [String(row.id), {
       id: String(row.id), originalFilename: row.originalFilename, mediaType: "application/pdf" as const,
       byteSize: Number(row.byteSize), sha256: row.sha256, createdAt: row.createdAt, archivedAt: row.archivedAt,
     }]));
-    return items.map((item) => item.fullTextDocumentId ? { ...item, document: byId.get(item.fullTextDocumentId) ?? null } : item);
+    const byEvidence = new Map(reviewRows.map((row) => [String(row.evidence_id), String(row.decision)]));
+    return items.map((item) => {
+      const reviewState = evidenceReviewState(byEvidence.get(item.id));
+      return {
+        ...item,
+        ...(item.fullTextDocumentId ? { document: byId.get(item.fullTextDocumentId) ?? null } : {}),
+        reviewState,
+        curationWarning: evidenceCurationWarning(reviewState),
+      };
+    });
   }
 
   function mapPaper(row: Record<string, unknown>) {
@@ -398,6 +452,13 @@ export function createReviewServices(db: Database, options: {
   }
 
   async function validateClaimSupports(projectId: string, supports: ClaimSupportSnapshot[], executor: SqlExecutor | ReviewTransaction) {
+    const directEvidenceIds = supports
+      .filter((support) => support.kind === "evidence")
+      .map((support) => String(support.evidenceId))
+      .sort();
+    for (const evidenceId of directEvidenceIds) {
+      await requireEvidenceUsableForNewDirectSupport(executor, projectId, evidenceId);
+    }
     for (const support of supports) {
       const id = support.kind === "evidence" ? support.evidenceId : support.kind === "extractionRevision" ? support.extractionRevisionId : support.synthesisRevisionId;
       if (!id) throw new DomainError("VALIDATION_ERROR", "A support target is required");
@@ -527,7 +588,19 @@ export function createReviewServices(db: Database, options: {
     getProject(projectId: string) { return requireProject(projectId); },
     listPapers(projectId: string) { return requireProject(projectId).then(() => paperRepo.list(projectId)); },
     getPaper(projectId: string, paperId: string) { return requirePaper(projectId, paperId); },
-    listEvidence(projectId: string) { return requireProject(projectId).then(() => evidenceRepo.list(projectId)); },
+    async listEvidence(projectId: string) {
+      await requireProject(projectId);
+      const [items, reviewRows] = await Promise.all([evidenceRepo.list(projectId), currentEvidenceReviewRows(projectId)]);
+      const currentReviewByEvidenceId = new Map(reviewRows.map((row) => [String(row.evidence_id), String(row.decision)]));
+      return items.map((item) => {
+        const reviewState = evidenceReviewState(currentReviewByEvidenceId.get(item.id));
+        return {
+          ...item,
+          reviewState,
+          curationWarning: evidenceCurationWarning(reviewState),
+        };
+      });
+    },
     async listClaims(projectId: string) {
       await requireProject(projectId);
       const rows = await claimRevisionRepo.listCurrent(projectId);
@@ -814,6 +887,9 @@ export function createReviewServices(db: Database, options: {
         const payload = typedRevisionPayload(field.fieldType as ExtractionFieldType, values);
         const evidenceIds = [...new Set(values.evidenceIds ?? [])];
         if (evidenceIds.length !== (values.evidenceIds ?? []).length) throw new DomainError("VALIDATION_ERROR", "Evidence cannot be repeated in one revision");
+        for (const evidenceId of [...evidenceIds].sort()) {
+          await requireEvidenceUsableForNewDirectSupport(tx, projectId, evidenceId);
+        }
         if (payload.optionId) {
           const option = await extractionOptionRepo.findById(projectId, payload.optionId);
           if (!option || option.fieldId !== field.id || option.archivedAt) throw new DomainError("CROSS_PROJECT_REFERENCE", "Option does not belong to this active extraction field");
@@ -1021,7 +1097,16 @@ export function createReviewServices(db: Database, options: {
         synthesisRevisionRepo.list(projectId),
       ]);
       const paperById = new Map(papers.map((paper) => [paper.id, paper]));
-      const evidenceOptions = evidence.map((item) => ({ ...item, paper: paperById.get(item.paperId) ?? null }));
+      const currentReviewRows = await currentEvidenceReviewRows(projectId);
+      const currentReviewByEvidenceId = new Map(currentReviewRows.map((row) => [String(row.evidence_id), String(row.decision)]));
+      const evidenceOptions = evidence
+        .filter((item) => currentReviewByEvidenceId.get(item.id) !== "rejected")
+        .map((item) => ({
+          ...item,
+          paper: paperById.get(item.paperId) ?? null,
+          reviewState: evidenceReviewState(currentReviewByEvidenceId.get(item.id)),
+          curationWarning: evidenceCurationWarning(evidenceReviewState(currentReviewByEvidenceId.get(item.id))),
+        }));
       const extractionIds = extractionRows.map((row) => String(row.revision_id));
       const extractionEvidenceRows = extractionIds.length ? await db.execute(sql`select l.revision_id, e.*
         from extraction_revision_evidence l join evidence e on e.project_id=l.project_id and e.id=l.evidence_id
@@ -1206,12 +1291,29 @@ export function createReviewServices(db: Database, options: {
 
     async deleteEvidence(projectId: string, evidenceId: string) {
       await requireEvidence(projectId, evidenceId);
-      const supportRows = await db.execute(sql`
-        select 1 from claim_revision_evidence_supports where project_id=${projectId} and evidence_id=${evidenceId} limit 1
-      `);
-      if ((supportRows as unknown[]).length) throw new DomainError("PROTECTED_DELETE", "Evidence cannot be deleted while linked to a claim revision");
+      let historyRows: unknown[];
+      try {
+        historyRows = await db.execute(sql`
+          select 1 from claim_revision_evidence_supports where project_id=${projectId} and evidence_id=${evidenceId}
+          union all select 1 from extraction_revision_evidence where project_id=${projectId} and evidence_id=${evidenceId}
+          union all select 1 from evidence_review_decisions where project_id=${projectId} and evidence_id=${evidenceId}
+          union all select 1 from evidence_annotations where project_id=${projectId} and evidence_id=${evidenceId}
+          union all select 1 from evidence_label_events where project_id=${projectId} and evidence_id=${evidenceId}
+          limit 1
+        `) as unknown as unknown[];
+      } catch (error) {
+        // Preserve the pre-Slice-16 delete behavior for callers operating at
+        // the migration boundary before the curation tables exist.
+        if (!isMissingRelationError(error, "evidence_review_decisions")) throw error;
+        historyRows = await db.execute(sql`
+          select 1 from claim_revision_evidence_supports where project_id=${projectId} and evidence_id=${evidenceId}
+          union all select 1 from extraction_revision_evidence where project_id=${projectId} and evidence_id=${evidenceId}
+          limit 1
+        `) as unknown as unknown[];
+      }
+      if ((historyRows as unknown[]).length) throw new DomainError("PROTECTED_DELETE", "Evidence cannot be deleted after curation or analytical history exists");
       try { return await evidenceRepo.delete(projectId, evidenceId); }
-      catch (error) { if (isConstraintError(error)) throw new DomainError("PROTECTED_DELETE", "Evidence cannot be deleted while linked to a claim"); throw error; }
+      catch (error) { if (isConstraintError(error)) throw new DomainError("PROTECTED_DELETE", "Evidence cannot be deleted after curation or analytical history exists"); throw error; }
     },
 
     async deleteClaim(projectId: string, claimId: string) {
@@ -1243,5 +1345,6 @@ export function createReviewServices(db: Database, options: {
     maxBytes: options.maxDocumentBytes,
   });
   const reportingServices = createReviewReportingServices(db, deduplicationServices);
-  return Object.assign(baseServices, textExtractionServices, reportingServices) as typeof baseServices & typeof reportingServices & DocumentTextExtractionServices;
+  const curationServices = createEvidenceCurationServices(db, { requireProject, requireEvidence });
+  return Object.assign(baseServices, textExtractionServices, reportingServices, curationServices) as typeof baseServices & typeof reportingServices & DocumentTextExtractionServices & typeof curationServices;
 }

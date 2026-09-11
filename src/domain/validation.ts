@@ -46,6 +46,36 @@ export const recordExtractedEvidenceSchema = z.object({
   }
 });
 
+export const appendEvidenceReviewDecisionSchema = z.object({
+  decision: z.enum(["needs_review", "accepted", "rejected"]),
+  note: z.string().transform((value) => {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }).nullable().optional().refine((value) => value == null || value.length <= 2000, "Review notes cannot exceed 2000 characters"),
+});
+
+export const appendEvidenceAnnotationSchema = z.object({
+  body: z.string().trim().min(1, "Annotation body is required").max(10000, "Annotations cannot exceed 10000 characters"),
+});
+
+export const createEvidenceLabelSchema = z.object({
+  name: z.string().trim().min(1, "Label name is required").max(100, "Label names cannot exceed 100 characters"),
+  description: z.string().trim().max(500, "Label descriptions cannot exceed 500 characters").nullable().optional(),
+});
+
+export const evidenceWorkspaceFilterSchema = z.object({
+  state: z.enum(["attention", "unreviewed", "needs_review", "accepted", "rejected", "all"]).default("attention"),
+  paperId: idSchema.optional(),
+  labelId: idSchema.optional(),
+  fullTextDocumentId: idSchema.optional(),
+  documentProvenance: z.enum(["any", "none", "document", "extraction"]).default("any"),
+  documentTextExtractionId: idSchema.optional(),
+  pageNumber: z.number().int().positive().optional(),
+  usage: z.enum(["any", "used", "unused"]).default("any"),
+  page: z.number().int().positive().default(1),
+  pageSize: z.number().int().positive().max(100).default(50),
+});
+
 export const createDocumentTextExtractionSchema = z.object({
   fullTextDocumentId: idSchema,
 });
