@@ -52,6 +52,18 @@ A structured planning layer recording the append-only history of linking and unl
 
 The operational state derived from the greatest-sequence traceability event for a given `(project, question, target)` tuple; a target is currently linked if and only if its latest event action is `linked`.
 
+## Research Question Answer
+
+An immutable, researcher-authored snapshot answering one exact Research Question. It records the answer text and optional researcher note together with the exact ClaimRevision and/or SynthesisRevision rows consulted at finalization. An Answer is historical drafting context, not formal support, citation provenance, manuscript content, or a ReviewFlow/PRISMA input.
+
+## Answer context reference
+
+A typed exact reference from a finalized Research Question Answer to one ClaimRevision or SynthesisRevision. New references must identify the greatest finalized active revision of a currently linked stable target and pass that revision's existing formal support eligibility. References never float to a later revision.
+
+## Answer drift flag
+
+A read-derived annotation describing how current traceability, lifecycle, or revision state differs from an Answer's immutable context. Approved flags are `referenced_claim_revision_superseded`, `referenced_claim_now_withdrawn`, `referenced_claim_no_longer_linked_to_rq`, `referenced_synthesis_revision_superseded`, `referenced_synthesis_now_withdrawn`, and `referenced_synthesis_no_longer_linked_to_rq`. Drift is never persisted and is not a global Answer quality or completion judgment.
+
 ## Project-wide protocol context
 
 Search strategies and search runs defined within the review protocol. These records are independently Project-scoped, represent review-wide search methods, and are never attributed to individual Research Questions.

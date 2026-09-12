@@ -643,3 +643,44 @@ export type LinkSynthesisStatementInput = z.input<typeof linkSynthesisStatementS
 export type UnlinkSynthesisStatementInput = z.input<typeof unlinkSynthesisStatementSchema>;
 export type LinkClaimInput = z.input<typeof linkClaimSchema>;
 export type UnlinkClaimInput = z.input<typeof unlinkClaimSchema>;
+
+// Slice 21 Research Question Answer validation.  The revision IDs are exact
+// user selections; later application code must validate their currentness
+// under the canonical ResearchQuestion -> Claim -> Synthesis lock order and
+// must never resolve a stable target to a replacement revision.
+const answerTextSchema = z
+  .string()
+  .trim()
+  .min(1, "Answer text is required")
+  .max(20000, "Answer text cannot exceed 20000 characters");
+
+const answerResearcherNoteSchema = z.preprocess((value) => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return value ?? null;
+}, z.string().max(20000, "Researcher note cannot exceed 20000 characters").nullable().optional());
+
+export const appendResearchQuestionAnswerSchema = z.object({
+  answerText: answerTextSchema,
+  researcherNote: answerResearcherNoteSchema,
+  claimRevisionIds: z.array(idSchema).max(100, "Claim contexts cannot exceed 100 items").default([]),
+  synthesisRevisionIds: z.array(idSchema).max(100, "Synthesis contexts cannot exceed 100 items").default([]),
+}).superRefine((value, ctx) => {
+  if (value.claimRevisionIds.length + value.synthesisRevisionIds.length < 1) {
+    ctx.addIssue({ code: "custom", path: ["claimRevisionIds"], message: "An Answer must contain at least one analytical context" });
+  }
+  if (new Set(value.claimRevisionIds).size !== value.claimRevisionIds.length) {
+    ctx.addIssue({ code: "custom", path: ["claimRevisionIds"], message: "Claim contexts cannot contain duplicate revisions" });
+  }
+  if (new Set(value.synthesisRevisionIds).size !== value.synthesisRevisionIds.length) {
+    ctx.addIssue({ code: "custom", path: ["synthesisRevisionIds"], message: "Synthesis contexts cannot contain duplicate revisions" });
+  }
+});
+
+/** Alias for callers that describe the append operation as creation. */
+export const createResearchQuestionAnswerSchema = appendResearchQuestionAnswerSchema;
+export type AppendResearchQuestionAnswerInput = z.input<typeof appendResearchQuestionAnswerSchema>;
+export type CreateResearchQuestionAnswerInput = z.input<typeof createResearchQuestionAnswerSchema>;
+export type ValidatedResearchQuestionAnswerInput = z.output<typeof appendResearchQuestionAnswerSchema>;

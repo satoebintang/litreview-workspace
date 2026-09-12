@@ -58,7 +58,13 @@ export default async function ResearchQuestionsMatrixPage({
     throw error;
   }
 
-  const matrix = await reviewServices.getResearchQuestionMatrix(projectId);
+  const [matrix, answerFacts] = await Promise.all([
+    reviewServices.getResearchQuestionMatrix(projectId),
+    reviewServices.getProjectResearchQuestionAnswerFacts(projectId),
+  ]);
+  const answerFactsByQuestion = new Map(
+    answerFacts.rows.map((fact) => [fact.researchQuestionId, fact]),
+  );
 
   return (
     <main className="shell">
@@ -138,6 +144,7 @@ export default async function ResearchQuestionsMatrixPage({
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Evidence Sets</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Synthesis Statements</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Claims &amp; Manuscript</th>
+                    <th style={{ padding: "12px 14px", fontWeight: 700 }}>Answers</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700 }}>Diagnostic Flags</th>
                     <th style={{ padding: "12px 14px", fontWeight: 700, textAlign: "right" }}>Actions</th>
                   </tr>
@@ -208,6 +215,22 @@ export default async function ResearchQuestionsMatrixPage({
                           <div className="hint">
                             {row.counts.activeClaims} active · {row.counts.currentManuscriptPlacements} placed
                           </div>
+                        </td>
+
+                        <td style={{ padding: "14px", verticalAlign: "top", whiteSpace: "nowrap" }}>
+                          {(() => {
+                            const fact = answerFactsByQuestion.get(row.question.id);
+                            if (!fact) return <span className="hint">No Answer data</span>;
+                            return (
+                              <>
+                                <div><strong>{fact.finalizedAnswerCount}</strong> finalized</div>
+                                <div className="hint">{fact.claimContextCount} Claim · {fact.synthesisContextCount} Synthesis context{fact.claimContextCount + fact.synthesisContextCount === 1 ? "" : "s"}</div>
+                                <div className={`hint${fact.derivedDriftCount > 0 ? "" : ""}`}>
+                                  Latest seq {fact.latestAnswerSequence ?? "—"} · {fact.derivedDriftCount} derived drift
+                                </div>
+                              </>
+                            );
+                          })()}
                         </td>
 
                         <td style={{ padding: "14px", verticalAlign: "top" }}>

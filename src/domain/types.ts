@@ -26,6 +26,7 @@ export type FullTextScreeningCriterionId = string;
 export type FullTextScreeningDecisionId = string;
 export type FullTextRetrievalAttemptId = string;
 export type ResearchQuestionId = string;
+export type ResearchQuestionAnswerId = string;
 export type SearchSourceId = string;
 export type SearchStrategyId = string;
 export type SearchRunId = string;
@@ -1258,4 +1259,160 @@ export interface ResearchQuestionMatrixRow {
 export interface ResearchQuestionMatrixProjection {
   rows: ResearchQuestionMatrixRow[];
   protocolContext: ProjectProtocolContext;
+}
+
+// Slice 21 Research Question Answer contracts.  These references identify the
+// exact analytical revisions consulted by a researcher; they are not formal
+// support or citation edges.
+export type ResearchQuestionAnswerContextDriftFlag =
+  | "referenced_claim_revision_superseded"
+  | "referenced_claim_now_withdrawn"
+  | "referenced_claim_no_longer_linked_to_rq"
+  | "referenced_synthesis_revision_superseded"
+  | "referenced_synthesis_now_withdrawn"
+  | "referenced_synthesis_no_longer_linked_to_rq";
+
+export type ResearchQuestionAnswerCandidateTargetType = "claim" | "synthesis";
+
+export type ResearchQuestionAnswerCandidateReasonCode =
+  | "not_currently_linked"
+  | "no_finalized_revision"
+  | "revision_not_current"
+  | "withdrawn"
+  | "unsupported"
+  | "cross_project";
+
+export interface AppendResearchQuestionAnswerInput {
+  answerText: string;
+  researcherNote?: string | null;
+  claimRevisionIds: ClaimRevisionId[];
+  synthesisRevisionIds: string[];
+}
+
+/** Alias used by command handlers that call the operation a creation. */
+export type CreateResearchQuestionAnswerInput = AppendResearchQuestionAnswerInput;
+
+export interface ResearchQuestionAnswer {
+  id: ResearchQuestionAnswerId;
+  sequence: number;
+  projectId: ProjectId;
+  researchQuestionId: ResearchQuestionId;
+  answerText: string;
+  researcherNote: string | null;
+  createdAt: Date;
+  finalizedAt: Date | null;
+}
+
+export interface ResearchQuestionAnswerClaimContext {
+  projectId: ProjectId;
+  researchQuestionId: ResearchQuestionId;
+  answerId: ResearchQuestionAnswerId;
+  claimId: ClaimId;
+  claimRevisionId: ClaimRevisionId;
+  sortOrder: number;
+  createdAt: Date;
+}
+
+export interface ResearchQuestionAnswerSynthesisContext {
+  projectId: ProjectId;
+  researchQuestionId: ResearchQuestionId;
+  answerId: ResearchQuestionAnswerId;
+  synthesisStatementId: string;
+  synthesisRevisionId: string;
+  sortOrder: number;
+  createdAt: Date;
+}
+
+export interface ResearchQuestionAnswerClaimContextView extends ResearchQuestionAnswerClaimContext {
+  claimText: string | null;
+  claimRevisionSequence: number;
+  claimRevisionState: ClaimLifecycle;
+  isCurrentRevision: boolean;
+  currentRevisionId: ClaimRevisionId | null;
+  currentRevisionSequence: number | null;
+  currentRevisionState: ClaimLifecycle | null;
+  isCurrentlyLinked: boolean;
+  supportStatus: ClaimRevisionSupportStatus;
+  driftFlags: ResearchQuestionAnswerContextDriftFlag[];
+}
+
+export interface ResearchQuestionAnswerSynthesisContextView extends ResearchQuestionAnswerSynthesisContext {
+  title: string | null;
+  statementText: string | null;
+  synthesisRevisionSequence: number;
+  synthesisRevisionState: SynthesisState;
+  isCurrentRevision: boolean;
+  currentRevisionId: string | null;
+  currentRevisionSequence: number | null;
+  currentRevisionState: SynthesisState | null;
+  isCurrentlyLinked: boolean;
+  supportStatus: SynthesisSupportStatus;
+  interpretationAvailable: boolean;
+  driftFlags: ResearchQuestionAnswerContextDriftFlag[];
+}
+
+export interface ResearchQuestionAnswerSnapshot extends ResearchQuestionAnswer {
+  /** Finalized snapshots always expose a non-null finalization timestamp. */
+  finalizedAt: Date;
+  claimContexts: ResearchQuestionAnswerClaimContextView[];
+  synthesisContexts: ResearchQuestionAnswerSynthesisContextView[];
+}
+
+export interface ResearchQuestionAnswerProjection {
+  latestAnswer: ResearchQuestionAnswerSnapshot | null;
+  history: ResearchQuestionAnswerSnapshot[];
+  finalizedAnswerCount: number;
+  latestAnswerSequence: number | null;
+}
+
+export interface ResearchQuestionAnswerCandidateBase {
+  projectId: ProjectId;
+  researchQuestionId: ResearchQuestionId;
+  targetType: ResearchQuestionAnswerCandidateTargetType;
+  targetId: string;
+  revisionId: string | null;
+  revisionSequence: number | null;
+  revisionState: ClaimLifecycle | SynthesisState | null;
+  finalizedAt: Date | null;
+  isCurrentlyLinked: boolean;
+  isCurrentRevision: boolean;
+  supportStatus: ClaimRevisionSupportStatus | SynthesisSupportStatus;
+  supportCount: number;
+  isSelectable: boolean;
+  reason: ResearchQuestionAnswerCandidateReasonCode | null;
+}
+
+export interface ResearchQuestionAnswerClaimCandidate extends ResearchQuestionAnswerCandidateBase {
+  targetType: "claim";
+  targetId: ClaimId;
+  revisionId: ClaimRevisionId | null;
+  revisionState: ClaimLifecycle | null;
+  supportStatus: ClaimRevisionSupportStatus;
+}
+
+export interface ResearchQuestionAnswerSynthesisCandidate extends ResearchQuestionAnswerCandidateBase {
+  targetType: "synthesis";
+  targetId: string;
+  revisionId: string | null;
+  revisionState: SynthesisState | null;
+  supportStatus: SynthesisSupportStatus;
+  interpretationAvailable: boolean;
+}
+
+export interface ResearchQuestionAnswerCandidateProjection {
+  claims: ResearchQuestionAnswerClaimCandidate[];
+  syntheses: ResearchQuestionAnswerSynthesisCandidate[];
+}
+
+export interface ProjectResearchQuestionAnswerFact {
+  researchQuestionId: ResearchQuestionId;
+  finalizedAnswerCount: number;
+  latestAnswerSequence: number | null;
+  claimContextCount: number;
+  synthesisContextCount: number;
+  derivedDriftCount: number;
+}
+
+export interface ProjectResearchQuestionAnswerFacts {
+  rows: ProjectResearchQuestionAnswerFact[];
 }

@@ -14,7 +14,7 @@ describe("Slice 13 full-text retrieval core", () => {
   beforeAll(async () => { await migrate(db, { migrationsFolder: "./drizzle" }); });
   beforeEach(async () => { projectId = (await services.createProject({ title: `Retrieval project ${crypto.randomUUID()}` })).id; });
   afterAll(async () => {
-    await client.unsafe("TRUNCATE TABLE full_text_retrieval_attempts");
+    await client.unsafe("TRUNCATE TABLE research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, full_text_retrieval_attempts");
     await client.end();
   });
 

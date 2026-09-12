@@ -13,6 +13,7 @@ import {
 import { reviewServices } from "@/app/server";
 import { DomainError } from "@/domain/errors";
 import type { TraceabilityFlag } from "@/domain/types";
+import ResearchQuestionAnswerPanel from "./ResearchQuestionAnswerPanel";
 
 function formatFlag(flag: TraceabilityFlag | string): string {
   if (typeof flag === "string") {
@@ -138,7 +139,9 @@ export default async function ResearchQuestionDetailPage({
         </div>
 
         {query.error && <div className="error-banner" role="alert">{query.error}</div>}
-        {query.saved && <div className="success-note" role="status">Traceability link updated.</div>}
+        {query.saved && <div className="success-note" role="status">
+          {query.saved === "answer" ? "Answer snapshot finalized." : "Traceability link updated."}
+        </div>}
 
         {isArchived && (
           <div className="curation-warning-box" style={{ background: "#fff0ed", borderColor: "#fecaca", color: "#991b1b" }}>
@@ -204,6 +207,12 @@ export default async function ResearchQuestionDetailPage({
             </div>
           )}
         </section>
+
+        <ResearchQuestionAnswerPanel
+          projectId={projectId}
+          questionId={questionId}
+          isArchived={isArchived}
+        />
 
         <div className="workspace-grid">
           {/* Panel 1: Extraction Fields */}

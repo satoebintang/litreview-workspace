@@ -1115,3 +1115,31 @@ export async function unlinkClaimAction(form: FormData) {
   }
   redirect(`/projects/${projectId}/research-questions/${questionId}?saved=claim_unlinked`);
 }
+
+export async function appendResearchQuestionAnswerAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const questionId = text(form, "questionId");
+  const claimRevisionIds = form
+    .getAll("claimRevisionIds")
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim());
+  const synthesisRevisionIds = form
+    .getAll("synthesisRevisionIds")
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim());
+  let answer;
+  try {
+    answer = await reviewServices.appendResearchQuestionAnswer(projectId, questionId, {
+      answerText: verbatimText(form, "answerText"),
+      researcherNote: optional(form, "researcherNote"),
+      claimRevisionIds,
+      synthesisRevisionIds,
+    });
+  } catch (error) {
+    // The write service deliberately rejects exact revision conflicts instead
+    // of floating to a newer revision. Redirecting back to the detail page
+    // causes Server Components to refresh candidates before another attempt.
+    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
+  }
+  redirect(`/projects/${projectId}/research-questions/${questionId}/answers/${answer.id}?saved=answer`);
+}

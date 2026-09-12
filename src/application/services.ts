@@ -92,6 +92,17 @@ import {
   createResearchQuestionCoverageServices,
   type ResearchQuestionCoverageServices,
 } from "./research-question-coverage-services";
+import type { DbOrTx } from "./research-question-traceability-repository";
+import {
+  createResearchQuestionAnswerReadServices,
+  type ResearchQuestionAnswerReadServices,
+} from "./research-question-answer-read-services";
+import {
+  createResearchQuestionAnswerWriteServices,
+  type ResearchQuestionAnswerWriteServices,
+  type AnswerClaimRevisionResolution,
+  type AnswerSynthesisRevisionResolution,
+} from "./research-question-answer-write-services";
 import {
   writeActiveSynthesisRevision,
   lockExtractionRevisionPapers,
@@ -1400,6 +1411,94 @@ export function createReviewServices(db: Database, options: {
   const synthesisInterpretationServices = getSynthesisInterpretationServices();
   const traceabilityServices = createResearchQuestionTraceabilityServices(db);
   const coverageServices = createResearchQuestionCoverageServices(db, traceabilityServices.repo);
+
+  // Slice 21 Answer composition deliberately delegates support semantics to
+  // the released Claim/Synthesis resolvers above.  The transaction argument
+  // is used to resolve the exact submitted identity; stable-parent locks are
+  // held before these adapters call the canonical read models, so a newer
+  // revision cannot silently float the submitted context.
+  const resolveAnswerClaimRevision = async (
+    projectId: string,
+    revisionId: string,
+    tx: DbOrTx,
+  ): Promise<AnswerClaimRevisionResolution | null> => {
+    const rows = await tx.execute(sql`
+      select id, project_id, claim_id
+      from claim_revisions
+      where project_id = ${projectId} and id = ${revisionId}
+      limit 1
+    `) as unknown as Record<string, unknown>[];
+    const row = rows[0];
+    if (!row) return null;
+    const claimId = String(row.claim_id);
+    const exact = await services.getClaimRevision(projectId, claimId, revisionId);
+    let current: Awaited<ReturnType<typeof services.getCurrentClaim>> | null = null;
+    try {
+      current = await services.getCurrentClaim(projectId, claimId);
+    } catch (error) {
+      if (!(error instanceof DomainError && error.code === "NOT_FOUND")) throw error;
+    }
+    return {
+      projectId: exact.revision.projectId,
+      claimId,
+      revisionId: exact.revision.id,
+      sequence: exact.revision.sequence,
+      state: exact.revision.lifecycle,
+      finalizedAt: exact.revision.finalizedAt,
+      currentRevisionId: current?.currentRevision.id ?? null,
+      currentRevisionSequence: current?.currentRevision.sequence ?? null,
+      currentRevisionState: current?.currentRevision.lifecycle ?? null,
+      isCurrentRevision: current?.currentRevision.id === exact.revision.id,
+      supportStatus: exact.revision.supportStatus,
+      supportCount: exact.revision.totalSupportCount,
+    };
+  };
+
+  const resolveAnswerSynthesisRevision = async (
+    projectId: string,
+    revisionId: string,
+    tx: DbOrTx,
+  ): Promise<AnswerSynthesisRevisionResolution | null> => {
+    const rows = await tx.execute(sql`
+      select id, project_id, synthesis_statement_id
+      from synthesis_revisions
+      where project_id = ${projectId} and id = ${revisionId}
+      limit 1
+    `) as unknown as Record<string, unknown>[];
+    const row = rows[0];
+    if (!row) return null;
+    const statementId = String(row.synthesis_statement_id);
+    const exact = await services.getSynthesisProvenance(projectId, statementId, revisionId);
+    const current = await services.getCurrentSynthesis(projectId, statementId);
+    return {
+      projectId: exact.projectId,
+      synthesisStatementId: statementId,
+      revisionId: exact.id,
+      sequence: exact.sequence,
+      state: exact.state,
+      finalizedAt: exact.finalizedAt,
+      currentRevisionId: current?.id ?? null,
+      currentRevisionSequence: current?.sequence ?? null,
+      currentRevisionState: current?.state ?? null,
+      isCurrentRevision: current?.id === exact.id,
+      supportStatus: exact.supportStatus,
+      supportCount: exact.supportingRevisionCount,
+    };
+  };
+
+  const answerWriteServices: ResearchQuestionAnswerWriteServices = createResearchQuestionAnswerWriteServices(db, {
+    traceabilityRepository: traceabilityServices.repo,
+    claimRevisionResolver: resolveAnswerClaimRevision,
+    synthesisRevisionResolver: resolveAnswerSynthesisRevision,
+  });
+  const answerReadServices: ResearchQuestionAnswerReadServices = createResearchQuestionAnswerReadServices(db, {
+    getCurrentLinksForQuestion: (projectId, questionId) => traceabilityServices.repo.listCurrentLinksForQuestion(projectId, questionId),
+    getCurrentLinksForProject: (projectId, questionIds) => traceabilityServices.repo.listCurrentLinksForProject(projectId, questionIds),
+    getCurrentClaim: (projectId, claimId) => services.getCurrentClaim(projectId, claimId),
+    getClaimRevision: (projectId, claimId, revisionId) => services.getClaimRevision(projectId, claimId, revisionId),
+    getCurrentSynthesis: (projectId, statementId) => services.getCurrentSynthesis(projectId, statementId),
+    getSynthesisProvenance: (projectId, statementId, revisionId) => services.getSynthesisProvenance(projectId, statementId, revisionId),
+  });
   return Object.assign(
     baseServices,
     textExtractionServices,
@@ -1410,6 +1509,8 @@ export function createReviewServices(db: Database, options: {
     synthesisInterpretationServices,
     traceabilityServices,
     coverageServices,
+    answerWriteServices,
+    answerReadServices,
   ) as typeof baseServices &
     typeof reportingServices &
     DocumentTextExtractionServices &
@@ -1418,7 +1519,9 @@ export function createReviewServices(db: Database, options: {
     typeof synthesisPreparationServices &
     typeof synthesisInterpretationServices &
     ResearchQuestionTraceabilityServices &
-    ResearchQuestionCoverageServices;
+    ResearchQuestionCoverageServices &
+    ResearchQuestionAnswerWriteServices &
+    ResearchQuestionAnswerReadServices;
 }
 
 export { createSynthesisInterpretationServices, createResearchQuestionTraceabilityServices, createResearchQuestionCoverageServices };
