@@ -52,7 +52,7 @@ test.describe("Slice 15 immutable PDF text extraction", () => {
     await page.getByRole("button", { name: "Extract text" }).click();
     await expect(page).toHaveURL(/\/extractions\/[0-9a-f-]+\?saved=extracted$/);
     await page.goto(documentHref!);
-    await expect(page.getByText("Run 2", { exact: false })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Run 2/ })).toBeVisible();
     await page.getByRole("button", { name: "Archive artifact" }).click();
     await expect(page.getByText(/historical Evidence remains available/)).toBeVisible();
     await page.goto(documentHref!);

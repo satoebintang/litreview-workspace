@@ -1038,3 +1038,224 @@ export interface CreateClaimFromInterpretationInput {
   claimText: string;
   researcherNote?: string | null;
 }
+
+// Slice 20 Research Question Traceability types
+export type TraceabilityAction = "linked" | "unlinked";
+
+export interface ResearchQuestionExtractionFieldEvent {
+  id: string;
+  sequence: number;
+  projectId: string;
+  researchQuestionId: string;
+  extractionFieldId: string;
+  action: TraceabilityAction;
+  note: string | null;
+  createdAt: Date;
+}
+
+export interface ResearchQuestionEvidenceSetEvent {
+  id: string;
+  sequence: number;
+  projectId: string;
+  researchQuestionId: string;
+  evidenceSetId: string;
+  action: TraceabilityAction;
+  note: string | null;
+  createdAt: Date;
+}
+
+export interface ResearchQuestionSynthesisStatementEvent {
+  id: string;
+  sequence: number;
+  projectId: string;
+  researchQuestionId: string;
+  synthesisStatementId: string;
+  action: TraceabilityAction;
+  note: string | null;
+  createdAt: Date;
+}
+
+export interface ResearchQuestionClaimEvent {
+  id: string;
+  sequence: number;
+  projectId: string;
+  researchQuestionId: string;
+  claimId: string;
+  action: TraceabilityAction;
+  note: string | null;
+  createdAt: Date;
+}
+
+export interface CurrentQuestionLinks {
+  extractionFieldIds: string[];
+  evidenceSetIds: string[];
+  synthesisStatementIds: string[];
+  claimIds: string[];
+}
+
+export type ExtractionFieldCoverageState =
+  | "present"
+  | "not_reported"
+  | "not_applicable"
+  | "cleared"
+  | "no_finalized_revision";
+
+export interface ExtractionFieldPaperCoverage {
+  paperId: string;
+  paperTitle: string;
+  status: ExtractionFieldCoverageState;
+  revisionId: string | null;
+  displayValue: string | null;
+}
+
+export interface LinkedExtractionFieldCoverage {
+  fieldId: string;
+  fieldName: string;
+  fieldType: string;
+  archivedAt: Date | null;
+  paperCoverage: ExtractionFieldPaperCoverage[];
+  hasAnyNonClearedData: boolean;
+}
+
+export interface LinkedEvidenceSetCoverage {
+  evidenceSetId: string;
+  name: string;
+  description: string | null;
+  archivedAt: Date | null;
+  latestCompositionRevisionId: string | null;
+  memberCount: number;
+  distinctPaperCount: number;
+  reviewCounts: {
+    accepted: number;
+    needsReview: number;
+    unreviewed: number;
+    rejected: number;
+  };
+}
+
+export interface LinkedSynthesisStatementCoverage {
+  statementId: string;
+  title: string | null;
+  currentActiveRevisionId: string | null;
+  currentActiveSequence: number | null;
+  latestRevisionSequence: number | null;
+  latestRevisionState: string | null;
+  hasActiveRevision: boolean;
+  supportCount: number;
+  hasInterpretation: boolean;
+  currentInterpretationConvergence: ConvergenceState | null;
+}
+
+export interface LinkedClaimCoverage {
+  claimId: string;
+  currentActiveRevisionId: string | null;
+  currentActiveSequence: number | null;
+  latestRevisionSequence: number | null;
+  latestRevisionState: string | null;
+  hasActiveRevision: boolean;
+  claimText: string | null;
+  hasSupport: boolean;
+  currentClaimPlaced: boolean;
+  hasAnyHistoricalPlacement: boolean;
+  activePlacementSections: string[];
+}
+
+export type TraceabilityFlagCode =
+  | "no_linked_extraction_fields"
+  | "linked_field_without_current_data"
+  | "no_linked_evidence_sets"
+  | "linked_set_empty"
+  | "linked_set_contains_rejected_evidence"
+  | "no_linked_synthesis_statements"
+  | "linked_statement_without_current_active_revision"
+  | "linked_current_synthesis_without_support"
+  | "linked_current_synthesis_without_interpretation"
+  | "no_linked_claims"
+  | "linked_claim_without_current_active_revision"
+  | "linked_current_claim_unsupported"
+  | "linked_current_claim_not_placed";
+
+export type TraceabilityTargetType =
+  | "extraction_field"
+  | "evidence_set"
+  | "synthesis_statement"
+  | "claim";
+
+export interface TraceabilityFlag {
+  code: TraceabilityFlagCode;
+  targetType?: TraceabilityTargetType;
+  targetId?: string;
+  targetLabel?: string;
+}
+
+export type ResearchQuestionDiagnosticFlagCode = TraceabilityFlagCode;
+export type ResearchQuestionDiagnosticFlag = TraceabilityFlag;
+
+export interface ResearchQuestionTraceabilityFlags {
+  extraction: TraceabilityFlag[];
+  evidenceSets: TraceabilityFlag[];
+  synthesis: TraceabilityFlag[];
+  claims: TraceabilityFlag[];
+}
+
+export interface ProjectProtocolContext {
+  searchStrategyCount: number;
+  searchRunCount: number;
+}
+
+export interface ResearchQuestionTraceabilityProjection {
+  question: {
+    id: string;
+    projectId: string;
+    identifier: string;
+    label: string;
+    sortOrder: number;
+    archivedAt: Date | null;
+  };
+  currentLinks: CurrentQuestionLinks;
+  protocolContext: ProjectProtocolContext;
+  extractionCoverage: LinkedExtractionFieldCoverage[];
+  evidenceSetCoverage: LinkedEvidenceSetCoverage[];
+  synthesisCoverage: LinkedSynthesisStatementCoverage[];
+  claimCoverage: LinkedClaimCoverage[];
+  flags: ResearchQuestionTraceabilityFlags;
+  histories: {
+    fieldEvents: ResearchQuestionExtractionFieldEvent[];
+    evidenceSetEvents: ResearchQuestionEvidenceSetEvent[];
+    synthesisEvents: ResearchQuestionSynthesisStatementEvent[];
+    claimEvents: ResearchQuestionClaimEvent[];
+  };
+  candidateTargets: {
+    extractionFields: { id: string; name: string; fieldType: string; archivedAt: Date | null }[];
+    evidenceSets: { id: string; name: string; archivedAt: Date | null }[];
+    synthesisStatements: { id: string; currentTitle: string; currentState: string; archivedAt: Date | null }[];
+    claims: { id: string; currentText: string; currentState: string }[];
+  };
+}
+
+export interface ResearchQuestionMatrixRow {
+  question: {
+    id: string;
+    projectId: string;
+    identifier: string;
+    label: string;
+    sortOrder: number;
+    archivedAt: Date | null;
+  };
+  counts: {
+    linkedExtractionFields: number;
+    linkedEvidenceSets: number;
+    linkedSynthesisStatements: number;
+    activeSynthesisStatements: number;
+    interpretations: number;
+    linkedClaims: number;
+    activeClaims: number;
+    currentManuscriptPlacements: number;
+  };
+  flags: ResearchQuestionTraceabilityFlags;
+}
+
+export interface ResearchQuestionMatrixProjection {
+  rows: ResearchQuestionMatrixRow[];
+  protocolContext: ProjectProtocolContext;
+}

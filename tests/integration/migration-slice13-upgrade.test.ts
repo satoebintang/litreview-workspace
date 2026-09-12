@@ -85,7 +85,7 @@ describe("Slice 14 migration boundaries", () => {
   }, 120_000);
 
   it("creates the document extraction tables and applies the current migration chain cleanly", async () => {
-    expect(await cleanClient!`select count(*)::integer as count from drizzle.__drizzle_migrations`).toEqual([{ count: 20 }]);
+    expect(await cleanClient!`select count(*)::integer as count from drizzle.__drizzle_migrations`).toEqual([{ count: 21 }]);
     expect(await cleanClient!`select to_regclass('public.full_text_retrieval_attempts') as table_name`).toEqual([{ table_name: "full_text_retrieval_attempts" }]);
     expect(await cleanClient!`select to_regclass('public.full_text_documents') as table_name`).toEqual([{ table_name: "full_text_documents" }]);
     expect(await cleanClient!`select to_regclass('public.paper_full_text_preferences') as table_name`).toEqual([{ table_name: "paper_full_text_preferences" }]);

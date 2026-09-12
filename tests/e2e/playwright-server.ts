@@ -47,6 +47,10 @@ const requiredSchema = {
   synthesis_interpretation_limitations: ["id", "project_id", "interpretation_id", "sort_order", "category", "body", "created_at"],
   synthesis_interpretation_questions: ["id", "project_id", "interpretation_id", "sort_order", "body", "created_at"],
   synthesis_interpretation_contradictions: ["id", "project_id", "interpretation_id", "synthesis_revision_id", "sort_order", "left_extraction_revision_id", "right_extraction_revision_id", "note", "created_at"],
+  research_question_extraction_field_events: ["id", "sequence", "project_id", "research_question_id", "extraction_field_id", "action", "note", "created_at"],
+  research_question_evidence_set_events: ["id", "sequence", "project_id", "research_question_id", "evidence_set_id", "action", "note", "created_at"],
+  research_question_synthesis_statement_events: ["id", "sequence", "project_id", "research_question_id", "synthesis_statement_id", "action", "note", "created_at"],
+  research_question_claim_events: ["id", "sequence", "project_id", "research_question_id", "claim_id", "action", "note", "created_at"],
 } as const;
 
 type MigrationEntry = { idx: number; tag: string; when: number };
@@ -142,8 +146,8 @@ async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
 async function assertSchema(client: postgres.Sql, databaseName: string) {
   const { migrations } = readExpectedMigrations();
   const expectedLatest = migrations.at(-1);
-  if (!expectedLatest || expectedLatest.tag !== "0019_synthesis_interpretation") {
-    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0019_synthesis_interpretation, found ${expectedLatest?.tag ?? "none"}`);
+  if (!expectedLatest || expectedLatest.tag !== "0020_research_question_traceability") {
+    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0020_research_question_traceability, found ${expectedLatest?.tag ?? "none"}`);
   }
 
   const migrationRows = await client.unsafe("select id, hash, created_at from drizzle.__drizzle_migrations order by id") as unknown as MigrationRow[];
@@ -155,7 +159,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
     return [];
   });
   if (migrationRows.length !== migrations.length || migrationMismatches.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0019_synthesis_interpretation; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0020_research_question_traceability; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
   }
 
   const tableNames = Object.keys(requiredSchema);
@@ -224,7 +228,7 @@ async function main() {
     } finally {
       await database.client.end();
     }
-  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0017_evidence_sets verified; storage=${storageRoot}`);
+  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0020_research_question_traceability verified; storage=${storageRoot}`);
 
     child = spawnNext("next-build", [nextBin, "build"], nextEnv);
     const buildExitCode = await waitForProcess(child, "next-build");

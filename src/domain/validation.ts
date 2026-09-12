@@ -559,3 +559,87 @@ export type SynthesisInterpretationQuestionSchemaInput = z.input<typeof synthesi
 export type SynthesisInterpretationContradictionSchemaInput = z.input<typeof synthesisInterpretationContradictionInputSchema>;
 export type CreateClaimWithSynthesisSupportInput = z.input<typeof createClaimWithSynthesisSupportSchema>;
 export type CreateClaimFromInterpretationInput = z.input<typeof createClaimFromInterpretationSchema>;
+
+// Slice 20 Research Question Traceability validation schemas
+export const traceabilityActionSchema = z.enum(["linked", "unlinked"]);
+
+export const traceabilityNoteSchema = z
+  .string()
+  .trim()
+  .min(1, "Note cannot be empty when provided")
+  .max(2000, "Note must be 2000 characters or fewer")
+  .nullable()
+  .optional();
+
+export const linkTraceabilityTargetSchema = z.object({
+  note: traceabilityNoteSchema,
+});
+
+export const unlinkTraceabilityTargetSchema = z.object({
+  note: traceabilityNoteSchema,
+});
+
+export const linkExtractionFieldSchema = z.object({
+  projectId: idSchema,
+  questionId: idSchema,
+  fieldId: idSchema,
+  note: traceabilityNoteSchema,
+});
+
+export const unlinkExtractionFieldSchema = z.object({
+  projectId: idSchema,
+  questionId: idSchema,
+  fieldId: idSchema,
+  note: traceabilityNoteSchema,
+});
+
+export const linkEvidenceSetSchema = z.object({
+  projectId: idSchema,
+  questionId: idSchema,
+  evidenceSetId: idSchema,
+  note: traceabilityNoteSchema,
+});
+
+export const unlinkEvidenceSetSchema = z.object({
+  projectId: idSchema,
+  questionId: idSchema,
+  evidenceSetId: idSchema,
+  note: traceabilityNoteSchema,
+});
+
+export const linkSynthesisStatementSchema = z.object({
+  projectId: idSchema,
+  questionId: idSchema,
+  statementId: idSchema,
+  note: traceabilityNoteSchema,
+});
+
+export const unlinkSynthesisStatementSchema = z.object({
+  projectId: idSchema,
+  questionId: idSchema,
+  statementId: idSchema,
+  note: traceabilityNoteSchema,
+});
+
+export const linkClaimSchema = z.object({
+  projectId: idSchema,
+  questionId: idSchema,
+  claimId: idSchema,
+  note: traceabilityNoteSchema,
+});
+
+export const unlinkClaimSchema = z.object({
+  projectId: idSchema,
+  questionId: idSchema,
+  claimId: idSchema,
+  note: traceabilityNoteSchema,
+});
+
+export type LinkExtractionFieldInput = z.input<typeof linkExtractionFieldSchema>;
+export type UnlinkExtractionFieldInput = z.input<typeof unlinkExtractionFieldSchema>;
+export type LinkEvidenceSetInput = z.input<typeof linkEvidenceSetSchema>;
+export type UnlinkEvidenceSetInput = z.input<typeof unlinkEvidenceSetSchema>;
+export type LinkSynthesisStatementInput = z.input<typeof linkSynthesisStatementSchema>;
+export type UnlinkSynthesisStatementInput = z.input<typeof unlinkSynthesisStatementSchema>;
+export type LinkClaimInput = z.input<typeof linkClaimSchema>;
+export type UnlinkClaimInput = z.input<typeof unlinkClaimSchema>;

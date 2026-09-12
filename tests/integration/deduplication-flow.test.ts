@@ -50,7 +50,10 @@ describe("Slice 10 deduplication and review-flow service contract", () => {
     const a = await services.createRetrievedRecord(projectId, { searchRunId: runId, searchSourceId: sourceId, sourceRecordId: "flow-a", title: "Shared study", doi: "10.1000/flow", retrievedAt: new Date() });
     const b = await services.createRetrievedRecord(projectId, { searchRunId: runId, searchSourceId: sourceId, sourceRecordId: "flow-b", title: "Shared study copy", doi: "https://doi.org/10.1000/flow", retrievedAt: new Date() });
     const queue = await services.listDeduplicationQueue(projectId);
-    const candidate = queue.find((item: any) => item.leftRetrievedRecord.id === a.id && item.rightRetrievedRecord.id === b.id)!;
+    const candidate = queue.find((item: any) =>
+      (item.leftRetrievedRecord.id === a.id && item.rightRetrievedRecord.id === b.id) ||
+      (item.leftRetrievedRecord.id === b.id && item.rightRetrievedRecord.id === a.id)
+    )!;
     expect(candidate.reasons).toContain("normalized_doi");
     expect(candidate.strength).toBe("strong");
     await services.confirmSameWorkAndResolve(projectId, a.id, b.id, { createFromRecordId: a.id });
@@ -63,7 +66,10 @@ describe("Slice 10 deduplication and review-flow service contract", () => {
     if (!ready) return;
     const a = await services.createRetrievedRecord(projectId, { searchRunId: runId, searchSourceId: sourceId, sourceRecordId: "flow-c", title: "Different study", publicationYear: 2022, retrievedAt: new Date() });
     const b = await services.createRetrievedRecord(projectId, { searchRunId: runId, searchSourceId: sourceId, sourceRecordId: "flow-d", title: "Different study", publicationYear: 2022, retrievedAt: new Date() });
-    expect((await services.listDeduplicationQueue(projectId)).some((item: any) => item.leftRetrievedRecord.id === a.id && item.rightRetrievedRecord.id === b.id)).toBe(true);
+    expect((await services.listDeduplicationQueue(projectId)).some((item: any) =>
+      (item.leftRetrievedRecord.id === a.id && item.rightRetrievedRecord.id === b.id) ||
+      (item.leftRetrievedRecord.id === b.id && item.rightRetrievedRecord.id === a.id)
+    )).toBe(true);
     await services.decideDifferentWork(projectId, a.id, b.id, "Reviewed and rejected as duplicate");
     const pair = await services.getDeduplicationPair(projectId, a.id, b.id);
     expect(pair).not.toBeNull();

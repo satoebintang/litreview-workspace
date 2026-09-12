@@ -85,6 +85,14 @@ import { createEvidenceSetServices } from "./evidence-set-services";
 import { createSynthesisPreparationServices } from "./synthesis-preparation-services";
 import { createSynthesisInterpretationServices } from "./synthesis-interpretation-services";
 import {
+  createResearchQuestionTraceabilityServices,
+  type ResearchQuestionTraceabilityServices,
+} from "./research-question-traceability-services";
+import {
+  createResearchQuestionCoverageServices,
+  type ResearchQuestionCoverageServices,
+} from "./research-question-coverage-services";
+import {
   writeActiveSynthesisRevision,
   lockExtractionRevisionPapers,
 } from "./synthesis-writer";
@@ -1390,6 +1398,8 @@ export function createReviewServices(db: Database, options: {
     extractionFieldRepo,
   });
   const synthesisInterpretationServices = getSynthesisInterpretationServices();
+  const traceabilityServices = createResearchQuestionTraceabilityServices(db);
+  const coverageServices = createResearchQuestionCoverageServices(db, traceabilityServices.repo);
   return Object.assign(
     baseServices,
     textExtractionServices,
@@ -1398,13 +1408,17 @@ export function createReviewServices(db: Database, options: {
     evidenceSetServices,
     synthesisPreparationServices,
     synthesisInterpretationServices,
+    traceabilityServices,
+    coverageServices,
   ) as typeof baseServices &
     typeof reportingServices &
     DocumentTextExtractionServices &
     typeof curationServices &
     typeof evidenceSetServices &
     typeof synthesisPreparationServices &
-    typeof synthesisInterpretationServices;
+    typeof synthesisInterpretationServices &
+    ResearchQuestionTraceabilityServices &
+    ResearchQuestionCoverageServices;
 }
 
-export { createSynthesisInterpretationServices };
+export { createSynthesisInterpretationServices, createResearchQuestionTraceabilityServices, createResearchQuestionCoverageServices };

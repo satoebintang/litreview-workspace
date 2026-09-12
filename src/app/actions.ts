@@ -1011,3 +1011,107 @@ export async function createClaimFromInterpretationAction(form: FormData) {
   }
   redirect(`/projects/${projectId}/claims/${claim.id}?saved=created_from_interpretation`);
 }
+
+export async function linkExtractionFieldAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const questionId = text(form, "questionId");
+  const fieldId = text(form, "fieldId") || text(form, "extractionFieldId");
+  const note = optional(form, "note");
+  try {
+    await reviewServices.linkExtractionField({ projectId, questionId, fieldId, note });
+  } catch (error) {
+    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
+  }
+  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=field_linked`);
+}
+
+export async function unlinkExtractionFieldAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const questionId = text(form, "questionId");
+  const fieldId = text(form, "fieldId") || text(form, "extractionFieldId");
+  const note = optional(form, "note");
+  try {
+    await reviewServices.unlinkExtractionField({ projectId, questionId, fieldId, note });
+  } catch (error) {
+    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
+  }
+  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=field_unlinked`);
+}
+
+export async function linkEvidenceSetAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const questionId = text(form, "questionId");
+  const evidenceSetId = text(form, "evidenceSetId");
+  const note = optional(form, "note");
+  try {
+    await reviewServices.linkEvidenceSet({ projectId, questionId, evidenceSetId, note });
+  } catch (error) {
+    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
+  }
+  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=evidence_set_linked`);
+}
+
+export async function unlinkEvidenceSetAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const questionId = text(form, "questionId");
+  const evidenceSetId = text(form, "evidenceSetId");
+  const note = optional(form, "note");
+  try {
+    await reviewServices.unlinkEvidenceSet({ projectId, questionId, evidenceSetId, note });
+  } catch (error) {
+    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
+  }
+  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=evidence_set_unlinked`);
+}
+
+export async function linkSynthesisStatementAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const questionId = text(form, "questionId");
+  const statementId = text(form, "statementId") || text(form, "synthesisStatementId");
+  const note = optional(form, "note");
+  try {
+    await reviewServices.linkSynthesisStatement({ projectId, questionId, statementId, note });
+  } catch (error) {
+    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
+  }
+  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=synthesis_linked`);
+}
+
+export async function unlinkSynthesisStatementAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const questionId = text(form, "questionId");
+  const statementId = text(form, "statementId") || text(form, "synthesisStatementId");
+  const note = optional(form, "note");
+  try {
+    await reviewServices.unlinkSynthesisStatement({ projectId, questionId, statementId, note });
+  } catch (error) {
+    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
+  }
+  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=synthesis_unlinked`);
+}
+
+export async function linkClaimAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const questionId = text(form, "questionId");
+  const claimId = text(form, "claimId");
+  const note = optional(form, "note");
+  try {
+    await reviewServices.linkClaim({ projectId, questionId, claimId, note });
+  } catch (error) {
+    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
+  }
+  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=claim_linked`);
+}
+
+export async function unlinkClaimAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const questionId = text(form, "questionId");
+  const claimId = text(form, "claimId");
+  const note = optional(form, "note");
+  try {
+    await reviewServices.unlinkClaim({ projectId, questionId, claimId, note });
+  } catch (error) {
+    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
+  }
+  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=claim_unlinked`);
+}
