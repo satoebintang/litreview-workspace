@@ -1416,3 +1416,110 @@ export interface ProjectResearchQuestionAnswerFact {
 export interface ProjectResearchQuestionAnswerFacts {
   rows: ProjectResearchQuestionAnswerFact[];
 }
+
+// Slice 22 Answer-centric drafting contracts. These are derived views over
+// immutable Answer/context rows and ordinary manuscript state; none of these
+// fields are persisted.
+export type ManuscriptInsertion =
+  | { kind: "append" }
+  | { kind: "before"; sectionItemId: ManuscriptSectionItemId };
+
+export interface ApplyResearchQuestionAnswerToSectionInput {
+  manuscriptId: ManuscriptId;
+  sectionId: ManuscriptSectionId;
+  proseText?: string | null;
+  claimRevisionIds: ClaimRevisionId[];
+  insertion: ManuscriptInsertion;
+}
+
+export type AnswerClaimManuscriptSelectionBlockReason =
+  | "superseded_context"
+  | "withdrawn_claim"
+  | "unsupported_claim"
+  | "already_in_target_section"
+  | null;
+
+export interface AnswerManuscriptPlacementLocation {
+  placementId: ManuscriptClaimPlacementId;
+  sectionItemId: ManuscriptSectionItemId | null;
+  manuscriptId: ManuscriptId;
+  manuscriptTitle: string;
+  sectionId: ManuscriptSectionId;
+  sectionTitle: string;
+  claimRevisionId: ClaimRevisionId;
+  claimRevisionSequence: number;
+  removedAt: Date | null;
+}
+
+export interface AnswerClaimManuscriptContext {
+  claimId: ClaimId;
+  claimRevisionId: ClaimRevisionId;
+  claimRevisionSequence: number;
+  claimText: string | null;
+  claimRevisionState: ClaimLifecycle;
+  isCurrentRevision: boolean;
+  currentRevisionId: ClaimRevisionId | null;
+  currentRevisionSequence: number | null;
+  currentClaimState: ClaimLifecycle | null;
+  isCurrentlyLinked: boolean;
+  supportStatus: ClaimRevisionSupportStatus;
+  supportCount: number;
+  citationCandidateCount: number;
+  exactActivePlacements: AnswerManuscriptPlacementLocation[];
+  newerActivePlacements: AnswerManuscriptPlacementLocation[];
+  olderActivePlacements: AnswerManuscriptPlacementLocation[];
+  historicalPlacements: AnswerManuscriptPlacementLocation[];
+  selectable: boolean;
+  selectionBlockReason: AnswerClaimManuscriptSelectionBlockReason;
+}
+
+export interface AnswerSynthesisInterpretationSummary {
+  convergenceState: ConvergenceState;
+  summary: string;
+  finalizedAt: Date;
+}
+
+export interface AnswerSynthesisManuscriptContext {
+  synthesisStatementId: string;
+  synthesisRevisionId: string;
+  synthesisRevisionSequence: number;
+  title: string | null;
+  statementText: string | null;
+  synthesisRevisionState: SynthesisState;
+  isCurrentRevision: boolean;
+  currentRevisionId: string | null;
+  currentRevisionSequence: number | null;
+  currentRevisionState: SynthesisState | null;
+  isCurrentlyLinked: boolean;
+  supportStatus: SynthesisSupportStatus;
+  supportCount: number;
+  interpretation: AnswerSynthesisInterpretationSummary | null;
+}
+
+export interface AnswerManuscriptSectionOption {
+  id: ManuscriptSectionId;
+  title: string;
+  sectionType: ManuscriptSectionType;
+  sortOrder: number;
+}
+
+export interface AnswerManuscriptOption {
+  id: ManuscriptId;
+  title: string;
+  isDefault: boolean;
+  citationStyle: CitationStyle;
+  sections: AnswerManuscriptSectionOption[];
+}
+
+export interface ResearchQuestionAnswerManuscriptProjection {
+  projectId: ProjectId;
+  researchQuestionId: ResearchQuestionId;
+  researchQuestion: Pick<ResearchQuestion, "id" | "identifier" | "label" | "archivedAt">;
+  answer: ResearchQuestionAnswerSnapshot;
+  manuscripts: AnswerManuscriptOption[];
+  selectedManuscriptId: ManuscriptId | null;
+  selectedSectionId: ManuscriptSectionId | null;
+  selectedSections: AnswerManuscriptSectionOption[];
+  claimContexts: AnswerClaimManuscriptContext[];
+  synthesisContexts: AnswerSynthesisManuscriptContext[];
+}

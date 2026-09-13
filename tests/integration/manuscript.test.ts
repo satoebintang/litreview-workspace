@@ -5,6 +5,8 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { and, eq } from "drizzle-orm";
 import { createDb } from "@/db/client";
 import { createReviewServices } from "@/application/services";
+import { serializeManuscriptMarkdown } from "@/application/manuscript-formatting";
+import { loadActiveSectionItems, lockSection, planSectionBlock, writeSectionBlock } from "@/application/manuscript-writer";
 import { manuscriptClaimPlacements } from "@/db/schema";
 
 const { db, client } = createDb(process.env.DATABASE_URL ?? "postgres://litreview:litreview@localhost:5432/litreview");
@@ -106,6 +108,76 @@ describe("Slice 7 manuscript workspace", () => {
     const foreignPaper = await includedPaper(otherProject, "Foreign source");
     const foreignClaim = await claimWithDirectEvidence(otherProject, foreignPaper, "Foreign assertion");
     await expect(call("placeClaimRevision", projectId, manuscript.id, one.id, foreignClaim.revision.id)).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
+  });
+
+  it("preserves public writer parity for IDs, validation, subtype, ordering, and placement history", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const first = await call("createSection", projectId, manuscript.id, { title: "Public writer parity" });
+    const second = await call("createSection", projectId, manuscript.id, { title: "Reusable placement" });
+    const paper = await includedPaper(projectId, "Public writer source");
+    const claim = await claimWithDirectEvidence(projectId, paper, "A public writer claim");
+
+    const prose = await call("createProseBlock", projectId, manuscript.id, first.id, "  Exact whitespace.  ", 0);
+    const placement = await call("placeClaimRevision", projectId, manuscript.id, first.id, claim.revision.id, 0);
+    const reused = await call("placeClaimRevision", projectId, manuscript.id, second.id, claim.revision.id);
+    expect(prose.id).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(prose.itemType).toBe("prose");
+    expect(prose.text).toBe("  Exact whitespace.  ");
+    expect(placement.id).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(placement.claimRevisionId).toBe(claim.revision.id);
+    expect(reused.claimRevisionId).toBe(claim.revision.id);
+
+    const view = await call("getManuscript", projectId, manuscript.id);
+    const firstItems = sectionsOf(view).find((section) => section.id === first.id).items;
+    expect(firstItems.map((item: any) => item.itemType ?? item.type)).toEqual(["claim", "prose"]);
+    const formatted = await call("getFormattedManuscript", projectId, manuscript.id);
+    const formattedItems = sectionsOf(formatted).find((section) => section.id === first.id).items;
+    expect(formattedItems.map((item: any) => item.itemType)).toEqual(["claim", "prose"]);
+    expect(formattedItems[0].renderedCitationMarker).toBe("[1]");
+    const markdown = serializeManuscriptMarkdown(formatted);
+    expect(markdown.indexOf("A public writer claim")).toBeLessThan(markdown.indexOf("Exact whitespace."));
+    expect(markdown).toContain("A public writer claim [1]");
+    await expect(call("placeClaimRevision", projectId, manuscript.id, first.id, claim.revision.id)).rejects.toMatchObject({ code: "DUPLICATE_LINK" });
+    expect((await call("getManuscriptPlacementHistory", projectId, manuscript.id, placement.id)).map((event: any) => event.eventType)).toEqual(["placed"]);
+
+    await call("removeClaimPlacement", projectId, manuscript.id, placement.id);
+    await call("removeProseBlock", projectId, manuscript.id, prose.id);
+    await call("archiveSection", projectId, manuscript.id, first.id);
+    await expect(call("createProseBlock", projectId, manuscript.id, first.id, "Archived")).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
+  });
+
+  it("writes a prose-plus-claims batch as one contiguous block and shifts existing items once", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Batch writer" });
+    const paper = await includedPaper(projectId, "Batch writer source");
+    const existing = await claimWithDirectEvidence(projectId, paper, "Existing claim");
+    const insertedOne = await claimWithDirectEvidence(projectId, paper, "Inserted claim one");
+    const insertedTwo = await claimWithDirectEvidence(projectId, paper, "Inserted claim two");
+    const existingProse = await call("createProseBlock", projectId, manuscript.id, section.id, { text: "Existing prose" });
+    const existingPlacement = await call("placeClaimRevision", projectId, manuscript.id, section.id, existing.revision.id);
+
+    const written = await db.transaction(async (tx) => {
+      await lockSection(tx, projectId, manuscript.id, section.id);
+      const active = await loadActiveSectionItems(tx, projectId, manuscript.id, section.id);
+      const plan = planSectionBlock({
+        projectId,
+        manuscriptId: manuscript.id,
+        sectionId: section.id,
+        activeItems: active,
+        position: 1,
+        proseText: "Inserted prose",
+        claimRevisionIds: [insertedOne.revision.id, insertedTwo.revision.id],
+      });
+      return writeSectionBlock(tx, plan);
+    });
+
+    expect(written.proseItem?.item_type).toBe("prose");
+    expect(written.placements.map((row) => String(row.claim_revision_id))).toEqual([insertedOne.revision.id, insertedTwo.revision.id]);
+    const itemRows = await client.unsafe("select id, item_type, sort_order from manuscript_section_items where project_id = $1 and section_id = $2 and removed_at is null order by sort_order, id", [projectId, section.id]);
+    expect(itemRows.map((row) => String(row.item_type))).toEqual(["prose", "prose", "claim", "claim", "claim"]);
+    expect(itemRows.map((row) => Number(row.sort_order))).toEqual([0, 1, 2, 3, 4]);
+    expect(String(itemRows[0].id)).toBe(existingProse.id);
+    expect(String(itemRows[4].id)).toBe(existingPlacement.id);
   });
 
   it("allows unsupported active Claims with visible warnings, but rejects draft/withdrawn placement targets", async () => {

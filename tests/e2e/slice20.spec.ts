@@ -117,6 +117,8 @@ test.describe("Slice 20 Research Questions Traceability", () => {
     await page.goto(`/projects/${projectId}/extraction`);
     await page.getByLabel("Field name").fill("Intrusion Reduction Rate");
     await page.getByRole("button", { name: "Add extraction field" }).click();
+    await expect(page).toHaveURL(/\/extraction\?saved=field$/);
+    await expect(page.getByRole("status")).toContainText("Extraction field saved.");
 
     const extractionLink = await page.locator("a.extraction-progress-item").filter({ hasText: "Study Alpha" }).getAttribute("href");
     expect(extractionLink).toBeTruthy();

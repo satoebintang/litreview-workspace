@@ -49,7 +49,16 @@ export default async function ResearchQuestionAnswerSnapshotPage({
             <h1>{detail.question.identifier} · Answer #{snapshot.sequence}</h1>
             <p>{project.title} · immutable historical analytical context</p>
           </div>
-          <span className="status supported">● Finalized</span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span className="status supported">● Finalized</span>
+            <Link
+              className="button secondary"
+              href={`/projects/${projectId}/research-questions/${questionId}/answers/${answerId}/manuscript`}
+              data-testid="use-answer-in-manuscript"
+            >
+              Use in manuscript
+            </Link>
+          </div>
         </div>
         <section className="card section-card full" data-testid="answer-snapshot-page">
           <p className="hint" style={{ marginTop: 0 }}>

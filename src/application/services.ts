@@ -104,6 +104,10 @@ import {
   type AnswerSynthesisRevisionResolution,
 } from "./research-question-answer-write-services";
 import {
+  createResearchQuestionAnswerManuscriptServices,
+  type ResearchQuestionAnswerManuscriptServices,
+} from "./research-question-answer-manuscript-services";
+import {
   writeActiveSynthesisRevision,
   lockExtractionRevisionPapers,
 } from "./synthesis-writer";
@@ -1499,6 +1503,10 @@ export function createReviewServices(db: Database, options: {
     getCurrentSynthesis: (projectId, statementId) => services.getCurrentSynthesis(projectId, statementId),
     getSynthesisProvenance: (projectId, statementId, revisionId) => services.getSynthesisProvenance(projectId, statementId, revisionId),
   });
+  const answerManuscriptServices: ResearchQuestionAnswerManuscriptServices = createResearchQuestionAnswerManuscriptServices(db, {
+    getAnswerSnapshot: answerReadServices.getResearchQuestionAnswerSnapshot,
+    resolveClaimRevision: resolveAnswerClaimRevision,
+  });
   return Object.assign(
     baseServices,
     textExtractionServices,
@@ -1511,6 +1519,7 @@ export function createReviewServices(db: Database, options: {
     coverageServices,
     answerWriteServices,
     answerReadServices,
+    answerManuscriptServices,
   ) as typeof baseServices &
     typeof reportingServices &
     DocumentTextExtractionServices &
@@ -1521,7 +1530,8 @@ export function createReviewServices(db: Database, options: {
     ResearchQuestionTraceabilityServices &
     ResearchQuestionCoverageServices &
     ResearchQuestionAnswerWriteServices &
-    ResearchQuestionAnswerReadServices;
+    ResearchQuestionAnswerReadServices &
+    ResearchQuestionAnswerManuscriptServices;
 }
 
 export { createSynthesisInterpretationServices, createResearchQuestionTraceabilityServices, createResearchQuestionCoverageServices };

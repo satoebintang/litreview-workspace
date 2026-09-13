@@ -1143,3 +1143,43 @@ export async function appendResearchQuestionAnswerAction(form: FormData) {
   }
   redirect(`/projects/${projectId}/research-questions/${questionId}/answers/${answer.id}?saved=answer`);
 }
+
+const answerManuscriptServices = reviewServices as typeof reviewServices & {
+  applyResearchQuestionAnswerToSection: (
+    projectId: string,
+    questionId: string,
+    answerId: string,
+    input: {
+      manuscriptId: string;
+      sectionId: string;
+      proseText?: string | null;
+      claimRevisionIds: string[];
+      insertion: { kind: "append" } | { kind: "before"; sectionItemId: string };
+    },
+  ) => Promise<unknown>;
+};
+
+export async function applyResearchQuestionAnswerToSectionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const questionId = text(form, "questionId");
+  const answerId = text(form, "answerId");
+  const manuscriptId = text(form, "manuscriptId");
+  const sectionId = text(form, "sectionId");
+  const claimRevisionIds = many(form, "claimRevisionIds");
+  const insertion = text(form, "insertionKind") === "before"
+    ? { kind: "before" as const, sectionItemId: text(form, "sectionItemId") }
+    : { kind: "append" as const };
+
+  try {
+    await answerManuscriptServices.applyResearchQuestionAnswerToSection(projectId, questionId, answerId, {
+      manuscriptId,
+      sectionId,
+      proseText: verbatimText(form, "proseText"),
+      claimRevisionIds,
+      insertion,
+    });
+  } catch (error) {
+    fail(`/projects/${projectId}/research-questions/${questionId}/answers/${answerId}/manuscript`, error);
+  }
+  redirect(`/projects/${projectId}/manuscript?saved=answer`);
+}

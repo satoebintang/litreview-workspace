@@ -679,8 +679,30 @@ export const appendResearchQuestionAnswerSchema = z.object({
   }
 });
 
+export const manuscriptInsertionSchema = z.union([
+  z.object({ kind: z.literal("append") }),
+  z.object({ kind: z.literal("before"), sectionItemId: idSchema }),
+]);
+
+export const applyResearchQuestionAnswerToSectionSchema = z.object({
+  manuscriptId: idSchema,
+  sectionId: idSchema,
+  proseText: z.string().max(50000, "Prose text cannot exceed 50000 characters").nullable().optional(),
+  claimRevisionIds: z.array(idSchema).max(100, "Claim placements cannot exceed 100 items"),
+  insertion: manuscriptInsertionSchema,
+}).superRefine((value, ctx) => {
+  if ((value.proseText == null || value.proseText.trim().length === 0) && value.claimRevisionIds.length === 0) {
+    ctx.addIssue({ code: "custom", path: ["proseText"], message: "Provide nonblank prose or at least one ClaimRevision" });
+  }
+  if (new Set(value.claimRevisionIds).size !== value.claimRevisionIds.length) {
+    ctx.addIssue({ code: "custom", path: ["claimRevisionIds"], message: "ClaimRevision IDs must be unique" });
+  }
+});
+
 /** Alias for callers that describe the append operation as creation. */
 export const createResearchQuestionAnswerSchema = appendResearchQuestionAnswerSchema;
 export type AppendResearchQuestionAnswerInput = z.input<typeof appendResearchQuestionAnswerSchema>;
 export type CreateResearchQuestionAnswerInput = z.input<typeof createResearchQuestionAnswerSchema>;
 export type ValidatedResearchQuestionAnswerInput = z.output<typeof appendResearchQuestionAnswerSchema>;
+export type ApplyResearchQuestionAnswerToSectionInput = z.input<typeof applyResearchQuestionAnswerToSectionSchema>;
+export type ValidatedApplyResearchQuestionAnswerToSectionInput = z.output<typeof applyResearchQuestionAnswerToSectionSchema>;
