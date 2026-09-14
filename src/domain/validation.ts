@@ -501,6 +501,47 @@ export const updateProseBlockSchema = z.object({
 
 export const removeProseBlockSchema = z.object({ proseBlockId: idSchema });
 
+// Slice 23 Manuscript Editorial Review Threads. Snapshot text is deliberately
+// not trimmed: the database compares it byte-for-byte with the locked Prose
+// row. Titles and event bodies are normalized only at their human-input seam.
+export const manuscriptReviewTargetItemTypeSchema = z.enum(["claim", "prose"]);
+export const manuscriptReviewEventTypeSchema = z.enum(["opened", "commented", "resolved", "reopened"]);
+const reviewThreadFields = {
+  projectId: idSchema,
+  manuscriptId: idSchema,
+  sectionId: idSchema,
+  sectionItemId: idSchema,
+  title: z.string().trim().min(1).max(300),
+};
+export const createManuscriptReviewThreadSchema = z.discriminatedUnion("targetItemType", [
+  z.object({
+    ...reviewThreadFields,
+    targetItemType: z.literal("prose"),
+    openingProseText: z.string().min(1).max(50000),
+    openingClaimId: z.null().optional().default(null),
+    openingClaimRevisionId: z.null().optional().default(null),
+  }),
+  z.object({
+    ...reviewThreadFields,
+    targetItemType: z.literal("claim"),
+    openingProseText: z.null().optional().default(null),
+    openingClaimId: idSchema,
+    openingClaimRevisionId: idSchema,
+  }),
+]);
+export const appendManuscriptReviewEventSchema = z.object({
+  threadId: idSchema,
+  eventType: manuscriptReviewEventTypeSchema,
+  body: z.string().max(10000).nullable().optional().transform((value) => value === undefined ? null : value),
+}).superRefine((value, context) => {
+  if (["opened", "commented"].includes(value.eventType) && (!value.body || value.body.trim().length === 0)) {
+    context.addIssue({ code: "custom", path: ["body"], message: "Opening/comment body is required" });
+  }
+  if (["resolved", "reopened"].includes(value.eventType) && value.body !== null && value.body.trim().length === 0) {
+    context.addIssue({ code: "custom", path: ["body"], message: "Resolution note cannot be blank" });
+  }
+});
+
 export type CreateProjectInput = z.input<typeof createProjectSchema>;
 export type CreatePaperInput = z.input<typeof createPaperSchema>;
 export type RecordEvidenceInput = z.input<typeof recordEvidenceSchema>;
@@ -544,6 +585,8 @@ export type ReorderSectionItemsInput = z.input<typeof reorderSectionItemsSchema>
 export type CreateProseBlockInput = z.input<typeof createProseBlockSchema>;
 export type UpdateProseBlockInput = z.input<typeof updateProseBlockSchema>;
 export type RemoveProseBlockInput = z.input<typeof removeProseBlockSchema>;
+export type CreateManuscriptReviewThreadInput = z.input<typeof createManuscriptReviewThreadSchema>;
+export type AppendManuscriptReviewEventInput = z.input<typeof appendManuscriptReviewEventSchema>;
 export type CreateEvidenceSetInput = z.input<typeof createEvidenceSetSchema>;
 export type UpdateEvidenceSetMetadataInput = z.input<typeof updateEvidenceSetMetadataSchema>;
 export type EvidenceSetMembershipInput = z.input<typeof evidenceSetMembershipInputSchema>;

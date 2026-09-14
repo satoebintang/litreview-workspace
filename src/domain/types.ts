@@ -20,6 +20,8 @@ export type ManuscriptSectionId = string;
 export type ManuscriptSectionItemId = string;
 export type ManuscriptClaimPlacementId = string;
 export type ManuscriptPlacementEventId = string;
+export type ManuscriptReviewThreadId = string;
+export type ManuscriptReviewEventId = string;
 export type ScreeningCriterionId = string;
 export type ScreeningDecisionId = string;
 export type FullTextScreeningCriterionId = string;
@@ -58,6 +60,9 @@ export type SynthesisSupportStatus = "supported" | "unsupported";
 export type ManuscriptSectionType = "introduction" | "methods" | "results" | "discussion" | "limitations" | "conclusion" | "custom";
 export type ManuscriptPlacementEventType = "placed" | "replaced" | "removed";
 export type ManuscriptSectionItemType = "claim" | "prose";
+export type ManuscriptReviewTargetItemType = ManuscriptSectionItemType;
+export type ManuscriptReviewEventType = "opened" | "commented" | "resolved" | "reopened";
+export type ManuscriptReviewLifecycle = "open" | "resolved";
 export type CitationStyle = "numeric" | "author_year";
 export type SearchRunStatus = "completed" | "failed";
 export type RetrievedRecordMatchAction = "linked" | "unlinked";
@@ -465,6 +470,30 @@ export interface ManuscriptPlacementEvent {
   eventType: ManuscriptPlacementEventType;
   fromClaimRevisionId: ClaimRevisionId | null;
   toClaimRevisionId: ClaimRevisionId | null;
+  occurredAt: Date;
+}
+
+export interface ManuscriptReviewThread {
+  id: ManuscriptReviewThreadId;
+  projectId: ProjectId;
+  manuscriptId: ManuscriptId;
+  sectionId: ManuscriptSectionId;
+  sectionItemId: ManuscriptSectionItemId;
+  targetItemType: ManuscriptReviewTargetItemType;
+  title: string;
+  openingProseText: string | null;
+  openingClaimId: ClaimId | null;
+  openingClaimRevisionId: ClaimRevisionId | null;
+  createdAt: Date;
+}
+
+export interface ManuscriptReviewEvent {
+  id: ManuscriptReviewEventId;
+  sequence: number;
+  projectId: ProjectId;
+  threadId: ManuscriptReviewThreadId;
+  eventType: ManuscriptReviewEventType;
+  body: string | null;
   occurredAt: Date;
 }
 

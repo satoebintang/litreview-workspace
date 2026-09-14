@@ -624,6 +624,13 @@ const manuscriptServices = reviewServices as typeof reviewServices & {
   reorderSectionItems: (projectId: string, manuscriptId: string, sectionId: string, ids: string[]) => Promise<unknown>;
 };
 
+const manuscriptReviewServices = reviewServices as typeof reviewServices & {
+  openManuscriptReviewThread: (projectId: string, manuscriptId: string, input: { sectionItemId: string; title: string; initialComment: string }) => Promise<unknown>;
+  commentOnManuscriptReviewThread: (projectId: string, manuscriptId: string, threadId: string, body: string) => Promise<unknown>;
+  resolveManuscriptReviewThread: (projectId: string, manuscriptId: string, threadId: string, note?: string | null) => Promise<unknown>;
+  reopenManuscriptReviewThread: (projectId: string, manuscriptId: string, threadId: string, note?: string | null) => Promise<unknown>;
+};
+
 function many(form: FormData, key: string) { return form.getAll(key).filter((value): value is string => typeof value === "string" && value.trim().length > 0).map((value) => value.trim()); }
 
 export async function createManuscriptSectionAction(form: FormData) {
@@ -712,6 +719,40 @@ export async function setManuscriptCitationStyleAction(form: FormData) {
   try { await manuscriptServices.setManuscriptCitationStyle(projectId, manuscriptId, text(form, "citationStyle")); }
   catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
   redirect(`/projects/${projectId}/manuscript?saved=citation-style`);
+}
+
+export async function openManuscriptReviewThreadAction(form: FormData) {
+  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId");
+  let thread: { id: string };
+  try {
+    thread = await manuscriptReviewServices.openManuscriptReviewThread(projectId, manuscriptId, {
+      sectionItemId: text(form, "sectionItemId"),
+      title: text(form, "title"),
+      initialComment: verbatimText(form, "initialComment"),
+    }) as { id: string };
+  } catch (error) { fail(`/projects/${projectId}/manuscript/review`, error); }
+  redirect(`/projects/${projectId}/manuscript/review?thread=${encodeURIComponent(thread.id)}`);
+}
+
+export async function commentManuscriptReviewThreadAction(form: FormData) {
+  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const threadId = text(form, "threadId");
+  try { await manuscriptReviewServices.commentOnManuscriptReviewThread(projectId, manuscriptId, threadId, verbatimText(form, "body")); }
+  catch (error) { fail(`/projects/${projectId}/manuscript/review`, error); }
+  redirect(`/projects/${projectId}/manuscript/review?thread=${encodeURIComponent(threadId)}&saved=comment`);
+}
+
+export async function resolveManuscriptReviewThreadAction(form: FormData) {
+  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const threadId = text(form, "threadId");
+  try { await manuscriptReviewServices.resolveManuscriptReviewThread(projectId, manuscriptId, threadId, optional(form, "note") ?? null); }
+  catch (error) { fail(`/projects/${projectId}/manuscript/review`, error); }
+  redirect(`/projects/${projectId}/manuscript/review?thread=${encodeURIComponent(threadId)}&saved=resolved`);
+}
+
+export async function reopenManuscriptReviewThreadAction(form: FormData) {
+  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const threadId = text(form, "threadId");
+  try { await manuscriptReviewServices.reopenManuscriptReviewThread(projectId, manuscriptId, threadId, optional(form, "note") ?? null); }
+  catch (error) { fail(`/projects/${projectId}/manuscript/review`, error); }
+  redirect(`/projects/${projectId}/manuscript/review?thread=${encodeURIComponent(threadId)}&saved=reopened`);
 }
 
 // Slice 9 acquisition actions intentionally stay thin: validation, project

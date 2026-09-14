@@ -1476,6 +1476,82 @@ export const manuscriptClaimPlacementEvents = pgTable(
   }),
 );
 
+export const manuscriptReviewThreads = pgTable(
+  "manuscript_review_threads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    manuscriptId: uuid("manuscript_id").notNull(),
+    sectionId: uuid("section_id").notNull(),
+    sectionItemId: uuid("section_item_id").notNull(),
+    targetItemType: text("target_item_type").notNull(),
+    title: text("title").notNull(),
+    openingProseText: text("opening_prose_text"),
+    openingClaimId: uuid("opening_claim_id"),
+    openingClaimRevisionId: uuid("opening_claim_revision_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("manuscript_review_threads_project_id_id_unique").on(table.projectId, table.id),
+    manuscriptIdentity: unique("manuscript_review_threads_project_manuscript_id_id_unique").on(table.projectId, table.manuscriptId, table.id),
+    sectionIdentity: unique("manuscript_review_threads_project_manuscript_section_id_id_unique").on(table.projectId, table.manuscriptId, table.sectionId, table.id),
+    itemIdentity: unique("manuscript_review_threads_project_section_item_id_unique").on(table.projectId, table.sectionItemId, table.id),
+    manuscriptOwnership: foreignKey({
+      columns: [table.projectId, table.manuscriptId],
+      foreignColumns: [manuscripts.projectId, manuscripts.id],
+      name: "manuscript_review_threads_project_manuscript_fk",
+    }).onDelete("restrict"),
+    sectionOwnership: foreignKey({
+      columns: [table.projectId, table.manuscriptId, table.sectionId],
+      foreignColumns: [manuscriptSections.projectId, manuscriptSections.manuscriptId, manuscriptSections.id],
+      name: "manuscript_review_threads_project_manuscript_section_fk",
+    }).onDelete("restrict"),
+    itemOwnership: foreignKey({
+      columns: [table.projectId, table.manuscriptId, table.sectionId, table.sectionItemId, table.targetItemType],
+      foreignColumns: [manuscriptSectionItems.projectId, manuscriptSectionItems.manuscriptId, manuscriptSectionItems.sectionId, manuscriptSectionItems.id, manuscriptSectionItems.itemType],
+      name: "manuscript_review_threads_project_section_item_fk",
+    }).onDelete("restrict"),
+    claimOwnership: foreignKey({
+      columns: [table.projectId, table.openingClaimId, table.openingClaimRevisionId],
+      foreignColumns: [claimRevisions.projectId, claimRevisions.claimId, claimRevisions.id],
+      name: "manuscript_review_threads_project_opening_claim_revision_fk",
+    }).onDelete("restrict"),
+    targetItemTypeValid: check("manuscript_review_threads_target_item_type_valid", sql`${table.targetItemType} in ('claim', 'prose')`),
+    titleNonblank: check("manuscript_review_threads_title_nonblank", sql`btrim(${table.title}) <> '' and char_length(${table.title}) <= 300`),
+    openingShape: check("manuscript_review_threads_opening_shape", sql`(
+      (${table.targetItemType} = 'prose' and ${table.openingProseText} is not null and btrim(${table.openingProseText}) <> '' and char_length(${table.openingProseText}) <= 50000 and ${table.openingClaimId} is null and ${table.openingClaimRevisionId} is null)
+      or (${table.targetItemType} = 'claim' and ${table.openingProseText} is null and ${table.openingClaimId} is not null and ${table.openingClaimRevisionId} is not null)
+    )`),
+  }),
+);
+
+export const manuscriptReviewEvents = pgTable(
+  "manuscript_review_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    projectId: uuid("project_id").notNull(),
+    threadId: uuid("thread_id").notNull(),
+    eventType: text("event_type").notNull(),
+    body: text("body"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("manuscript_review_events_project_id_id_unique").on(table.projectId, table.id),
+    threadSequence: unique("manuscript_review_events_project_thread_sequence_unique").on(table.projectId, table.threadId, table.sequence),
+    threadOwnership: foreignKey({
+      columns: [table.projectId, table.threadId],
+      foreignColumns: [manuscriptReviewThreads.projectId, manuscriptReviewThreads.id],
+      name: "manuscript_review_events_project_thread_fk",
+    }).onDelete("restrict"),
+    eventTypeValid: check("manuscript_review_events_event_type_valid", sql`${table.eventType} in ('opened', 'commented', 'resolved', 'reopened')`),
+    bodyShape: check("manuscript_review_events_body_shape", sql`
+      (${table.eventType} in ('opened', 'commented') and ${table.body} is not null and btrim(${table.body}) <> '' and char_length(${table.body}) <= 10000)
+      or (${table.eventType} in ('resolved', 'reopened') and (${table.body} is null or (btrim(${table.body}) <> '' and char_length(${table.body}) <= 10000)))
+    `),
+  }),
+);
+
 export const researchQuestions = pgTable(
   "research_questions",
   {
@@ -2073,6 +2149,8 @@ export const schema = {
   manuscriptSectionItemClaims,
   manuscriptProseBlocks,
   manuscriptClaimPlacementEvents,
+  manuscriptReviewThreads,
+  manuscriptReviewEvents,
   researchQuestions,
   researchQuestionExtractionFieldEvents,
   researchQuestionEvidenceSetEvents,
