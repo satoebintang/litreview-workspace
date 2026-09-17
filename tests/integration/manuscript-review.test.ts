@@ -16,7 +16,7 @@ describe("Slice 23 manuscript editorial review threads", () => {
   });
 
   afterAll(async () => {
-    await client.unsafe("TRUNCATE TABLE research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents, evidence_set_composition_members, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects");
+    await client.unsafe("TRUNCATE TABLE research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_revisions, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents, evidence_set_composition_members, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects");
     await client.end();
   });
 
@@ -39,11 +39,12 @@ describe("Slice 23 manuscript editorial review threads", () => {
     const prose = await services.createProseBlock(project.id, manuscript.id, section.id, exact);
     const thread = await services.openManuscriptReviewThread(project.id, manuscript.id, { sectionItemId: prose.id, title: "Exact text", initialComment: "Please review this wording." });
     expect(thread.openingProseText).toBe(exact);
+    expect(thread.openingProseRevisionId).toBe(prose.currentRevisionId);
 
     await expect(client`
       insert into manuscript_review_threads
-        (project_id, manuscript_id, section_id, section_item_id, target_item_type, title, opening_prose_text)
-      values (${project.id}, ${manuscript.id}, ${section.id}, ${prose.id}, 'prose', 'Forged', 'not the persisted text')
+        (project_id, manuscript_id, section_id, section_item_id, target_item_type, title, opening_prose_text, opening_prose_revision_id)
+      values (${project.id}, ${manuscript.id}, ${section.id}, ${prose.id}, 'prose', 'Forged', 'not the persisted text', ${prose.currentRevisionId})
     `).rejects.toThrow(/exact persisted Prose text/i);
   });
 
@@ -96,7 +97,7 @@ describe("Slice 23 manuscript editorial review threads", () => {
     const { project, manuscript, section } = await fixture();
     const prose = await services.createProseBlock(project.id, manuscript.id, section.id, "Original");
     const proseThread = await services.openManuscriptReviewThread(project.id, manuscript.id, { sectionItemId: prose.id, title: "Prose history", initialComment: "Opening" });
-    await services.updateProseBlock(project.id, manuscript.id, prose.id, { text: "Edited" });
+    await services.updateProseBlock(project.id, manuscript.id, prose.id, { text: "Edited", expectedCurrentRevisionId: prose.currentRevisionId });
     expect((await services.getManuscriptReviewProjection(project.id, manuscript.id)).threads.find((entry: any) => entry.thread.id === proseThread.id).state).toBe("open");
     await services.removeProseBlock(project.id, manuscript.id, prose.id);
     await services.commentOnManuscriptReviewThread(project.id, manuscript.id, proseThread.id, "Comment after removal");
@@ -117,8 +118,8 @@ describe("Slice 23 manuscript editorial review threads", () => {
     await services.archiveSection(project.id, manuscript.id, section.id);
     await expect(client`
       insert into manuscript_review_threads
-        (project_id, manuscript_id, section_id, section_item_id, target_item_type, title, opening_prose_text)
-      values (${project.id}, ${manuscript.id}, ${section.id}, ${prose.id}, 'prose', 'Archived new thread', 'Edited')
+        (project_id, manuscript_id, section_id, section_item_id, target_item_type, title, opening_prose_text, opening_prose_revision_id)
+      values (${project.id}, ${manuscript.id}, ${section.id}, ${prose.id}, 'prose', 'Archived new thread', 'Edited', ${prose.currentRevisionId})
     `).rejects.toThrow(/non-archived Section|active SectionItem/i);
     await services.reopenManuscriptReviewThread(project.id, manuscript.id, claimThread.id);
     const archivedProjection = await services.getManuscriptReviewProjection(project.id, manuscript.id);
@@ -141,8 +142,8 @@ describe("Slice 23 manuscript editorial review threads", () => {
     await expect(client`delete from manuscript_review_events where thread_id = ${thread.id}`).rejects.toThrow(/append-only/i);
     await expect(client`
       insert into manuscript_review_threads
-        (project_id, manuscript_id, section_id, section_item_id, target_item_type, title, opening_prose_text)
-      values (${project.id}, ${manuscript.id}, ${section.id}, ${prose.id}, 'prose', 'No event', 'Export stable')
+        (project_id, manuscript_id, section_id, section_item_id, target_item_type, title, opening_prose_text, opening_prose_revision_id)
+      values (${project.id}, ${manuscript.id}, ${section.id}, ${prose.id}, 'prose', 'No event', 'Export stable', ${prose.currentRevisionId})
     `).rejects.toThrow(/exactly one opened|opened event/i);
   });
 });

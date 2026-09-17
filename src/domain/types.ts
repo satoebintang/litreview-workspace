@@ -22,6 +22,7 @@ export type ManuscriptClaimPlacementId = string;
 export type ManuscriptPlacementEventId = string;
 export type ManuscriptReviewThreadId = string;
 export type ManuscriptReviewEventId = string;
+export type ManuscriptProseRevisionId = string;
 export type ScreeningCriterionId = string;
 export type ScreeningDecisionId = string;
 export type FullTextScreeningCriterionId = string;
@@ -455,8 +456,17 @@ export interface ManuscriptSectionItem {
 
 export interface ManuscriptProseBlock extends ManuscriptSectionItem {
   itemType: "prose";
-  text: string;
-  updatedAt: Date;
+}
+
+/** Immutable exact manuscript wording. The per-block revision ordinal is a
+ * read-time projection; sequence is the global database identity. */
+export interface ManuscriptProseRevision {
+  id: ManuscriptProseRevisionId;
+  sequence: number;
+  projectId: ProjectId;
+  proseBlockId: ManuscriptSectionItemId;
+  proseText: string;
+  createdAt: Date;
 }
 
 export interface ManuscriptPlacementEvent {
@@ -482,6 +492,7 @@ export interface ManuscriptReviewThread {
   targetItemType: ManuscriptReviewTargetItemType;
   title: string;
   openingProseText: string | null;
+  openingProseRevisionId: ManuscriptProseRevisionId | null;
   openingClaimId: ClaimId | null;
   openingClaimRevisionId: ClaimRevisionId | null;
   createdAt: Date;
@@ -535,6 +546,11 @@ export interface ManuscriptProseItemView extends ManuscriptSectionItem {
   itemType: "prose";
   text: string;
   updatedAt: Date;
+  /** Derived from the exact current ProseRevision; never persisted as a pointer. */
+  currentRevisionId?: ManuscriptProseRevisionId;
+  currentRevisionSequence?: number;
+  currentRevisionOrdinal?: number;
+  revisionCount?: number;
 }
 
 export type ManuscriptSectionItemView = ManuscriptClaimItemView | ManuscriptProseItemView;

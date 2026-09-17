@@ -619,7 +619,8 @@ const manuscriptServices = reviewServices as typeof reviewServices & {
   replacePlacedClaimRevision: (projectId: string, manuscriptId: string, placementId: string, revisionId: string, expected?: string) => Promise<unknown>;
   removeClaimPlacement: (projectId: string, manuscriptId: string, placementId: string) => Promise<unknown>;
   createProseBlock: (projectId: string, manuscriptId: string, sectionId: string, input: { text: string; position?: number }) => Promise<unknown>;
-  updateProseBlock: (projectId: string, manuscriptId: string, proseBlockId: string, input: { text: string }) => Promise<unknown>;
+  reviseProseBlock: (projectId: string, manuscriptId: string, proseBlockId: string, input: { text: string; expectedCurrentRevisionId: string }) => Promise<unknown>;
+  updateProseBlock: (projectId: string, manuscriptId: string, proseBlockId: string, input: { text: string; expectedCurrentRevisionId: string }) => Promise<unknown>;
   removeProseBlock: (projectId: string, manuscriptId: string, proseBlockId: string) => Promise<unknown>;
   reorderSectionItems: (projectId: string, manuscriptId: string, sectionId: string, ids: string[]) => Promise<unknown>;
 };
@@ -695,7 +696,8 @@ export async function createManuscriptProseBlockAction(form: FormData) {
 
 export async function updateManuscriptProseBlockAction(form: FormData) {
   const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const proseBlockId = text(form, "proseBlockId");
-  try { await manuscriptServices.updateProseBlock(projectId, manuscriptId, proseBlockId, { text: verbatimText(form, "text") }); }
+  const expectedCurrentRevisionId = text(form, "expectedCurrentRevisionId");
+  try { await manuscriptServices.reviseProseBlock(projectId, manuscriptId, proseBlockId, { text: verbatimText(form, "text"), expectedCurrentRevisionId }); }
   catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
   redirect(`/projects/${projectId}/manuscript?saved=prose`);
 }

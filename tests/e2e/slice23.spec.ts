@@ -96,6 +96,7 @@ test.describe("Slice 23 manuscript editorial review", () => {
 
     await page.goto(`/projects/${projectId}/manuscript`);
     await page.getByRole("button", { name: "Remove prose" }).click();
+    await expect(page.getByText("Prose removed.", { exact: true })).toBeVisible();
     await page.goto(`/projects/${projectId}/manuscript/review`);
     await expect(page.getByText("Target is removed", { exact: false })).toBeVisible();
     await expect(page.locator("pre").first()).toHaveText(exactText);

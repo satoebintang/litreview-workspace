@@ -28,7 +28,7 @@ describe("Slice 7 manuscript workspace", () => {
   beforeAll(async () => { await migrate(db, { migrationsFolder: "./drizzle" }); });
   beforeEach(async () => { projectId = (await services.createProject({ title: `Manuscript project ${crypto.randomUUID()}` })).id; });
   afterAll(async () => {
-    await client.unsafe("TRUNCATE TABLE research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents, evidence_set_composition_members, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects");
+    await client.unsafe("TRUNCATE TABLE research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_revisions, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents, evidence_set_composition_members, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects");
     await client.end();
   });
 
@@ -319,7 +319,7 @@ describe("Slice 7 manuscript workspace", () => {
     expect(history).toHaveLength(1);
   });
 
-  it("composes mutable plain-text prose with exact Claim items and reorders them together", async () => {
+  it("composes immutable-revision prose with exact Claim items and reorders them together", async () => {
     const manuscript = await call("getOrCreateDefaultManuscript", projectId);
     const section = await call("createSection", projectId, manuscript.id, { title: "Mixed composition" });
     const paper = await includedPaper(projectId, "Mixed source");
@@ -338,7 +338,7 @@ describe("Slice 7 manuscript workspace", () => {
     expect((claimItem.placement ?? claimItem.claimPlacement).claimRevisionId).toBe(claim.revision.id);
     expect((claimItem.placement ?? claimItem.claimPlacement).citationNumbers).toEqual([1]);
 
-    await call("updateProseBlock", projectId, manuscript.id, prose.id ?? prose.sectionItemId, { text: "  Edited opening.\nStill plain text.  " });
+    await call("updateProseBlock", projectId, manuscript.id, prose.id ?? prose.sectionItemId, { text: "  Edited opening.\nStill plain text.  ", expectedCurrentRevisionId: prose.currentRevisionId });
     await call("reorderSectionItems", projectId, manuscript.id, section.id, [placement.id, after.id ?? after.sectionItemId, prose.id ?? prose.sectionItemId]);
     view = await call("getManuscript", projectId, manuscript.id);
     items = itemsOf(view).filter((item) => item.sectionId === section.id);
@@ -369,6 +369,98 @@ describe("Slice 7 manuscript workspace", () => {
     const history = await call("getManuscriptPlacementHistory", projectId, manuscript.id, placement.id);
     expect(history.map((event: any) => event.eventType ?? event.event_type ?? event.type)).toEqual(["placed", "removed"]);
     await call("archiveSection", projectId, manuscript.id, section.id);
+  });
+
+  it("appends exact Prose revisions with derived ordinals and mandatory optimistic concurrency", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Revision chain" });
+    const prose = await call("createProseBlock", projectId, manuscript.id, section.id, { text: "R1" });
+    expect(prose.currentRevisionOrdinal).toBe(1);
+    expect(prose.revisionCount).toBe(1);
+
+    const r2 = await call("reviseProseBlock", projectId, manuscript.id, prose.id, {
+      text: "R2",
+      expectedCurrentRevisionId: prose.currentRevisionId,
+    });
+    expect(r2.status).toBe("revised");
+    expect(r2.currentRevisionOrdinal).toBe(2);
+    expect(r2.revisionCount).toBe(2);
+
+    const unchanged = await call("reviseProseBlock", projectId, manuscript.id, prose.id, {
+      text: "R2",
+      expectedCurrentRevisionId: r2.currentRevisionId,
+    });
+    expect(unchanged.status).toBe("unchanged");
+    expect(unchanged.currentRevisionId).toBe(r2.currentRevisionId);
+
+    const r3 = await call("reviseProseBlock", projectId, manuscript.id, prose.id, {
+      text: "R2 ",
+      expectedCurrentRevisionId: r2.currentRevisionId,
+    });
+    expect(r3.status).toBe("revised");
+    expect(r3.currentRevisionOrdinal).toBe(3);
+    expect(r3.text).toBe("R2 ");
+
+    await expect(call("reviseProseBlock", projectId, manuscript.id, prose.id, {
+      text: "stale intent",
+      expectedCurrentRevisionId: r2.currentRevisionId,
+    })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    const view = await call("getManuscript", projectId, manuscript.id);
+    const current = itemsOf(view).find((item) => item.id === prose.id);
+    expect(current.currentRevisionId).toBe(r3.currentRevisionId);
+    expect(current.currentRevisionOrdinal).toBe(3);
+    expect(current.revisionCount).toBe(3);
+
+    const history = await call("getProseRevisionHistory", projectId, manuscript.id, prose.id);
+    expect(history.revisionCount).toBe(3);
+    expect(history.revisions.map((revision: any) => revision.ordinal)).toEqual([3, 2, 1]);
+    expect(history.revisions[0].isCurrent).toBe(true);
+    expect(history.revisions[0].id).toBe(r3.currentRevisionId);
+    const firstHistoryPage = await call("getProseRevisionHistory", projectId, manuscript.id, prose.id, { limit: 2 });
+    expect(firstHistoryPage.revisions.map((revision: any) => revision.ordinal)).toEqual([3, 2]);
+    expect(firstHistoryPage.nextBeforeSequence).not.toBeNull();
+    const secondHistoryPage = await call("getProseRevisionHistory", projectId, manuscript.id, prose.id, { limit: 2, beforeSequence: firstHistoryPage.nextBeforeSequence });
+    expect(secondHistoryPage.revisions.map((revision: any) => revision.ordinal)).toEqual([1]);
+    const comparison = await call("getProseRevisionComparison", projectId, manuscript.id, prose.id, prose.currentRevisionId, r3.currentRevisionId);
+    expect(comparison.left.proseText).toBe("R1");
+    expect(comparison.right.proseText).toBe("R2 ");
+  });
+
+  it("serializes two stale Prose editors and enforces the SQL revision boundary", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Concurrent revisions" });
+    const prose = await call("createProseBlock", projectId, manuscript.id, section.id, { text: "baseline" });
+    const expected = prose.currentRevisionId;
+    const results = await Promise.allSettled([
+      call("reviseProseBlock", projectId, manuscript.id, prose.id, { text: "editor A", expectedCurrentRevisionId: expected }),
+      call("reviseProseBlock", projectId, manuscript.id, prose.id, { text: "editor B", expectedCurrentRevisionId: expected }),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const revisionRows = await client`select prose_text from manuscript_prose_revisions where project_id=${projectId} and prose_block_id=${prose.id} order by sequence`;
+    expect(revisionRows).toHaveLength(2);
+
+    const currentId = revisionRows[1] && (await client`select id from manuscript_prose_revisions where project_id=${projectId} and prose_block_id=${prose.id} order by sequence desc limit 1`)[0].id;
+    await expect(client`update manuscript_prose_revisions set prose_text='cannot mutate' where project_id=${projectId} and id=${currentId}`).rejects.toThrow(/append-only/i);
+    await expect(client`delete from manuscript_prose_revisions where project_id=${projectId} and id=${currentId}`).rejects.toThrow(/append-only/i);
+    await expect(client`insert into manuscript_prose_revisions (project_id, prose_block_id, prose_text) values (${projectId}, ${prose.id}, ${revisionRows[1].prose_text})`).rejects.toThrow(/differ from the exact current revision/i);
+
+    await call("removeProseBlock", projectId, manuscript.id, prose.id);
+    await expect(client`insert into manuscript_prose_revisions (project_id, prose_block_id, prose_text) values (${projectId}, ${prose.id}, 'after removal')`).rejects.toThrow(/Removed manuscript Prose blocks cannot be revised/i);
+    const otherProject = (await services.createProject({ title: "Foreign revision project" })).id;
+    await expect(client`insert into manuscript_prose_revisions (project_id, prose_block_id, prose_text) values (${otherProject}, ${prose.id}, 'cross project')`).rejects.toBeDefined();
+  });
+
+  it("rejects a raw transaction that commits a revisionless ProseBlock", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Deferred completeness" });
+    const itemId = crypto.randomUUID();
+    await expect(client.begin(async (tx) => {
+      await tx`insert into manuscript_section_items (id, project_id, manuscript_id, section_id, item_type, sort_order) values (${itemId}, ${projectId}, ${manuscript.id}, ${section.id}, 'prose', 0)`;
+      await tx`insert into manuscript_prose_blocks (id, project_id, manuscript_id, section_id, section_item_id, item_type) values (${itemId}, ${projectId}, ${manuscript.id}, ${section.id}, ${itemId}, 'prose')`;
+    })).rejects.toThrow(/at least one persisted revision/i);
+    expect(await client`select count(*)::int as count from manuscript_prose_blocks where id=${itemId}`).toEqual([{ count: 0 }]);
   });
 
   it("does not retain a second ClaimPlacement ordering authority", async () => {

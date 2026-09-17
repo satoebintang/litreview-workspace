@@ -189,10 +189,11 @@ test.describe.serial("Slice 22 Answer-centric manuscript workflow", () => {
       const afterApplication = await answerAndTraceabilityRows(sql, projectId, questionId);
       expect(afterApplication).toBe(beforeApplication);
       const orderedItems = await sql`
-        select i.item_type, i.sort_order, p.claim_revision_id, b.text
+        select i.item_type, i.sort_order, p.claim_revision_id, r.prose_text as text
         from manuscript_section_items i
         left join manuscript_claim_placements p on p.project_id = i.project_id and p.id = i.id
         left join manuscript_prose_blocks b on b.project_id = i.project_id and b.section_item_id = i.id
+        left join lateral (select prose_text from manuscript_prose_revisions r0 where r0.project_id = b.project_id and r0.prose_block_id = b.id order by r0.sequence desc limit 1) r on true
         where i.project_id = ${projectId} and i.section_id = ${answerSectionId} and i.removed_at is null
         order by i.sort_order, i.id
       `;

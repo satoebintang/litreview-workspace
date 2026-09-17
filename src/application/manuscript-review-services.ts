@@ -32,6 +32,7 @@ function mapThread(row: Row) {
     targetItemType: String(row.target_item_type) as ManuscriptReviewTargetItemType,
     title: String(row.title),
     openingProseText: row.opening_prose_text == null ? null : String(row.opening_prose_text),
+    openingProseRevisionId: row.opening_prose_revision_id == null ? null : String(row.opening_prose_revision_id),
     openingClaimId: row.opening_claim_id == null ? null : String(row.opening_claim_id),
     openingClaimRevisionId: row.opening_claim_revision_id == null ? null : String(row.opening_claim_revision_id),
     createdAt: date(row.created_at),
@@ -138,7 +139,7 @@ export function createManuscriptReviewServices(db: Database) {
   async function readThread(executor: Executor, projectId: string, manuscriptId: string, threadId: string, lock = false) {
     const row = rows(await executor.execute(sql`
       select id, project_id, manuscript_id, section_id, section_item_id, target_item_type,
-             title, opening_prose_text, opening_claim_id, opening_claim_revision_id, created_at
+             title, opening_prose_text, opening_prose_revision_id, opening_claim_id, opening_claim_revision_id, created_at
       from manuscript_review_threads
       where project_id=${projectId} and manuscript_id=${manuscriptId} and id=${threadId}
       ${lock ? sql`for update` : sql``}
@@ -169,6 +170,7 @@ export function createManuscriptReviewServices(db: Database) {
       if (!identity) throw new DomainError("CROSS_PROJECT_REFERENCE", "Review target SectionItem does not belong to this Manuscript");
       const targetType = String(identity.item_type) as ManuscriptReviewTargetItemType;
       let openingProseText: string | null = null;
+      let openingProseRevisionId: string | null = null;
       let openingClaimId: string | null = null;
       let openingClaimRevisionId: string | null = null;
       let sectionId: string | null = null;
@@ -217,15 +219,24 @@ export function createManuscriptReviewServices(db: Database) {
 
       if (targetType === "prose") {
         const prose = rows(await tx.execute(sql`
-          select section_id, text
-          from manuscript_prose_blocks
-          where project_id=${projectId} and manuscript_id=${manuscriptId}
-            and section_id=${sectionId} and section_item_id=${input.sectionItemId} and item_type='prose'
-          for update
+          select p.section_id, r.id as revision_id, r.prose_text
+          from manuscript_prose_blocks p
+          join lateral (
+            select id, prose_text
+            from manuscript_prose_revisions
+            where project_id=p.project_id and prose_block_id=p.id
+            order by sequence desc
+            limit 1
+          ) r on true
+          where p.project_id=${projectId} and p.manuscript_id=${manuscriptId}
+            and p.section_id=${sectionId} and p.id=${input.sectionItemId}
+            and p.section_item_id=${input.sectionItemId} and p.item_type='prose'
+          for update of p
         `))[0];
         if (!prose) throw new DomainError("DATABASE_CONSTRAINT", "Prose SectionItem is missing its Prose subtype");
         // Deliberately do not trim, normalize, or otherwise rewrite this text.
-        openingProseText = String(prose.text);
+        openingProseText = String(prose.prose_text);
+        openingProseRevisionId = String(prose.revision_id);
       }
 
       const item = rows(await tx.execute(sql`
@@ -246,18 +257,20 @@ export function createManuscriptReviewServices(db: Database) {
         targetItemType: targetType,
         title: input.title,
         openingProseText,
+        openingProseRevisionId,
         openingClaimId,
         openingClaimRevisionId,
       });
+      const openingRevisionIdForInsert = "openingProseRevisionId" in values ? values.openingProseRevisionId : null;
       const threadRow = rows(await tx.execute(sql`
         insert into manuscript_review_threads
           (project_id, manuscript_id, section_id, section_item_id, target_item_type,
-           title, opening_prose_text, opening_claim_id, opening_claim_revision_id)
+           title, opening_prose_text, opening_prose_revision_id, opening_claim_id, opening_claim_revision_id)
         values
           (${values.projectId}, ${values.manuscriptId}, ${values.sectionId}, ${values.sectionItemId}, ${values.targetItemType},
-           ${values.title}, ${values.openingProseText}, ${values.openingClaimId}, ${values.openingClaimRevisionId})
+           ${values.title}, ${values.openingProseText}, ${openingRevisionIdForInsert}, ${values.openingClaimId}, ${values.openingClaimRevisionId})
         returning id, project_id, manuscript_id, section_id, section_item_id, target_item_type,
-                  title, opening_prose_text, opening_claim_id, opening_claim_revision_id, created_at
+                  title, opening_prose_text, opening_prose_revision_id, opening_claim_id, opening_claim_revision_id, created_at
       `))[0];
       if (!threadRow) throw new DomainError("DATABASE_CONSTRAINT", "Review thread could not be created");
       await tx.execute(sql`
@@ -324,7 +337,7 @@ export function createManuscriptReviewServices(db: Database) {
     const [threadRows, eventRows, sectionRows, itemRows] = await Promise.all([
       db.execute(sql`
         select id, project_id, manuscript_id, section_id, section_item_id, target_item_type,
-               title, opening_prose_text, opening_claim_id, opening_claim_revision_id, created_at
+               title, opening_prose_text, opening_prose_revision_id, opening_claim_id, opening_claim_revision_id, created_at
         from manuscript_review_threads
         where project_id=${projectId} and manuscript_id=${manuscriptId}
         ${sectionId ? sql`and section_id=${sectionId}` : sql``}
@@ -347,7 +360,10 @@ export function createManuscriptReviewServices(db: Database) {
       db.execute(sql`
         select i.id, i.section_id, i.item_type, i.sort_order, i.created_at, i.removed_at,
                s.title as section_title, s.archived_at as section_archived_at,
-               p.text as current_prose_text,
+               current_prose.id as current_prose_revision_id,
+               current_prose.sequence as current_prose_revision_sequence,
+               current_prose.prose_text as current_prose_text,
+               current_prose.created_at as current_prose_revision_created_at,
                cp.id as placement_id, cp.claim_id, cp.claim_revision_id, cp.removed_at as placement_removed_at,
                cr.id as current_revision_id, cr.project_id as current_revision_project_id,
                cr.sequence as current_revision_sequence, cr.state as current_revision_state,
@@ -359,6 +375,13 @@ export function createManuscriptReviewServices(db: Database) {
         join manuscript_sections s on s.project_id=i.project_id and s.manuscript_id=i.manuscript_id and s.id=i.section_id
         left join manuscript_prose_blocks p on p.project_id=i.project_id and p.manuscript_id=i.manuscript_id
           and p.section_id=i.section_id and p.section_item_id=i.id and p.item_type='prose'
+        left join lateral (
+          select r.id, r.sequence, r.prose_text, r.created_at
+          from manuscript_prose_revisions r
+          where r.project_id=p.project_id and r.prose_block_id=p.id
+          order by r.sequence desc
+          limit 1
+        ) current_prose on true
         left join manuscript_section_item_claims sic on sic.project_id=i.project_id and sic.manuscript_id=i.manuscript_id
           and sic.section_id=i.section_id and sic.section_item_id=i.id and sic.item_type='claim'
         left join manuscript_claim_placements cp on cp.project_id=sic.project_id and cp.manuscript_id=sic.manuscript_id
@@ -465,6 +488,8 @@ export function createManuscriptReviewServices(db: Database) {
       const targetActive = item ? item.removed_at == null : false;
       const sectionArchived = section ? section.archived_at != null : true;
       const currentProseText = item?.current_prose_text == null ? null : String(item.current_prose_text);
+      const currentProseRevisionId = item?.current_prose_revision_id == null ? null : String(item.current_prose_revision_id);
+      const currentProseRevisionSequence = item?.current_prose_revision_sequence == null ? null : Number(item.current_prose_revision_sequence);
       const currentRevision = item?.current_revision_id ? mapRevision(revisionById.get(String(item.current_revision_id)), supportCounts) : null;
       const openingRevision = thread.openingClaimRevisionId ? mapRevision(revisionById.get(thread.openingClaimRevisionId), supportCounts) : null;
       const placementId = item?.placement_id == null ? null : String(item.placement_id);
@@ -473,8 +498,15 @@ export function createManuscriptReviewServices(db: Database) {
         sectionId: thread.sectionId,
         sectionItemId: thread.sectionItemId,
         openingText: thread.openingProseText,
+        openingProseRevisionId: thread.openingProseRevisionId,
+        currentProseRevisionId,
+        currentProseRevisionSequence,
         currentText: currentProseText,
-        changedSinceOpening: thread.openingProseText !== currentProseText,
+        changedSinceOpening: thread.openingProseRevisionId !== null
+          ? thread.openingProseRevisionId !== currentProseRevisionId
+          : thread.openingProseText !== currentProseText,
+        revisionTracking: thread.openingProseRevisionId === null ? "legacy" as const : "tracked" as const,
+        revisionTrackingNote: thread.openingProseRevisionId === null ? "Opening snapshot predates Prose revision tracking." : null,
         targetActive,
         sectionArchived,
       } : {

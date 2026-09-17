@@ -1402,20 +1402,44 @@ export const manuscriptProseBlocks = pgTable(
     sectionId: uuid("section_id").notNull(),
     sectionItemId: uuid("section_item_id").notNull(),
     itemType: text("item_type").notNull().default("prose"),
-    text: text("text").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
+    projectIdentity: unique("manuscript_prose_blocks_project_id_id_unique").on(table.projectId, table.id),
     parentOwnership: foreignKey({
       columns: [table.projectId, table.manuscriptId, table.sectionId, table.sectionItemId, table.itemType],
       foreignColumns: [manuscriptSectionItems.projectId, manuscriptSectionItems.manuscriptId, manuscriptSectionItems.sectionId, manuscriptSectionItems.id, manuscriptSectionItems.itemType],
       name: "manuscript_prose_blocks_parent_fk",
     }).onDelete("restrict"),
     itemTypeValid: check("manuscript_prose_blocks_item_type_valid", sql`${table.itemType} = 'prose'`),
+    sectionItemIdMatchesId: check("manuscript_prose_blocks_id_matches_section_item", sql`${table.id} = ${table.sectionItemId}`),
     sectionItemUnique: unique("manuscript_prose_blocks_section_item_unique").on(table.sectionItemId),
-    textNonblank: check("manuscript_prose_blocks_text_nonblank", sql`btrim(${table.text}) <> ''`),
-    textLengthValid: check("manuscript_prose_blocks_text_length_valid", sql`char_length(${table.text}) <= 50000`),
+  }),
+);
+
+/** Immutable manuscript Prose content. Currentness is derived from the
+ * greatest generated sequence for a (project, proseBlock) pair. */
+export const manuscriptProseRevisions = pgTable(
+  "manuscript_prose_revisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    proseBlockId: uuid("prose_block_id").notNull(),
+    proseText: text("prose_text").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("manuscript_prose_revisions_project_id_id_unique").on(table.projectId, table.id),
+    blockIdentity: unique("manuscript_prose_revisions_project_block_id_id_unique").on(table.projectId, table.proseBlockId, table.id),
+    blockOwnership: foreignKey({
+      columns: [table.projectId, table.proseBlockId],
+      foreignColumns: [manuscriptProseBlocks.projectId, manuscriptProseBlocks.id],
+      name: "manuscript_prose_revisions_project_block_fk",
+    }).onDelete("restrict"),
+    blockSequence: index("manuscript_prose_revisions_project_block_sequence_idx").on(table.projectId, table.proseBlockId, table.sequence),
+    proseTextNonblank: check("manuscript_prose_revisions_prose_text_nonblank", sql`btrim(${table.proseText}) <> ''`),
+    proseTextLengthValid: check("manuscript_prose_revisions_prose_text_length_valid", sql`char_length(${table.proseText}) <= 50000`),
   }),
 );
 
@@ -1487,6 +1511,7 @@ export const manuscriptReviewThreads = pgTable(
     targetItemType: text("target_item_type").notNull(),
     title: text("title").notNull(),
     openingProseText: text("opening_prose_text"),
+    openingProseRevisionId: uuid("opening_prose_revision_id"),
     openingClaimId: uuid("opening_claim_id"),
     openingClaimRevisionId: uuid("opening_claim_revision_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1516,11 +1541,16 @@ export const manuscriptReviewThreads = pgTable(
       foreignColumns: [claimRevisions.projectId, claimRevisions.claimId, claimRevisions.id],
       name: "manuscript_review_threads_project_opening_claim_revision_fk",
     }).onDelete("restrict"),
+    proseRevisionOwnership: foreignKey({
+      columns: [table.projectId, table.sectionItemId, table.openingProseRevisionId],
+      foreignColumns: [manuscriptProseRevisions.projectId, manuscriptProseRevisions.proseBlockId, manuscriptProseRevisions.id],
+      name: "manuscript_review_threads_project_opening_prose_revision_fk",
+    }).onDelete("restrict"),
     targetItemTypeValid: check("manuscript_review_threads_target_item_type_valid", sql`${table.targetItemType} in ('claim', 'prose')`),
     titleNonblank: check("manuscript_review_threads_title_nonblank", sql`btrim(${table.title}) <> '' and char_length(${table.title}) <= 300`),
     openingShape: check("manuscript_review_threads_opening_shape", sql`(
       (${table.targetItemType} = 'prose' and ${table.openingProseText} is not null and btrim(${table.openingProseText}) <> '' and char_length(${table.openingProseText}) <= 50000 and ${table.openingClaimId} is null and ${table.openingClaimRevisionId} is null)
-      or (${table.targetItemType} = 'claim' and ${table.openingProseText} is null and ${table.openingClaimId} is not null and ${table.openingClaimRevisionId} is not null)
+      or (${table.targetItemType} = 'claim' and ${table.openingProseText} is null and ${table.openingProseRevisionId} is null and ${table.openingClaimId} is not null and ${table.openingClaimRevisionId} is not null)
     )`),
   }),
 );
@@ -2148,6 +2178,7 @@ export const schema = {
   manuscriptSectionItems,
   manuscriptSectionItemClaims,
   manuscriptProseBlocks,
+  manuscriptProseRevisions,
   manuscriptClaimPlacementEvents,
   manuscriptReviewThreads,
   manuscriptReviewEvents,

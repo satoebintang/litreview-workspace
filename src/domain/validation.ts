@@ -494,10 +494,17 @@ export const createProseBlockSchema = z.object({
   position: z.number().int().min(0).optional(),
 });
 
-export const updateProseBlockSchema = z.object({
+/** First-party Prose edits are optimistic-concurrency guarded. Text is kept
+ * exact; validation checks only the existing nonblank/length boundaries. */
+export const reviseProseBlockSchema = z.object({
   proseBlockId: idSchema,
   text: z.string().refine((value) => value.trim().length > 0, "Prose text is required").max(50000),
+  expectedCurrentRevisionId: idSchema,
 });
+
+// Preserve the released export name while making the optimistic-concurrency
+// requirement apply to every first-party update parser as well.
+export const updateProseBlockSchema = reviseProseBlockSchema;
 
 export const removeProseBlockSchema = z.object({ proseBlockId: idSchema });
 
@@ -518,6 +525,12 @@ export const createManuscriptReviewThreadSchema = z.discriminatedUnion("targetIt
     ...reviewThreadFields,
     targetItemType: z.literal("prose"),
     openingProseText: z.string().min(1).max(50000),
+    // First-party creation resolves this exact current revision while holding
+    // the canonical manuscript locks. Legacy database rows may retain NULL.
+    // Kept optional at this generic parser boundary for historical callers;
+    // the first-party opening service always supplies the resolved ID and the
+    // database trigger rejects NULL on every new Prose row.
+    openingProseRevisionId: idSchema.nullable().optional().default(null),
     openingClaimId: z.null().optional().default(null),
     openingClaimRevisionId: z.null().optional().default(null),
   }),
@@ -584,6 +597,7 @@ export type RemoveClaimPlacementInput = z.input<typeof removeClaimPlacementSchem
 export type ReorderSectionItemsInput = z.input<typeof reorderSectionItemsSchema>;
 export type CreateProseBlockInput = z.input<typeof createProseBlockSchema>;
 export type UpdateProseBlockInput = z.input<typeof updateProseBlockSchema>;
+export type ReviseProseBlockInput = z.input<typeof reviseProseBlockSchema>;
 export type RemoveProseBlockInput = z.input<typeof removeProseBlockSchema>;
 export type CreateManuscriptReviewThreadInput = z.input<typeof createManuscriptReviewThreadSchema>;
 export type AppendManuscriptReviewEventInput = z.input<typeof appendManuscriptReviewEventSchema>;

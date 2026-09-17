@@ -49,6 +49,11 @@ export interface FormattedManuscriptProseItem {
   itemType: "prose";
   sortOrder: number;
   text: string;
+  /** Derived metadata carried through for first-party edit concurrency/UI. */
+  currentRevisionId?: string;
+  currentRevisionSequence?: number;
+  currentRevisionOrdinal?: number;
+  revisionCount?: number;
 }
 
 export type FormattedManuscriptItem = FormattedManuscriptClaimItem | FormattedManuscriptProseItem;
@@ -125,7 +130,17 @@ export function buildFormattedManuscript(
     sectionType: section.sectionType,
     items: section.items.map((item): FormattedManuscriptItem => {
       if (item.itemType === "prose") {
-        return { id: item.id, sectionId: item.sectionId, itemType: "prose", sortOrder: item.sortOrder, text: item.text };
+        return {
+          id: item.id,
+          sectionId: item.sectionId,
+          itemType: "prose",
+          sortOrder: item.sortOrder,
+          text: item.text,
+          currentRevisionId: item.currentRevisionId,
+          currentRevisionSequence: item.currentRevisionSequence,
+          currentRevisionOrdinal: item.currentRevisionOrdinal,
+          revisionCount: item.revisionCount,
+        };
       }
 
       const records = item.citationCandidates

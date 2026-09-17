@@ -26,6 +26,7 @@ export type SectionBlockPlan = {
 export type SectionBlockWriteResult = {
   proseItem: Row | null;
   proseBlock: Row | null;
+  proseRevision: Row | null;
   placements: Row[];
 };
 
@@ -86,12 +87,17 @@ export async function writeSectionBlock(executor: Executor, plan: SectionBlockPl
 
   let proseItem: Row | null = null;
   let proseBlock: Row | null = null;
+  let proseRevision: Row | null = null;
   let offset = 0;
   if (plan.proseText !== undefined) {
     proseItem = rows(await executor.execute(sql`insert into manuscript_section_items (project_id, manuscript_id, section_id, item_type, sort_order) values (${plan.projectId}, ${plan.manuscriptId}, ${plan.sectionId}, 'prose', ${plan.insertAt}) returning id, project_id, manuscript_id, section_id, item_type, sort_order, created_at, removed_at`))[0] ?? null;
     if (!proseItem) throw new DomainError("DATABASE_CONSTRAINT", "Prose SectionItem could not be created");
-    proseBlock = rows(await executor.execute(sql`insert into manuscript_prose_blocks (id, project_id, manuscript_id, section_id, section_item_id, item_type, text) values (${proseItem.id}, ${plan.projectId}, ${plan.manuscriptId}, ${plan.sectionId}, ${proseItem.id}, 'prose', ${plan.proseText}) returning id, project_id, section_item_id, text, created_at, updated_at`))[0] ?? null;
+    // ProseBlock is stable identity/containment only. The initial immutable
+    // content row must be created in this same transaction before commit.
+    proseBlock = rows(await executor.execute(sql`insert into manuscript_prose_blocks (id, project_id, manuscript_id, section_id, section_item_id, item_type) values (${proseItem.id}, ${plan.projectId}, ${plan.manuscriptId}, ${plan.sectionId}, ${proseItem.id}, 'prose') returning id, project_id, manuscript_id, section_id, section_item_id, item_type, created_at`))[0] ?? null;
     if (!proseBlock) throw new DomainError("DATABASE_CONSTRAINT", "Prose block could not be created");
+    proseRevision = rows(await executor.execute(sql`insert into manuscript_prose_revisions (project_id, prose_block_id, prose_text) values (${plan.projectId}, ${proseItem.id}, ${plan.proseText}) returning id, sequence, project_id, prose_block_id, prose_text, created_at`))[0] ?? null;
+    if (!proseRevision) throw new DomainError("DATABASE_CONSTRAINT", "Initial Prose revision could not be created");
     offset = 1;
   }
 
@@ -104,5 +110,5 @@ export async function writeSectionBlock(executor: Executor, plan: SectionBlockPl
     placements.push(placement);
   }
 
-  return { proseItem, proseBlock, placements };
+  return { proseItem, proseBlock, proseRevision, placements };
 }

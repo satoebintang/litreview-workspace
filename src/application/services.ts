@@ -71,6 +71,7 @@ import {
   PaperReviewRepository,
 } from "./repositories";
 import { createManuscriptServices } from "./manuscript-services";
+import { createManuscriptProseHistoryServices } from "./manuscript-prose-history-services";
 import { createManuscriptReviewServices } from "./manuscript-review-services";
 import { createAcquisitionServices } from "./acquisition-services";
 import { createDeduplicationServices } from "./deduplication-services";
@@ -1386,10 +1387,11 @@ export function createReviewServices(db: Database, options: {
   };
   const deduplicationServices = createDeduplicationServices(db);
   const manuscriptServices = createManuscriptServices(db);
+  const manuscriptProseHistoryServices = createManuscriptProseHistoryServices(db);
   const manuscriptReviewServices = createManuscriptReviewServices(db);
   const acquisitionServices = createAcquisitionServices(db);
   const documentServices: FullTextDocumentServices = createFullTextDocumentServices(db, options.documentStorage, options.maxDocumentBytes);
-  const baseServices = Object.assign(services, manuscriptServices, manuscriptReviewServices, acquisitionServices, deduplicationServices, documentServices as unknown as Record<string, unknown>) as typeof services & typeof manuscriptServices & typeof manuscriptReviewServices & typeof acquisitionServices & typeof deduplicationServices & FullTextDocumentServices;
+  const baseServices = Object.assign(services, manuscriptServices, manuscriptProseHistoryServices, manuscriptReviewServices, acquisitionServices, deduplicationServices, documentServices as unknown as Record<string, unknown>) as typeof services & typeof manuscriptServices & typeof manuscriptProseHistoryServices & typeof manuscriptReviewServices & typeof acquisitionServices & typeof deduplicationServices & FullTextDocumentServices;
   const textExtractionParser: DocumentTextExtractionParser = options.documentTextExtractor ?? {
     extractorKey: "unconfigured",
     extractorVersion: "unconfigured",
