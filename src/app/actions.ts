@@ -632,6 +632,10 @@ const manuscriptReviewServices = reviewServices as typeof reviewServices & {
   reopenManuscriptReviewThread: (projectId: string, manuscriptId: string, threadId: string, note?: string | null) => Promise<unknown>;
 };
 
+const manuscriptSnapshotServices = reviewServices as typeof reviewServices & {
+  createManuscriptSnapshot: (projectId: string, manuscriptId: string) => Promise<{ id: string }>;
+};
+
 function many(form: FormData, key: string) { return form.getAll(key).filter((value): value is string => typeof value === "string" && value.trim().length > 0).map((value) => value.trim()); }
 
 export async function createManuscriptSectionAction(form: FormData) {
@@ -721,6 +725,14 @@ export async function setManuscriptCitationStyleAction(form: FormData) {
   try { await manuscriptServices.setManuscriptCitationStyle(projectId, manuscriptId, text(form, "citationStyle")); }
   catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
   redirect(`/projects/${projectId}/manuscript?saved=citation-style`);
+}
+
+export async function createManuscriptSnapshotAction(form: FormData) {
+  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId");
+  let snapshot: { id: string };
+  try { snapshot = await manuscriptSnapshotServices.createManuscriptSnapshot(projectId, manuscriptId); }
+  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
+  redirect(`/projects/${projectId}/manuscript/snapshots/${encodeURIComponent(snapshot.id)}?manuscriptId=${encodeURIComponent(manuscriptId)}&saved=created`);
 }
 
 export async function openManuscriptReviewThreadAction(form: FormData) {

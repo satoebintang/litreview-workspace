@@ -33,7 +33,7 @@ const uuid = () => crypto.randomUUID();
 
 async function truncate() {
   await sql.unsafe(
-    "TRUNCATE TABLE research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_claim_events, research_question_synthesis_statement_events, claim_revision_evidence_supports, claim_revision_extraction_supports, claim_revision_synthesis_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, evidence, claims, papers, research_questions, projects CASCADE",
+    "TRUNCATE TABLE manuscript_snapshot_warnings, manuscript_snapshot_claim_bibliography_members, manuscript_snapshot_bibliography_entries, manuscript_snapshot_claim_items, manuscript_snapshot_prose_items, manuscript_snapshot_items, manuscript_snapshot_sections, manuscript_snapshots, research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_claim_events, research_question_synthesis_statement_events, claim_revision_evidence_supports, claim_revision_extraction_supports, claim_revision_synthesis_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, evidence, claims, papers, research_questions, projects CASCADE",
   );
 }
 

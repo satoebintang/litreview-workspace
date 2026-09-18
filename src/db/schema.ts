@@ -2131,6 +2131,16 @@ export const researchQuestionAnswerSynthesisContexts = pgTable(
   }),
 );
 
+export const manuscriptSnapshots = pgTable("manuscript_snapshots", {
+  id: uuid("id").defaultRandom().primaryKey(), sequence: bigint("sequence", { mode: "bigint" }).generatedAlwaysAsIdentity().notNull(), projectId: uuid("project_id").notNull(), manuscriptId: uuid("manuscript_id").notNull(), title: text("title").notNull(), citationStyle: text("citation_style").notNull(), schemaVersion: integer("schema_version").notNull(), rendererVersion: text("renderer_version").notNull(), capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(), renderedMarkdown: text("rendered_markdown").notNull(), renderedMarkdownSha256: text("rendered_markdown_sha256").notNull(), expectedSectionCount: integer("expected_section_count").notNull(), expectedItemCount: integer("expected_item_count").notNull(), expectedBibliographyCount: integer("expected_bibliography_count").notNull(), expectedWarningCount: integer("expected_warning_count").notNull(), finalizedAt: timestamp("finalized_at", { withTimezone: true }), createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(), });
+export const manuscriptSnapshotSections = pgTable("manuscript_snapshot_sections", { id: uuid("id").defaultRandom().primaryKey(), projectId: uuid("project_id").notNull(), manuscriptId: uuid("manuscript_id").notNull(), snapshotId: uuid("snapshot_id").notNull(), sourceSectionId: uuid("source_section_id").notNull(), title: text("title").notNull(), sectionType: text("section_type").notNull(), sectionPosition: integer("section_position").notNull(), sourceSortOrder: integer("source_sort_order").notNull() });
+export const manuscriptSnapshotItems = pgTable("manuscript_snapshot_items", { id: uuid("id").defaultRandom().primaryKey(), projectId: uuid("project_id").notNull(), manuscriptId: uuid("manuscript_id").notNull(), snapshotId: uuid("snapshot_id").notNull(), snapshotSectionId: uuid("snapshot_section_id").notNull(), sourceSectionId: uuid("source_section_id").notNull(), sourceSectionItemId: uuid("source_section_item_id").notNull(), itemType: text("item_type").notNull(), itemPosition: integer("item_position").notNull(), sourceSortOrder: integer("source_sort_order").notNull() });
+export const manuscriptSnapshotProseItems = pgTable("manuscript_snapshot_prose_items", { projectId: uuid("project_id").notNull(), manuscriptId: uuid("manuscript_id").notNull(), snapshotItemId: uuid("snapshot_item_id").primaryKey(), snapshotId: uuid("snapshot_id").notNull(), sourceProseBlockId: uuid("source_prose_block_id").notNull(), proseRevisionId: uuid("prose_revision_id").notNull(), proseText: text("prose_text").notNull(), sourceSectionId: uuid("source_section_id").notNull(), sourceSectionItemId: uuid("source_section_item_id").notNull() });
+export const manuscriptSnapshotClaimItems = pgTable("manuscript_snapshot_claim_items", { projectId: uuid("project_id").notNull(), manuscriptId: uuid("manuscript_id").notNull(), snapshotItemId: uuid("snapshot_item_id").primaryKey(), snapshotId: uuid("snapshot_id").notNull(), placementId: uuid("placement_id").notNull(), claimId: uuid("claim_id").notNull(), claimRevisionId: uuid("claim_revision_id").notNull(), sourceSectionId: uuid("source_section_id").notNull(), sourceSectionItemId: uuid("source_section_item_id").notNull(), claimText: text("claim_text"), renderedCitationMarker: text("rendered_citation_marker").notNull(), captureSupportStatus: text("capture_support_status").notNull(), captureIsCurrentClaimRevision: boolean("capture_is_current_claim_revision").notNull(), captureIsSuperseded: boolean("capture_is_superseded").notNull(), captureClaimLifecycle: text("capture_claim_lifecycle").notNull() });
+export const manuscriptSnapshotBibliographyEntries = pgTable("manuscript_snapshot_bibliography_entries", { id: uuid("id").defaultRandom().primaryKey(), projectId: uuid("project_id").notNull(), snapshotId: uuid("snapshot_id").notNull(), paperId: uuid("paper_id").notNull(), title: text("title").notNull(), authors: text("authors").array().notNull(), publicationYear: integer("publication_year"), venue: text("venue"), doi: text("doi"), citationNumber: integer("citation_number").notNull(), bibliographyPosition: integer("bibliography_position").notNull(), renderedReference: text("rendered_reference").notNull() });
+export const manuscriptSnapshotClaimBibliographyMembers = pgTable("manuscript_snapshot_claim_bibliography_members", { projectId: uuid("project_id").notNull(), snapshotId: uuid("snapshot_id").notNull(), snapshotClaimItemId: uuid("snapshot_claim_item_id").notNull(), bibliographyEntryId: uuid("bibliography_entry_id").notNull(), markerPosition: integer("marker_position").notNull() }, (table) => ({ pk: primaryKey({ columns: [table.projectId, table.snapshotId, table.snapshotClaimItemId, table.bibliographyEntryId] }) }));
+export const manuscriptSnapshotWarnings = pgTable("manuscript_snapshot_warnings", { id: uuid("id").defaultRandom().primaryKey(), projectId: uuid("project_id").notNull(), snapshotId: uuid("snapshot_id").notNull(), warningPosition: integer("warning_position").notNull(), sectionId: uuid("section_id"), sectionItemId: uuid("section_item_id"), placementId: uuid("placement_id"), claimRevisionId: uuid("claim_revision_id"), paperId: uuid("paper_id"), code: text("code").notNull(), message: text("message").notNull(), metadataField: text("metadata_field") });
+
 export const schema = {
   projects,
   papers,
@@ -2182,6 +2192,14 @@ export const schema = {
   manuscriptClaimPlacementEvents,
   manuscriptReviewThreads,
   manuscriptReviewEvents,
+  manuscriptSnapshots,
+  manuscriptSnapshotSections,
+  manuscriptSnapshotItems,
+  manuscriptSnapshotProseItems,
+  manuscriptSnapshotClaimItems,
+  manuscriptSnapshotBibliographyEntries,
+  manuscriptSnapshotClaimBibliographyMembers,
+  manuscriptSnapshotWarnings,
   researchQuestions,
   researchQuestionExtractionFieldEvents,
   researchQuestionEvidenceSetEvents,

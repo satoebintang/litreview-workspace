@@ -57,6 +57,14 @@ const requiredSchema = {
   manuscript_review_threads: ["id", "project_id", "manuscript_id", "section_id", "section_item_id", "target_item_type", "title", "opening_prose_text", "opening_prose_revision_id", "opening_claim_id", "opening_claim_revision_id", "created_at"],
   manuscript_prose_revisions: ["id", "sequence", "project_id", "prose_block_id", "prose_text", "created_at"],
   manuscript_review_events: ["id", "sequence", "project_id", "thread_id", "event_type", "body", "occurred_at"],
+  manuscript_snapshots: ["id", "sequence", "project_id", "manuscript_id", "title", "citation_style", "schema_version", "renderer_version", "captured_at", "rendered_markdown", "rendered_markdown_sha256", "expected_section_count", "expected_item_count", "expected_bibliography_count", "expected_warning_count", "finalized_at", "created_at"],
+  manuscript_snapshot_sections: ["id", "project_id", "manuscript_id", "snapshot_id", "source_section_id", "title", "section_type", "section_position", "source_sort_order"],
+  manuscript_snapshot_items: ["id", "project_id", "manuscript_id", "snapshot_id", "snapshot_section_id", "source_section_id", "source_section_item_id", "item_type", "item_position", "source_sort_order"],
+  manuscript_snapshot_prose_items: ["project_id", "manuscript_id", "snapshot_item_id", "snapshot_id", "source_prose_block_id", "prose_revision_id", "prose_text", "source_section_id", "source_section_item_id"],
+  manuscript_snapshot_claim_items: ["project_id", "manuscript_id", "snapshot_item_id", "snapshot_id", "placement_id", "claim_id", "claim_revision_id", "source_section_id", "source_section_item_id", "claim_text", "rendered_citation_marker", "capture_support_status", "capture_is_current_claim_revision", "capture_is_superseded", "capture_claim_lifecycle"],
+  manuscript_snapshot_bibliography_entries: ["id", "project_id", "snapshot_id", "paper_id", "title", "authors", "publication_year", "venue", "doi", "citation_number", "bibliography_position", "rendered_reference"],
+  manuscript_snapshot_claim_bibliography_members: ["project_id", "snapshot_id", "snapshot_claim_item_id", "bibliography_entry_id", "marker_position"],
+  manuscript_snapshot_warnings: ["id", "project_id", "snapshot_id", "warning_position", "section_id", "section_item_id", "placement_id", "claim_revision_id", "paper_id", "code", "message", "metadata_field"],
 } as const;
 
 type MigrationEntry = { idx: number; tag: string; when: number };
@@ -152,8 +160,8 @@ async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
 async function assertSchema(client: postgres.Sql, databaseName: string) {
   const { migrations } = readExpectedMigrations();
   const expectedLatest = migrations.at(-1);
-  if (!expectedLatest || expectedLatest.tag !== "0023_manuscript_prose_revisions") {
-    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0023_manuscript_prose_revisions, found ${expectedLatest?.tag ?? "none"}`);
+  if (!expectedLatest || expectedLatest.tag !== "0024_manuscript_snapshots") {
+    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0024_manuscript_snapshots, found ${expectedLatest?.tag ?? "none"}`);
   }
 
   const migrationRows = await client.unsafe("select id, hash, created_at from drizzle.__drizzle_migrations order by id") as unknown as MigrationRow[];
@@ -165,7 +173,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
     return [];
   });
   if (migrationRows.length !== migrations.length || migrationMismatches.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0023_manuscript_prose_revisions; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0024_manuscript_snapshots; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
   }
 
   const tableNames = Object.keys(requiredSchema);
@@ -181,7 +189,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
   const missingColumns = Object.entries(requiredSchema).flatMap(([tableName, columns]) => columns.filter((columnName) => !actualColumns.get(tableName)?.has(columnName)).map((columnName) => `${tableName}.${columnName}`));
   const legacyColumns = await client.unsafe("select table_name, column_name from information_schema.columns where table_schema = 'public' and ((table_name = 'projects' and column_name = 'research_question') or (table_name = 'manuscript_prose_blocks' and column_name in ('text', 'updated_at')))") as unknown as Array<{ table_name: string; column_name: string }>;
   if (missingTables.length > 0 || missingColumns.length > 0 || legacyColumns.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0023_manuscript_prose_revisions; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `${row.table_name}.${row.column_name}`).join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0024_manuscript_snapshots; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `${row.table_name}.${row.column_name}`).join(", ") || "none"}`);
   }
 }
 
@@ -234,7 +242,7 @@ async function main() {
     } finally {
       await database.client.end();
     }
-  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0023_manuscript_prose_revisions verified; storage=${storageRoot}`);
+  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0024_manuscript_snapshots verified; storage=${storageRoot}`);
 
     child = spawnNext("next-build", [nextBin, "build"], nextEnv);
     const buildExitCode = await waitForProcess(child, "next-build");

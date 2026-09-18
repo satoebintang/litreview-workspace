@@ -45,6 +45,8 @@ export interface FormattedManuscriptClaimItem {
 
 export interface FormattedManuscriptProseItem {
   id: string;
+  /** Stable ProseBlock identity, retained for exact snapshot FK capture. */
+  proseBlockId?: string;
   sectionId: string;
   itemType: "prose";
   sortOrder: number;
@@ -132,6 +134,7 @@ export function buildFormattedManuscript(
       if (item.itemType === "prose") {
         return {
           id: item.id,
+          proseBlockId: (item as ManuscriptSectionItemView & { proseBlockId?: string }).proseBlockId,
           sectionId: item.sectionId,
           itemType: "prose",
           sortOrder: item.sortOrder,
@@ -148,11 +151,17 @@ export function buildFormattedManuscript(
         .filter((record): record is ManuscriptCitationRecord => record !== undefined)
         .sort((a, b) => a.citationNumber - b.citationNumber);
       const citationNumbers = [...new Set(records.map((record) => record.citationNumber))];
-      const citationPaperIds = [...new Set(records.map((record) => record.input.paperId))];
+      // Preserve the order in which the selected formatter renders the
+      // marker.  Numeric formatters use citation-number order; author-year
+      // formatters use their author/year sort.  This marker membership order
+      // is historical presentation data and is independent of bibliography
+      // display position.
+      const inlineRecords = [...formatter.orderBibliography(records, context)];
+      const citationPaperIds = [...new Set(inlineRecords.map((record) => record.input.paperId))];
       // The formatter receives an empty list for unsupported/unconnected
       // claims.  Its result must remain empty; serializers must not add a
       // visible placeholder or trailing citation space.
-      const renderedCitationMarker = records.length ? formatter.formatInline(records, context) : "";
+      const renderedCitationMarker = inlineRecords.length ? formatter.formatInline(inlineRecords, context) : "";
       return {
         id: item.id,
         sectionId: item.sectionId,

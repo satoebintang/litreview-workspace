@@ -67,3 +67,47 @@ A read-derived annotation describing how current traceability, lifecycle, or rev
 ## Project-wide protocol context
 
 Search strategies and search runs defined within the review protocol. These records are independently Project-scoped, represent review-wide search methods, and are never attributed to individual Research Questions.
+
+## Answer-to-Manuscript drafting
+
+An explicit researcher action that uses an Answer's submitted text and exact
+ClaimRevision identities as drafting context for existing Manuscript prose and
+Claim placement primitives. It does not generate prose, copy researcher notes,
+or create a support edge.
+
+## Manuscript editorial review
+
+An append-only ReviewThread and ReviewEvent history attached to a stable
+SectionItem. The opening context is immutable, while review lifecycle and
+comments remain separate from research provenance, ProseRevision history, and
+snapshot presentation.
+
+## ProseBlock
+
+A stable Manuscript content identity attached to one Prose SectionItem. Its
+content is represented by an immutable, ordered ProseRevision stream; revisions
+never rewrite earlier text.
+
+## ProseRevision
+
+One immutable researcher-authored text revision for an exact ProseBlock. A live
+Manuscript resolves the greatest revision for that block; a historical snapshot
+copies the exact revision identity and text it captured.
+
+## Manuscript Snapshot
+
+An immutable, explicit researcher capture of one coherent whole-Manuscript
+state. It freezes title, citation style, visible Section and SectionItem
+composition/order, exact ProseRevision and ClaimRevision identities and text,
+historical citation presentation, warnings, and canonical Markdown plus its
+SHA-256. Snapshot bibliography membership is presentation history, not formal
+Claim support or citation provenance.
+
+## Manuscript history boundaries
+
+Research provenance runs from Evidence through ExtractionRevision,
+SynthesisRevision, and ClaimRevision to support and placement. Manuscript
+content history is the ProseBlock/ProseRevision stream. Editorial history is the
+ReviewThread/ReviewEvent stream. Snapshot history is the frozen composition and
+presentation artifact. None of these histories silently mutates another, and a
+snapshot is not a release, approval, rollback, or publication record.

@@ -544,6 +544,8 @@ export interface ManuscriptClaimItemView extends ManuscriptSectionItem {
 
 export interface ManuscriptProseItemView extends ManuscriptSectionItem {
   itemType: "prose";
+  /** Stable ProseBlock identity retained for historical snapshot capture. */
+  proseBlockId?: string;
   text: string;
   updatedAt: Date;
   /** Derived from the exact current ProseRevision; never persisted as a pointer. */

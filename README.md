@@ -24,6 +24,13 @@ npm run dev
 
 Open <http://localhost:3000>.
 
+Tracework follows the review chain from protocol and search through screening,
+retrieval, documents, Evidence and Extraction, Synthesis, Claims, Research
+Question Answers, and the structured Manuscript workspace. Manuscript content
+has a stable ProseBlock/ProseRevision history and append-only editorial review;
+an explicit researcher action can also persist an immutable whole-manuscript
+Snapshot with frozen citation presentation and canonical Markdown export.
+
 ## Verification
 
 ```bash
@@ -35,4 +42,7 @@ npm run build
 npx playwright test
 ```
 
-Slice 1 covers Project → Paper → Evidence → Claim → linked Evidence → provenance inspection. Claim support is derived from ClaimEvidence links; source text and researcher notes remain separate.
+Formal support and citation authority remain on exact ClaimRevision provenance
+paths. Manuscript snapshots preserve historical presentation and composition;
+they do not create support edges, alter Research Question Answers, or act as a
+publication/release workflow.

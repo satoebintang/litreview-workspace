@@ -108,6 +108,26 @@ describe("manuscript formatting projection", () => {
     expect(projection.manuscript.citationStyle).toBe("author_year");
   });
 
+  it("keeps claim marker membership in formatter order separately from citation numbers", () => {
+    const source = view();
+    source.bibliographyCandidates[0].citationNumber = 2;
+    source.bibliographyCandidates[1].citationNumber = 1;
+    const claimItem = source.sections[0].items[1];
+    if (claimItem.itemType !== "claim") throw new Error("expected claim item");
+    claimItem.citationCandidates = source.bibliographyCandidates.map((candidate) => ({
+      paper: candidate.paper,
+      pathCount: 1,
+      supportKinds: ["evidence"],
+      citationNumber: candidate.citationNumber,
+    }));
+    const projection = buildFormattedManuscript(source);
+    const formattedClaim = projection.sections[0].items[1];
+    if (formattedClaim.itemType !== "claim") throw new Error("expected formatted claim item");
+    expect(formattedClaim.citationNumbers).toEqual([1, 2]);
+    expect(formattedClaim.citationPaperIds).toEqual([ids.paperA, ids.paperB]);
+    expect(formattedClaim.renderedCitationMarker).toBe("(Alice Smith, 2024; Bob Jones, 2024)");
+  });
+
   it("renders unsupported claims without a visible empty marker or trailing space", () => {
     const projection = buildFormattedManuscript(view());
     const claim = projection.sections[0].items[1];
@@ -118,5 +138,19 @@ describe("manuscript formatting projection", () => {
   it("preserves active item order and normalizes Markdown line endings", () => {
     const projection = buildFormattedManuscript(view());
     expect(serializeManuscriptMarkdown(projection)).toBe("# Exact draft\n\n## Introduction\n\nProse\nkept exactly.\n\nClaim text\n\n## References\n\n- Alice Smith (2024). Zeta. Venue\n\n- Bob Jones (2024). Alpha. Venue\n");
+  });
+
+  it("renders a nullable withdrawn ClaimRevision as empty text without the string null", () => {
+    const source = view();
+    const item = source.sections[0].items[1];
+    if (item.itemType !== "claim") throw new Error("expected claim item");
+    item.placement.claimRevision = { ...item.placement.claimRevision, lifecycle: "withdrawn", claimText: null };
+    item.placement.claimLifecycle = "withdrawn";
+    const projection = buildFormattedManuscript(source);
+    const claim = projection.sections[0].items[1];
+    expect(claim.itemType === "claim" ? claim.claimText : "unexpected").toBe("");
+    const markdown = serializeManuscriptMarkdown(projection);
+    expect(markdown).toContain("\n\n\n## References");
+    expect(markdown).not.toContain("null");
   });
 });
