@@ -12,6 +12,7 @@ import {
   bigint,
   boolean,
   numeric,
+  jsonb,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -2141,6 +2142,249 @@ export const manuscriptSnapshotBibliographyEntries = pgTable("manuscript_snapsho
 export const manuscriptSnapshotClaimBibliographyMembers = pgTable("manuscript_snapshot_claim_bibliography_members", { projectId: uuid("project_id").notNull(), snapshotId: uuid("snapshot_id").notNull(), snapshotClaimItemId: uuid("snapshot_claim_item_id").notNull(), bibliographyEntryId: uuid("bibliography_entry_id").notNull(), markerPosition: integer("marker_position").notNull() }, (table) => ({ pk: primaryKey({ columns: [table.projectId, table.snapshotId, table.snapshotClaimItemId, table.bibliographyEntryId] }) }));
 export const manuscriptSnapshotWarnings = pgTable("manuscript_snapshot_warnings", { id: uuid("id").defaultRandom().primaryKey(), projectId: uuid("project_id").notNull(), snapshotId: uuid("snapshot_id").notNull(), warningPosition: integer("warning_position").notNull(), sectionId: uuid("section_id"), sectionItemId: uuid("section_item_id"), placementId: uuid("placement_id"), claimRevisionId: uuid("claim_revision_id"), paperId: uuid("paper_id"), code: text("code").notNull(), message: text("message").notNull(), metadataField: text("metadata_field") });
 
+// Slice 26 AI extraction suggestions. These rows are immutable workflow
+// history; canonical Evidence and ExtractionValueRevision rows are written by
+// the acceptance service through the existing generic writers.
+export const aiExtractionRequests = pgTable(
+  "ai_extraction_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    paperId: uuid("paper_id").notNull(),
+    extractionFieldId: uuid("extraction_field_id").notNull(),
+    fullTextDocumentId: uuid("full_text_document_id").notNull(),
+    documentTextExtractionId: uuid("document_text_extraction_id").notNull(),
+    baselineExtractionRevisionId: uuid("baseline_extraction_revision_id"),
+    idempotencyKey: uuid("idempotency_key").notNull(),
+    intentHash: text("intent_hash").notNull(),
+    fieldNameSnapshot: text("field_name_snapshot").notNull(),
+    fieldDescriptionSnapshot: text("field_description_snapshot"),
+    fieldType: text("field_type").notNull(),
+    optionSnapshot: jsonb("option_snapshot").notNull().default([]),
+    provider: text("provider").notNull(),
+    configuredModel: text("configured_model").notNull(),
+    configuredReasoningEffort: text("configured_reasoning_effort").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    responseSchemaVersion: text("response_schema_version").notNull(),
+    groundingResolverVersion: text("grounding_resolver_version").notNull(),
+    contextSelectionVersion: text("context_selection_version").notNull(),
+    sourceCharacterCount: integer("source_character_count").notNull(),
+    sourceByteSize: integer("source_byte_size").notNull(),
+    pageManifestHash: text("page_manifest_hash").notNull(),
+    externalTransmissionAcknowledged: boolean("external_transmission_acknowledged").notNull(),
+    disclosureVersion: text("disclosure_version").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }).notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("ai_extraction_requests_project_id_id_unique").on(table.projectId, table.id),
+    idempotency: unique("ai_extraction_requests_project_id_idempotency_key_unique").on(table.projectId, table.idempotencyKey),
+    projectPaperFieldIdentity: unique("ai_extraction_requests_project_paper_field_id_unique").on(table.projectId, table.paperId, table.extractionFieldId, table.id),
+    projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "ai_extraction_requests_project_fk" }).onDelete("restrict"),
+    paperOwnership: foreignKey({ columns: [table.projectId, table.paperId], foreignColumns: [papers.projectId, papers.id], name: "ai_extraction_requests_paper_fk" }).onDelete("restrict"),
+    fieldOwnership: foreignKey({ columns: [table.projectId, table.extractionFieldId], foreignColumns: [extractionFields.projectId, extractionFields.id], name: "ai_extraction_requests_field_fk" }).onDelete("restrict"),
+    documentOwnership: foreignKey({ columns: [table.projectId, table.paperId, table.fullTextDocumentId], foreignColumns: [fullTextDocuments.projectId, fullTextDocuments.paperId, fullTextDocuments.id], name: "ai_extraction_requests_document_fk" }).onDelete("restrict"),
+    extractionOwnership: foreignKey({ columns: [table.projectId, table.paperId, table.documentTextExtractionId], foreignColumns: [documentTextExtractions.projectId, documentTextExtractions.paperId, documentTextExtractions.id], name: "ai_extraction_requests_extraction_fk" }).onDelete("restrict"),
+    baselineRevisionOwnership: foreignKey({ columns: [table.projectId, table.baselineExtractionRevisionId], foreignColumns: [extractionValueRevisions.projectId, extractionValueRevisions.id], name: "ai_extraction_requests_baseline_revision_fk" }).onDelete("restrict"),
+    fieldTypeValid: check("ai_extraction_requests_field_type_valid", sql`${table.fieldType} in ('short_text', 'long_text', 'number', 'boolean', 'single_select')`),
+    providerNonblank: check("ai_extraction_requests_provider_nonblank", sql`btrim(${table.provider}) <> ''`),
+    modelNonblank: check("ai_extraction_requests_model_nonblank", sql`btrim(${table.configuredModel}) <> ''`),
+    versionShape: check("ai_extraction_requests_version_shape", sql`btrim(${table.promptVersion}) <> '' and btrim(${table.responseSchemaVersion}) <> '' and btrim(${table.groundingResolverVersion}) <> '' and btrim(${table.contextSelectionVersion}) <> ''`),
+    hashShape: check("ai_extraction_requests_hash_shape", sql`${table.intentHash} ~ '^[0-9a-f]{64}$' and ${table.pageManifestHash} ~ '^[0-9a-f]{64}$'`),
+    sourceBounds: check("ai_extraction_requests_source_bounds", sql`${table.sourceCharacterCount} >= 0 and ${table.sourceCharacterCount} <= 80000 and ${table.sourceByteSize} >= 0 and ${table.sourceByteSize} <= 327680`),
+    acknowledged: check("ai_extraction_requests_transmission_acknowledged", sql`${table.externalTransmissionAcknowledged} = true`),
+  }),
+);
+
+export const aiExtractionRequestPages = pgTable(
+  "ai_extraction_request_pages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    requestId: uuid("request_id").notNull(),
+    pageId: uuid("page_id").notNull(),
+    paperId: uuid("paper_id").notNull(),
+    fullTextDocumentId: uuid("full_text_document_id").notNull(),
+    documentTextExtractionId: uuid("document_text_extraction_id").notNull(),
+    pageNumber: integer("page_number").notNull(),
+    pageOrdinal: integer("page_ordinal").notNull(),
+    textSha256: text("text_sha256").notNull(),
+    characterCount: integer("character_count").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("ai_extraction_request_pages_project_id_id_unique").on(table.projectId, table.id),
+    requestPage: unique("ai_extraction_request_pages_request_page_unique").on(table.projectId, table.requestId, table.pageNumber),
+    requestOrdinal: unique("ai_extraction_request_pages_request_ordinal_unique").on(table.projectId, table.requestId, table.pageOrdinal),
+    requestOwnership: foreignKey({ columns: [table.projectId, table.requestId], foreignColumns: [aiExtractionRequests.projectId, aiExtractionRequests.id], name: "ai_extraction_request_pages_request_fk" }).onDelete("restrict"),
+    sourcePageOwnership: foreignKey({ columns: [table.projectId, table.paperId, table.documentTextExtractionId, table.pageNumber], foreignColumns: [documentTextExtractionPages.projectId, documentTextExtractionPages.paperId, documentTextExtractionPages.documentTextExtractionId, documentTextExtractionPages.pageNumber], name: "ai_extraction_request_pages_source_page_fk" }).onDelete("restrict"),
+    sourcePageIdentity: foreignKey({ columns: [table.projectId, table.pageId], foreignColumns: [documentTextExtractionPages.projectId, documentTextExtractionPages.id], name: "ai_extraction_request_pages_source_page_id_fk" }).onDelete("restrict"),
+    pageNumberValid: check("ai_extraction_request_pages_page_number_valid", sql`${table.pageNumber} > 0 and ${table.pageNumber} <= 2000`),
+    ordinalValid: check("ai_extraction_request_pages_ordinal_valid", sql`${table.pageOrdinal} >= 0 and ${table.pageOrdinal} < 40`),
+    hashShape: check("ai_extraction_request_pages_hash_shape", sql`${table.textSha256} ~ '^[0-9a-f]{64}$'`),
+    countBounds: check("ai_extraction_request_pages_count_bounds", sql`${table.characterCount} > 0 and ${table.characterCount} <= 500000 and ${table.byteSize} > 0 and ${table.byteSize} <= 2000000`),
+  }),
+);
+
+export const aiExtractionDispatches = pgTable(
+  "ai_extraction_dispatches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    requestId: uuid("request_id").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("ai_extraction_dispatches_project_id_id_unique").on(table.projectId, table.id),
+    requestUnique: unique("ai_extraction_dispatches_project_request_unique").on(table.projectId, table.requestId),
+    requestOwnership: foreignKey({ columns: [table.projectId, table.requestId], foreignColumns: [aiExtractionRequests.projectId, aiExtractionRequests.id], name: "ai_extraction_dispatches_request_fk" }).onDelete("restrict"),
+    deadlineOrder: check("ai_extraction_dispatches_deadline_order", sql`${table.deadlineAt} > ${table.startedAt}`),
+  }),
+);
+
+export const aiExtractionResults = pgTable(
+  "ai_extraction_results",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    requestId: uuid("request_id").notNull(),
+    outcome: text("outcome").notNull(),
+    providerDiagnostic: text("provider_diagnostic").notNull(),
+    errorCode: text("error_code"),
+    candidateState: text("candidate_state"),
+    textValue: text("text_value"),
+    numberValue: numeric("number_value", { precision: 30, scale: 10 }),
+    booleanValue: boolean("boolean_value"),
+    optionId: uuid("option_id"),
+    explanation: text("explanation"),
+    providerRequestId: text("provider_request_id"),
+    configuredModel: text("configured_model").notNull(),
+    returnedModel: text("returned_model"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }).notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("ai_extraction_results_project_id_id_unique").on(table.projectId, table.id),
+    requestUnique: unique("ai_extraction_results_project_request_unique").on(table.projectId, table.requestId),
+    requestIdentity: unique("ai_extraction_results_project_request_id_unique").on(table.projectId, table.requestId, table.id),
+    requestOwnership: foreignKey({ columns: [table.projectId, table.requestId], foreignColumns: [aiExtractionRequests.projectId, aiExtractionRequests.id], name: "ai_extraction_results_request_fk" }).onDelete("restrict"),
+    optionOwnership: foreignKey({ columns: [table.projectId, table.optionId], foreignColumns: [extractionOptions.projectId, extractionOptions.id], name: "ai_extraction_results_option_fk" }).onDelete("restrict"),
+    outcomeValid: check("ai_extraction_results_outcome_valid", sql`${table.outcome} in ('succeeded', 'no_candidate', 'provider_unavailable', 'failed', 'invalid_output', 'unresolvable_grounding', 'outcome_unknown')`),
+    diagnosticValid: check("ai_extraction_results_provider_diagnostic_valid", sql`${table.providerDiagnostic} in ('success', 'refusal', 'incomplete', 'schema_invalid', 'transport_error', 'api_error', 'unknown')`),
+    candidateStateValid: check("ai_extraction_results_candidate_state_valid", sql`${table.candidateState} is null or ${table.candidateState} in ('present', 'not_reported', 'not_applicable')`),
+    candidateValueShape: check("ai_extraction_results_candidate_value_shape", sql`(
+      (${table.candidateState} is null and ${table.textValue} is null and ${table.numberValue} is null and ${table.booleanValue} is null and ${table.optionId} is null)
+      or (${table.candidateState} <> 'present' and ${table.textValue} is null and ${table.numberValue} is null and ${table.booleanValue} is null and ${table.optionId} is null)
+      or (${table.candidateState} = 'present' and (
+        (${table.textValue} is not null and ${table.numberValue} is null and ${table.booleanValue} is null and ${table.optionId} is null)
+        or (${table.textValue} is null and ${table.numberValue} is not null and ${table.booleanValue} is null and ${table.optionId} is null)
+        or (${table.textValue} is null and ${table.numberValue} is null and ${table.booleanValue} is not null and ${table.optionId} is null)
+        or (${table.textValue} is null and ${table.numberValue} is null and ${table.booleanValue} is null and ${table.optionId} is not null)
+      ))
+    )`),
+    terminalShape: check("ai_extraction_results_terminal_shape", sql`${table.finalizedAt} is not null`),
+    boundedText: check("ai_extraction_results_bounded_text", sql`${table.textValue} is null or char_length(${table.textValue}) <= 10000`),
+    boundedExplanation: check("ai_extraction_results_bounded_explanation", sql`${table.explanation} is null or char_length(${table.explanation}) <= 10000`),
+    boundedError: check("ai_extraction_results_bounded_error", sql`${table.errorCode} is null or (btrim(${table.errorCode}) <> '' and char_length(${table.errorCode}) <= 200)`),
+     usageBounds: check("ai_extraction_results_usage_bounds", sql`(${table.inputTokens} is null or ${table.inputTokens} >= 0) and (${table.outputTokens} is null or ${table.outputTokens} >= 0) and (${table.durationMs} is null or ${table.durationMs} >= 0)`),
+  }),
+);
+
+export const aiExtractionResultGroundings = pgTable(
+  "ai_extraction_result_groundings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    requestId: uuid("request_id").notNull(),
+    resultId: uuid("result_id").notNull(),
+    pageId: uuid("page_id").notNull(),
+    pageNumber: integer("page_number").notNull(),
+    startOffset: integer("start_offset").notNull(),
+    endOffset: integer("end_offset").notNull(),
+    locatorQuote: text("locator_quote").notNull(),
+    locatorPrefix: text("locator_prefix"),
+    locatorSuffix: text("locator_suffix"),
+    sourceText: text("source_text").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("ai_extraction_result_groundings_project_id_id_unique").on(table.projectId, table.id),
+    resultIdentity: unique("ai_extraction_result_groundings_result_page_start_end_unique").on(table.projectId, table.resultId, table.pageNumber, table.startOffset, table.endOffset),
+    requestOwnership: foreignKey({ columns: [table.projectId, table.requestId], foreignColumns: [aiExtractionRequests.projectId, aiExtractionRequests.id], name: "ai_extraction_result_groundings_request_fk" }).onDelete("restrict"),
+    resultOwnership: foreignKey({ columns: [table.projectId, table.requestId, table.resultId], foreignColumns: [aiExtractionResults.projectId, aiExtractionResults.requestId, aiExtractionResults.id], name: "ai_extraction_result_groundings_result_fk" }).onDelete("restrict"),
+    pageOwnership: foreignKey({ columns: [table.projectId, table.pageId], foreignColumns: [documentTextExtractionPages.projectId, documentTextExtractionPages.id], name: "ai_extraction_result_groundings_page_fk" }).onDelete("restrict"),
+    pagePositive: check("ai_extraction_result_groundings_page_positive", sql`${table.pageNumber} > 0`),
+    offsetShape: check("ai_extraction_result_groundings_offset_shape", sql`${table.startOffset} >= 0 and ${table.endOffset} > ${table.startOffset} and ${table.endOffset} - ${table.startOffset} <= 4000`),
+    quoteNonblank: check("ai_extraction_result_groundings_quote_nonblank", sql`btrim(${table.locatorQuote}) <> '' and char_length(${table.locatorQuote}) <= 4000`),
+    contextBounds: check("ai_extraction_result_groundings_context_bounds", sql`(${table.locatorPrefix} is null or char_length(${table.locatorPrefix}) <= 120) and (${table.locatorSuffix} is null or char_length(${table.locatorSuffix}) <= 120)`),
+    sourceTextBound: check("ai_extraction_result_groundings_source_text_bound", sql`char_length(${table.sourceText}) <= 4000`),
+  }),
+);
+
+export const aiExtractionDecisions = pgTable(
+  "ai_extraction_decisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    requestId: uuid("request_id").notNull(),
+    decision: text("decision").notNull(),
+    acceptanceMode: text("acceptance_mode"),
+    expectedCurrentExtractionRevisionId: uuid("expected_current_extraction_revision_id"),
+    precedingExtractionRevisionId: uuid("preceding_extraction_revision_id"),
+    resultingExtractionRevisionId: uuid("resulting_extraction_revision_id"),
+    valueState: text("value_state"),
+    textValue: text("text_value"),
+    numberValue: numeric("number_value", { precision: 30, scale: 10 }),
+    booleanValue: boolean("boolean_value"),
+    optionId: uuid("option_id"),
+    researcherNote: text("researcher_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("ai_extraction_decisions_project_id_id_unique").on(table.projectId, table.id),
+    requestUnique: unique("ai_extraction_decisions_project_request_unique").on(table.projectId, table.requestId),
+    requestOwnership: foreignKey({ columns: [table.projectId, table.requestId], foreignColumns: [aiExtractionRequests.projectId, aiExtractionRequests.id], name: "ai_extraction_decisions_request_fk" }).onDelete("restrict"),
+    expectedRevisionOwnership: foreignKey({ columns: [table.projectId, table.expectedCurrentExtractionRevisionId], foreignColumns: [extractionValueRevisions.projectId, extractionValueRevisions.id], name: "ai_extraction_decisions_expected_revision_fk" }).onDelete("restrict"),
+    precedingRevisionOwnership: foreignKey({ columns: [table.projectId, table.precedingExtractionRevisionId], foreignColumns: [extractionValueRevisions.projectId, extractionValueRevisions.id], name: "ai_extraction_decisions_preceding_revision_fk" }).onDelete("restrict"),
+    resultingRevisionOwnership: foreignKey({ columns: [table.projectId, table.resultingExtractionRevisionId], foreignColumns: [extractionValueRevisions.projectId, extractionValueRevisions.id], name: "ai_extraction_decisions_resulting_revision_fk" }).onDelete("restrict"),
+    optionOwnership: foreignKey({ columns: [table.projectId, table.optionId], foreignColumns: [extractionOptions.projectId, extractionOptions.id], name: "ai_extraction_decisions_option_fk" }).onDelete("restrict"),
+    decisionValid: check("ai_extraction_decisions_decision_valid", sql`${table.decision} in ('accepted', 'rejected')`),
+    acceptanceModeValid: check("ai_extraction_decisions_acceptance_mode_valid", sql`${table.acceptanceMode} is null or ${table.acceptanceMode} in ('accept', 'edit_and_accept')`),
+    stateValid: check("ai_extraction_decisions_state_valid", sql`${table.valueState} is null or ${table.valueState} in ('present', 'not_reported', 'not_applicable', 'cleared')`),
+    decisionShape: check("ai_extraction_decisions_decision_shape", sql`(
+      (${table.decision} = 'rejected' and ${table.acceptanceMode} is null and ${table.resultingExtractionRevisionId} is null and ${table.valueState} is null and ${table.textValue} is null and ${table.numberValue} is null and ${table.booleanValue} is null and ${table.optionId} is null)
+      or (${table.decision} = 'accepted' and ${table.acceptanceMode} is not null and ${table.resultingExtractionRevisionId} is not null and ${table.valueState} is not null)
+    )`),
+    noteBound: check("ai_extraction_decisions_note_bound", sql`${table.researcherNote} is null or (btrim(${table.researcherNote}) <> '' and char_length(${table.researcherNote}) <= 20000)`),
+  }),
+);
+
+export const aiExtractionDecisionEvidence = pgTable(
+  "ai_extraction_decision_evidence",
+  {
+    projectId: uuid("project_id").notNull(),
+    decisionId: uuid("decision_id").notNull(),
+    groundingId: uuid("grounding_id").notNull(),
+    evidenceId: uuid("evidence_id").notNull(),
+    evidenceMode: text("evidence_mode").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    identity: primaryKey({ columns: [table.projectId, table.decisionId, table.groundingId] }),
+    evidenceIdentity: unique("ai_extraction_decision_evidence_project_decision_evidence_unique").on(table.projectId, table.decisionId, table.evidenceId),
+    decisionOwnership: foreignKey({ columns: [table.projectId, table.decisionId], foreignColumns: [aiExtractionDecisions.projectId, aiExtractionDecisions.id], name: "ai_extraction_decision_evidence_decision_fk" }).onDelete("restrict"),
+    groundingOwnership: foreignKey({ columns: [table.projectId, table.groundingId], foreignColumns: [aiExtractionResultGroundings.projectId, aiExtractionResultGroundings.id], name: "ai_extraction_decision_evidence_grounding_fk" }).onDelete("restrict"),
+    evidenceOwnership: foreignKey({ columns: [table.projectId, table.evidenceId], foreignColumns: [evidence.projectId, evidence.id], name: "ai_extraction_decision_evidence_evidence_fk" }).onDelete("restrict"),
+    modeValid: check("ai_extraction_decision_evidence_mode_valid", sql`${table.evidenceMode} in ('fresh', 'reused')`),
+  }),
+);
+
 export const schema = {
   projects,
   papers,
@@ -2214,4 +2458,11 @@ export const schema = {
   retrievedRecords,
   retrievedRecordMatches,
   retrievedRecordDeduplicationDecisions,
+  aiExtractionRequests,
+  aiExtractionRequestPages,
+  aiExtractionDispatches,
+  aiExtractionResults,
+  aiExtractionResultGroundings,
+  aiExtractionDecisions,
+  aiExtractionDecisionEvidence,
 };

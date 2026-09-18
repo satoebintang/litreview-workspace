@@ -176,6 +176,13 @@
       "when": 1789550000000,
       "tag": "0024_manuscript_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1789727477467,
+      "tag": "0025_ai_extraction_suggestions",
+      "breakpoints": true
     }
   ]
 }

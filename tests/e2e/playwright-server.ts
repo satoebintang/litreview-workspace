@@ -65,6 +65,13 @@ const requiredSchema = {
   manuscript_snapshot_bibliography_entries: ["id", "project_id", "snapshot_id", "paper_id", "title", "authors", "publication_year", "venue", "doi", "citation_number", "bibliography_position", "rendered_reference"],
   manuscript_snapshot_claim_bibliography_members: ["project_id", "snapshot_id", "snapshot_claim_item_id", "bibliography_entry_id", "marker_position"],
   manuscript_snapshot_warnings: ["id", "project_id", "snapshot_id", "warning_position", "section_id", "section_item_id", "placement_id", "claim_revision_id", "paper_id", "code", "message", "metadata_field"],
+  ai_extraction_requests: ["id", "project_id", "paper_id", "extraction_field_id", "full_text_document_id", "document_text_extraction_id", "baseline_extraction_revision_id", "idempotency_key", "intent_hash", "field_name_snapshot", "field_description_snapshot", "field_type", "option_snapshot", "provider", "configured_model", "configured_reasoning_effort", "prompt_version", "response_schema_version", "grounding_resolver_version", "context_selection_version", "source_character_count", "source_byte_size", "page_manifest_hash", "external_transmission_acknowledged", "disclosure_version", "created_at", "finalized_at"],
+  ai_extraction_request_pages: ["id", "project_id", "request_id", "page_id", "paper_id", "full_text_document_id", "document_text_extraction_id", "page_number", "page_ordinal", "text_sha256", "character_count", "byte_size", "created_at"],
+  ai_extraction_dispatches: ["id", "project_id", "request_id", "started_at", "deadline_at", "created_at"],
+  ai_extraction_results: ["id", "project_id", "request_id", "outcome", "provider_diagnostic", "error_code", "candidate_state", "text_value", "number_value", "boolean_value", "option_id", "explanation", "provider_request_id", "configured_model", "returned_model", "input_tokens", "output_tokens", "duration_ms", "created_at", "finalized_at"],
+  ai_extraction_result_groundings: ["id", "project_id", "request_id", "result_id", "page_id", "page_number", "start_offset", "end_offset", "locator_quote", "locator_prefix", "locator_suffix", "source_text", "created_at"],
+  ai_extraction_decisions: ["id", "project_id", "request_id", "decision", "acceptance_mode", "expected_current_extraction_revision_id", "preceding_extraction_revision_id", "resulting_extraction_revision_id", "value_state", "text_value", "number_value", "boolean_value", "option_id", "researcher_note", "created_at"],
+  ai_extraction_decision_evidence: ["project_id", "decision_id", "grounding_id", "evidence_id", "evidence_mode", "created_at"],
 } as const;
 
 type MigrationEntry = { idx: number; tag: string; when: number };
@@ -160,8 +167,8 @@ async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
 async function assertSchema(client: postgres.Sql, databaseName: string) {
   const { migrations } = readExpectedMigrations();
   const expectedLatest = migrations.at(-1);
-  if (!expectedLatest || expectedLatest.tag !== "0024_manuscript_snapshots") {
-    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0024_manuscript_snapshots, found ${expectedLatest?.tag ?? "none"}`);
+  if (!expectedLatest || expectedLatest.tag !== "0025_ai_extraction_suggestions") {
+    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0025_ai_extraction_suggestions, found ${expectedLatest?.tag ?? "none"}`);
   }
 
   const migrationRows = await client.unsafe("select id, hash, created_at from drizzle.__drizzle_migrations order by id") as unknown as MigrationRow[];
@@ -173,7 +180,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
     return [];
   });
   if (migrationRows.length !== migrations.length || migrationMismatches.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0024_manuscript_snapshots; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0025_ai_extraction_suggestions; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
   }
 
   const tableNames = Object.keys(requiredSchema);
@@ -189,7 +196,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
   const missingColumns = Object.entries(requiredSchema).flatMap(([tableName, columns]) => columns.filter((columnName) => !actualColumns.get(tableName)?.has(columnName)).map((columnName) => `${tableName}.${columnName}`));
   const legacyColumns = await client.unsafe("select table_name, column_name from information_schema.columns where table_schema = 'public' and ((table_name = 'projects' and column_name = 'research_question') or (table_name = 'manuscript_prose_blocks' and column_name in ('text', 'updated_at')))") as unknown as Array<{ table_name: string; column_name: string }>;
   if (missingTables.length > 0 || missingColumns.length > 0 || legacyColumns.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0024_manuscript_snapshots; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `${row.table_name}.${row.column_name}`).join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0025_ai_extraction_suggestions; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `${row.table_name}.${row.column_name}`).join(", ") || "none"}`);
   }
 }
 
@@ -242,7 +249,7 @@ async function main() {
     } finally {
       await database.client.end();
     }
-  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0024_manuscript_snapshots verified; storage=${storageRoot}`);
+  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0025_ai_extraction_suggestions verified; storage=${storageRoot}`);
 
     child = spawnNext("next-build", [nextBin, "build"], nextEnv);
     const buildExitCode = await waitForProcess(child, "next-build");

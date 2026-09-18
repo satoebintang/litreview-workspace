@@ -33,7 +33,7 @@ async function runMigration(client: postgres.Sql, filename: string) {
   }
 }
 
-describe("Slice 24/25 migration boundaries", () => {
+describe("Slice 24/26 migration boundaries", () => {
   let client: postgres.Sql | undefined;
   let databaseCreated = false;
   let projectId = "";
@@ -168,7 +168,7 @@ describe("Slice 24/25 migration boundaries", () => {
     }
   });
 
-  it("applies the complete 0000 -> 0024 chain to a fresh database", async () => {
+  it("applies the complete 0000 -> 0025 chain to a fresh database", async () => {
     const freshName = `${databaseName}_fresh`;
     const admin = postgres(BASE_URL, { max: 1 });
     let fresh: ReturnType<typeof createDb> | undefined;
@@ -177,8 +177,8 @@ describe("Slice 24/25 migration boundaries", () => {
       fresh = createDb(databaseUrl(freshName));
       await migrate(fresh.db, { migrationsFolder: migrationFolder });
       const [latest] = await fresh.client`select id, hash from drizzle.__drizzle_migrations order by id desc limit 1`;
-      expect(Number(latest.id)).toBe(25);
-      const migrationHash = createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0024_manuscript_snapshots.sql"))).digest("hex");
+      expect(Number(latest.id)).toBe(26);
+      const migrationHash = createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0025_ai_extraction_suggestions.sql"))).digest("hex");
       expect(latest.hash).toBe(migrationHash);
       const [revisionTable] = await fresh.client`select to_regclass('public.manuscript_prose_revisions') as table_name`;
       expect(revisionTable.table_name).toBe("manuscript_prose_revisions");
