@@ -763,3 +763,124 @@ export type CreateResearchQuestionAnswerInput = z.input<typeof createResearchQue
 export type ValidatedResearchQuestionAnswerInput = z.output<typeof appendResearchQuestionAnswerSchema>;
 export type ApplyResearchQuestionAnswerToSectionInput = z.input<typeof applyResearchQuestionAnswerToSectionSchema>;
 export type ValidatedApplyResearchQuestionAnswerToSectionInput = z.output<typeof applyResearchQuestionAnswerToSectionSchema>;
+
+// Slice 26 AI proposal boundary. These schemas validate untrusted provider
+// data separately from field-specific persistence and grounding checks.
+export const aiExtractionFieldTypeSchema = z.enum(["short_text", "long_text", "number", "boolean", "single_select"]);
+export const aiExtractionValueStateSchema = z.enum(["present", "not_reported", "not_applicable", "cleared"]);
+export const aiExtractionCandidateStateSchema = z.enum(["present", "not_reported", "not_applicable"]);
+export const aiExtractionProviderDiagnosticSchema = z.enum(["success", "refusal", "incomplete", "schema_invalid", "transport_error", "api_error", "unknown"]);
+export const aiExtractionOutcomeSchema = z.enum(["succeeded", "no_candidate", "provider_unavailable", "failed", "invalid_output", "unresolvable_grounding", "outcome_unknown"]);
+
+export const aiExtractionOptionSnapshotSchema = z.object({
+  id: idSchema,
+  label: z.string().min(1).max(500),
+  sortOrder: z.number().int().nonnegative(),
+}).strict();
+
+export const aiExtractionRequestSchema = z.object({
+  projectId: idSchema,
+  paperId: idSchema,
+  extractionFieldId: idSchema,
+  fullTextDocumentId: idSchema,
+  documentTextExtractionId: idSchema,
+  baselineExtractionRevisionId: idSchema.nullable(),
+  idempotencyKey: idSchema,
+  intentHash: z.string().regex(/^[0-9a-f]{64}$/),
+  fieldNameSnapshot: z.string().min(1).max(500),
+  fieldDescriptionSnapshot: z.string().max(5000).nullable(),
+  fieldType: aiExtractionFieldTypeSchema,
+  optionSnapshot: z.array(aiExtractionOptionSnapshotSchema).max(200),
+  provider: z.string().trim().min(1).max(100),
+  configuredModel: z.string().trim().min(1).max(200),
+  configuredReasoningEffort: z.string().trim().min(1).max(30),
+  promptVersion: z.string().trim().min(1).max(100),
+  responseSchemaVersion: z.string().trim().min(1).max(100),
+  groundingResolverVersion: z.string().trim().min(1).max(100),
+  contextSelectionVersion: z.string().trim().min(1).max(100),
+  sourceCharacterCount: z.number().int().min(0).max(80000),
+  sourceByteSize: z.number().int().min(0).max(327680),
+  pageManifestHash: z.string().regex(/^[0-9a-f]{64}$/),
+  externalTransmissionAcknowledged: z.literal(true),
+  disclosureVersion: z.string().trim().min(1).max(100),
+}).strict();
+
+const aiTypedCandidateShape = z.object({
+  state: aiExtractionCandidateStateSchema,
+  textValue: z.string().max(10000).nullable(),
+  numberValue: z.string().regex(/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/).nullable(),
+  booleanValue: z.boolean().nullable(),
+  optionId: idSchema.nullable(),
+  explanation: z.string().max(10000).nullable(),
+}).strict();
+
+export const aiExtractionResultSchema = z.object({
+  outcome: aiExtractionOutcomeSchema,
+  providerDiagnostic: aiExtractionProviderDiagnosticSchema,
+  errorCode: z.string().trim().min(1).max(200).nullable(),
+  candidate: aiTypedCandidateShape.nullable(),
+  providerRequestId: z.string().trim().min(1).max(500).nullable(),
+  configuredModel: z.string().trim().min(1).max(200),
+  returnedModel: z.string().trim().min(1).max(200).nullable(),
+  inputTokens: z.number().int().nonnegative().nullable(),
+  outputTokens: z.number().int().nonnegative().nullable(),
+  durationMs: z.number().int().nonnegative().nullable(),
+}).strict().superRefine((value, ctx) => {
+  const candidateOutcomes = ["succeeded", "no_candidate"];
+  if (candidateOutcomes.includes(value.outcome) && value.outcome === "succeeded" && value.candidate === null) {
+    ctx.addIssue({ code: "custom", path: ["candidate"], message: "A successful AI result requires a typed candidate" });
+  }
+  if (value.outcome !== "succeeded" && value.candidate !== null) {
+    ctx.addIssue({ code: "custom", path: ["candidate"], message: "Only successful results may contain a candidate" });
+  }
+  if (value.outcome === "no_candidate" && value.providerDiagnostic === "success" && value.candidate !== null) {
+    ctx.addIssue({ code: "custom", path: ["candidate"], message: "No-candidate results cannot contain a candidate" });
+  }
+});
+
+export const aiExtractionGroundingSchema = z.object({
+  pageNumber: z.number().int().positive(),
+  startOffset: z.number().int().nonnegative(),
+  endOffset: z.number().int().positive(),
+  locatorQuote: z.string().min(1).max(4000),
+  locatorPrefix: z.string().max(120).nullable().optional(),
+  locatorSuffix: z.string().max(120).nullable().optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.endOffset <= value.startOffset) {
+    ctx.addIssue({ code: "custom", path: ["endOffset"], message: "Grounding range must be non-empty and forward" });
+  }
+  if (value.endOffset - value.startOffset > 4000) {
+    ctx.addIssue({ code: "custom", path: ["endOffset"], message: "Grounding range cannot exceed 4000 code points" });
+  }
+});
+
+export const aiExtractionDecisionSchema = z.discriminatedUnion("decision", [
+  z.object({ decision: z.literal("rejected"), researcherNote: optionalText }),
+  z.object({
+    decision: z.literal("accepted"),
+    acceptanceMode: z.enum(["accept", "edit_and_accept"]),
+    expectedCurrentExtractionRevisionId: idSchema.nullable(),
+    valueState: aiExtractionValueStateSchema,
+    textValue: z.string().max(10000).nullable(),
+    numberValue: z.string().regex(/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/).nullable(),
+    booleanValue: z.boolean().nullable(),
+    optionId: idSchema.nullable(),
+    groundingIds: z.array(idSchema).max(8),
+    researcherNote: optionalText,
+  }).superRefine((value, ctx) => {
+    if (new Set(value.groundingIds).size !== value.groundingIds.length) {
+      ctx.addIssue({ code: "custom", path: ["groundingIds"], message: "Selected groundings cannot contain duplicates" });
+    }
+    if (value.valueState !== "cleared" && value.groundingIds.length === 0) {
+      ctx.addIssue({ code: "custom", path: ["groundingIds"], message: "Grounded AI acceptances require at least one selected passage" });
+    }
+    if (value.valueState === "cleared" && (value.textValue !== null || value.numberValue !== null || value.booleanValue !== null || value.optionId !== null || value.groundingIds.length > 0)) {
+      ctx.addIssue({ code: "custom", path: ["valueState"], message: "Cleared acceptances cannot contain values or groundings" });
+    }
+  }),
+]);
+
+export type AiExtractionRequestInput = z.input<typeof aiExtractionRequestSchema>;
+export type AiExtractionResultInput = z.input<typeof aiExtractionResultSchema>;
+export type AiExtractionGroundingInput = z.input<typeof aiExtractionGroundingSchema>;
+export type AiExtractionDecisionInput = z.input<typeof aiExtractionDecisionSchema>;

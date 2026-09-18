@@ -14,7 +14,7 @@ describe("Slice 13 full-text retrieval core", () => {
   beforeAll(async () => { await migrate(db, { migrationsFolder: "./drizzle" }); });
   beforeEach(async () => { projectId = (await services.createProject({ title: `Retrieval project ${crypto.randomUUID()}` })).id; });
   afterAll(async () => {
-    await client.unsafe("TRUNCATE TABLE manuscript_snapshot_warnings, manuscript_snapshot_claim_bibliography_members, manuscript_snapshot_bibliography_entries, manuscript_snapshot_claim_items, manuscript_snapshot_prose_items, manuscript_snapshot_items, manuscript_snapshot_sections, manuscript_snapshots, research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, full_text_retrieval_attempts");
+    await client.unsafe("TRUNCATE TABLE ai_extraction_decision_evidence, ai_extraction_decisions, ai_extraction_result_groundings, ai_extraction_results, ai_extraction_dispatches, ai_extraction_request_pages, ai_extraction_requests, manuscript_snapshot_warnings, manuscript_snapshot_claim_bibliography_members, manuscript_snapshot_bibliography_entries, manuscript_snapshot_claim_items, manuscript_snapshot_prose_items, manuscript_snapshot_items, manuscript_snapshot_sections, manuscript_snapshots, research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, full_text_retrieval_attempts");
     await client.end();
   });
 

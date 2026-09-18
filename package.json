@@ -28,6 +28,7 @@
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.44.5",
     "next": "^15.5.2",
+    "openai": "^7.18.0",
     "pdfjs-dist": "6.3.289",
     "postgres": "^3.4.7",
     "react": "^19.1.1",

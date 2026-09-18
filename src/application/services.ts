@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { extractionRevisionEvidence, extractionValues, extractionValueRevisions, synthesisStatements, synthesisRevisions, retrievedRecordMatches, fullTextDocuments } from "@/db/schema";
+import { synthesisStatements, synthesisRevisions, retrievedRecordMatches, fullTextDocuments } from "@/db/schema";
 import { DomainError, isConstraintError } from "@/domain/errors";
 import {
   claimEvidenceInputSchema,
@@ -84,6 +84,7 @@ import {
   type DocumentTextExtractionServices,
 } from "./document-text-extraction-services";
 import { createEvidenceCurationServices, requireEvidenceUsableForNewDirectSupport } from "./evidence-curation-services";
+import { writeExtractedExtractionRevision } from "./extraction-value-writer";
 import { createEvidenceSetServices } from "./evidence-set-services";
 import { createSynthesisPreparationServices } from "./synthesis-preparation-services";
 import { createSynthesisInterpretationServices } from "./synthesis-interpretation-services";
@@ -913,17 +914,14 @@ export function createReviewServices(db: Database, options: {
         }
         const evidenceItems = await Promise.all(evidenceIds.map((id) => requireEvidence(projectId, id)));
         if (evidenceItems.some((item) => item.paperId !== paperId)) throw new DomainError("CROSS_PROJECT_REFERENCE", "Evidence must belong to the same paper as the extraction value");
-        let slot = await tx.select().from(extractionValues).where(and(eq(extractionValues.projectId, projectId), eq(extractionValues.paperId, paperId), eq(extractionValues.fieldId, field.id))).limit(1).then((rows) => rows[0]);
-        if (!slot) {
-          const rows = await tx.insert(extractionValues).values({ projectId, paperId, fieldId: field.id }).returning();
-          slot = rows[0];
-        }
-        const inserted = await tx.insert(extractionValueRevisions).values({ projectId, paperId, fieldId: field.id, extractionValueId: slot.id, fieldType: field.fieldType, ...payload }).returning();
-        const revision = inserted[0];
-        for (const evidenceId of evidenceIds) await tx.insert(extractionRevisionEvidence).values({ projectId, paperId, revisionId: revision.id, evidenceId });
-        const finalized = await tx.update(extractionValueRevisions).set({ finalizedAt: new Date() }).where(and(eq(extractionValueRevisions.projectId, projectId), eq(extractionValueRevisions.id, revision.id))).returning();
-        await tx.update(extractionValues).set({ updatedAt: new Date() }).where(and(eq(extractionValues.projectId, projectId), eq(extractionValues.id, slot.id)));
-        return finalized[0];
+        return writeExtractedExtractionRevision(tx, {
+          projectId,
+          paperId,
+          fieldId: field.id,
+          fieldType: field.fieldType as ExtractionFieldType,
+          ...payload,
+          evidenceIds,
+        });
       });
     },
 

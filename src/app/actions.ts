@@ -1,9 +1,10 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { DomainError } from "@/domain/errors";
 import type { FullTextRetrievalMethod, ConvergenceState, LimitationCategory } from "@/domain/types";
-import { reviewServices } from "./server";
+import { aiExtractionServices, reviewServices } from "./server";
 
 function text(form: FormData, key: string) {
   const value = form.get(key);
@@ -26,6 +27,96 @@ function errorMessage(error: unknown) {
 
 function fail(path: string, error: unknown): never {
   redirect(`${path}${path.includes("?") ? "&" : "?"}error=${encodeURIComponent(errorMessage(error))}`);
+}
+
+export async function beginAiExtractionSuggestionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  let began: { requestId: string };
+  try {
+    began = await aiExtractionServices.beginAiExtractionSuggestion({
+      projectId,
+      paperId,
+      fieldId: text(form, "fieldId"),
+      fullTextDocumentId: text(form, "fullTextDocumentId"),
+      documentTextExtractionId: text(form, "documentTextExtractionId"),
+      pageNumbers: form.getAll("pageNumbers").map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0),
+      idempotencyKey: text(form, "idempotencyKey") || randomUUID(),
+      model: optional(form, "model"),
+      reasoningEffort: (optional(form, "reasoningEffort") ?? "low") as "none" | "minimal" | "low" | "medium" | "high" | "xhigh",
+      externalTransmissionAcknowledged: form.get("externalTransmissionAcknowledged") === "on",
+      disclosureVersion: text(form, "disclosureVersion") || "openai-extraction-transmission-v1",
+    }) as { requestId: string };
+  } catch (error) {
+    fail(`/projects/${projectId}/extraction/${paperId}`, error);
+  }
+  redirect(`/projects/${projectId}/extraction/${paperId}/suggestions/${began.requestId}`);
+}
+
+export async function executeAiExtractionSuggestionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  const requestId = text(form, "requestId");
+  try { await aiExtractionServices.executeAiExtractionSuggestion(requestId, projectId); }
+  catch (error) { fail(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`, error); }
+  redirect(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`);
+}
+
+export async function expireAiExtractionSuggestionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  const requestId = text(form, "requestId");
+  try { await aiExtractionServices.expireAiExtractionSuggestion(requestId, projectId); }
+  catch (error) { fail(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`, error); }
+  redirect(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`);
+}
+
+export async function rejectAiExtractionSuggestionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  const requestId = text(form, "requestId");
+  try { await aiExtractionServices.rejectAiExtractionSuggestion(projectId, requestId); }
+  catch (error) { fail(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`, error); }
+  redirect(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}?saved=rejected`);
+}
+
+export async function acceptAiExtractionSuggestionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  const requestId = text(form, "requestId");
+  const mode = text(form, "mode") === "edit_and_accept" ? "edit_and_accept" : "accept";
+  const state = text(form, "state") as "present" | "not_reported" | "not_applicable" | "cleared" | "";
+  const kind = text(form, "valueKind");
+  const rawValue = form.get("value");
+  let value: string | boolean | undefined;
+  if (state === "present" && typeof rawValue === "string" && rawValue !== "") {
+    // Keep decimal input as text through the server boundary so numeric(30,10)
+    // validation never loses precision through a JavaScript Number conversion.
+    value = kind === "boolean"
+      ? rawValue === "true" ? true : rawValue === "false" ? false : rawValue
+      : rawValue;
+  }
+  let reusedEvidenceByGroundingId: Record<string, string> | undefined;
+  const reused = optional(form, "reusedEvidenceByGroundingId");
+  if (reused) {
+    try { reusedEvidenceByGroundingId = JSON.parse(reused) as Record<string, string>; } catch { reusedEvidenceByGroundingId = undefined; }
+  }
+  try {
+    await aiExtractionServices.acceptAiExtractionSuggestion({
+      projectId,
+      requestId,
+      mode,
+      expectedCurrentRevisionId: optional(form, "expectedCurrentRevisionId") ?? null,
+      state: state || undefined,
+      value,
+      researcherNote: optional(form, "researcherNote") ?? null,
+      groundingIds: form.getAll("groundingIds").filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0),
+      reusedEvidenceByGroundingId,
+    });
+  } catch (error) {
+    fail(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`, error);
+  }
+  redirect(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}?saved=accepted`);
 }
 
 export async function createProjectAction(form: FormData) {

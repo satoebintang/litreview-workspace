@@ -1570,3 +1570,128 @@ export interface ResearchQuestionAnswerManuscriptProjection {
   claimContexts: AnswerClaimManuscriptContext[];
   synthesisContexts: AnswerSynthesisManuscriptContext[];
 }
+
+// Slice 26: AI suggestions are assistive workflow records. They never replace
+// the ordinary Evidence or ExtractionRevision domain objects.
+export type AiExtractionRequestId = string;
+export type AiExtractionRequestPageId = string;
+export type AiExtractionDispatchId = string;
+export type AiExtractionResultId = string;
+export type AiExtractionGroundingId = string;
+export type AiExtractionDecisionId = string;
+export type AiExtractionOutcome = "succeeded" | "no_candidate" | "provider_unavailable" | "failed" | "invalid_output" | "unresolvable_grounding" | "outcome_unknown";
+export type AiExtractionProviderDiagnostic = "success" | "refusal" | "incomplete" | "schema_invalid" | "transport_error" | "api_error" | "unknown";
+export type AiExtractionAcceptanceMode = "accept" | "edit_and_accept";
+export type AiExtractionDecisionKind = "accepted" | "rejected";
+
+export interface AiExtractionOptionSnapshot {
+  id: string;
+  label: string;
+  sortOrder: number;
+}
+
+export interface AiExtractionRequest {
+  id: AiExtractionRequestId;
+  projectId: ProjectId;
+  paperId: PaperId;
+  extractionFieldId: ExtractionFieldId;
+  fullTextDocumentId: FullTextDocumentId;
+  documentTextExtractionId: DocumentTextExtractionId;
+  baselineExtractionRevisionId: string | null;
+  idempotencyKey: string;
+  intentHash: string;
+  fieldNameSnapshot: string;
+  fieldDescriptionSnapshot: string | null;
+  fieldType: ExtractionFieldType;
+  optionSnapshot: AiExtractionOptionSnapshot[];
+  provider: string;
+  configuredModel: string;
+  configuredReasoningEffort: string;
+  promptVersion: string;
+  responseSchemaVersion: string;
+  groundingResolverVersion: string;
+  contextSelectionVersion: string;
+  sourceCharacterCount: number;
+  sourceByteSize: number;
+  pageManifestHash: string;
+  externalTransmissionAcknowledged: true;
+  disclosureVersion: string;
+  createdAt: Date;
+  finalizedAt: Date;
+}
+
+export interface AiExtractionRequestPage {
+  id: AiExtractionRequestPageId;
+  projectId: ProjectId;
+  requestId: AiExtractionRequestId;
+  pageId: string;
+  paperId: PaperId;
+  fullTextDocumentId: FullTextDocumentId;
+  documentTextExtractionId: DocumentTextExtractionId;
+  pageNumber: number;
+  pageOrdinal: number;
+  textSha256: string;
+  characterCount: number;
+  byteSize: number;
+  createdAt: Date;
+}
+
+export interface AiExtractionCandidate {
+  state: Exclude<ExtractionValueState, "cleared">;
+  textValue: string | null;
+  numberValue: string | null;
+  booleanValue: boolean | null;
+  optionId: string | null;
+  explanation: string | null;
+}
+
+export interface AiExtractionResult extends AiExtractionCandidate {
+  id: AiExtractionResultId;
+  projectId: ProjectId;
+  requestId: AiExtractionRequestId;
+  outcome: AiExtractionOutcome;
+  providerDiagnostic: AiExtractionProviderDiagnostic;
+  errorCode: string | null;
+  providerRequestId: string | null;
+  configuredModel: string;
+  returnedModel: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  durationMs: number | null;
+  createdAt: Date;
+  finalizedAt: Date;
+}
+
+export interface AiExtractionResultGrounding {
+  id: AiExtractionGroundingId;
+  projectId: ProjectId;
+  requestId: AiExtractionRequestId;
+  resultId: AiExtractionResultId;
+  pageId: string;
+  pageNumber: number;
+  startOffset: number;
+  endOffset: number;
+  locatorQuote: string;
+  locatorPrefix: string | null;
+  locatorSuffix: string | null;
+  sourceText: string;
+  createdAt: Date;
+}
+
+export interface AiExtractionDecision {
+  id: AiExtractionDecisionId;
+  projectId: ProjectId;
+  requestId: AiExtractionRequestId;
+  decision: AiExtractionDecisionKind;
+  acceptanceMode: AiExtractionAcceptanceMode | null;
+  expectedCurrentExtractionRevisionId: string | null;
+  precedingExtractionRevisionId: string | null;
+  resultingExtractionRevisionId: string | null;
+  valueState: ExtractionValueState | null;
+  textValue: string | null;
+  numberValue: string | null;
+  booleanValue: boolean | null;
+  optionId: string | null;
+  researcherNote: string | null;
+  createdAt: Date;
+}
