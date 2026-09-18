@@ -16,8 +16,10 @@ test.describe("Slice 25 immutable manuscript snapshots", () => {
     const manuscriptId = await page.locator('input[name="manuscriptId"]').first().inputValue();
     await page.getByLabel("Section title").fill("Discussion");
     await page.getByRole("button", { name: "Create section" }).click();
+    await expect(page.getByRole("heading", { name: "Discussion", exact: true })).toBeVisible();
     await page.getByLabel("Section title").fill("Empty section");
     await page.getByRole("button", { name: "Create section" }).click();
+    await expect(page.getByRole("heading", { name: "Empty section", exact: true })).toBeVisible();
     await page.getByLabel("New prose for Discussion").fill("Baseline wording.");
     await page.locator("form").filter({ has: page.getByLabel("New prose for Discussion") }).getByRole("button", { name: "+ Add prose" }).click();
     await expect(page.getByText(/Prose block · position 1 · Revision 1/)).toBeVisible();

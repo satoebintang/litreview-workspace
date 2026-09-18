@@ -80,13 +80,15 @@ test.describe("Slice 7 manuscript workspace", () => {
 
     await page.getByLabel("Citation style").selectOption("numeric");
     await page.getByRole("button", { name: "Apply style" }).click();
-    await expect(page.getByText(/citation numbers: \[1\]/)).toBeVisible();
+    await expect(page.getByText("(First study, n.d.)", { exact: true })).not.toBeVisible();
+    const bibliography = page.locator("section").filter({ has: page.getByRole("heading", { name: "Bibliography candidates", exact: true }) });
+    await expect(bibliography.getByText("[1]", { exact: true })).toBeVisible();
 
     // Prose is plain text and can be interleaved with existing Claim items.
     const introProse = page.getByLabel("New prose for Introduction");
     await introProse.fill("Opening context.\n\nWith intentional whitespace.");
     await page.getByRole("button", { name: "+ Add prose" }).first().click();
-    await expect(page.getByText("Prose block", { exact: false })).toBeVisible();
+    await expect(page.getByText(/Prose block · position \d+ · Revision 1/)).toBeVisible();
     const proseEditor = page.getByLabel("Edit prose block 1");
     await proseEditor.fill("Edited opening context.\nStill plain text.");
     await page.getByRole("button", { name: "Save prose" }).click();
