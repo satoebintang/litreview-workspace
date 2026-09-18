@@ -33,13 +33,28 @@ Snapshot with frozen citation presentation and canonical Markdown export.
 
 ## Verification
 
+Everyday local verification (with PostgreSQL 16 running):
+
 ```bash
 npm run typecheck
 npm run lint
 npm test
 npm run db:check
 npm run build
-npx playwright test
+npx playwright test --workers=1
+```
+
+Complete release verification:
+
+```bash
+npm run typecheck
+npm run lint
+npm run db:check
+npm test
+npm run test:integration
+npm run build
+npx playwright test --workers=1 --retries=0
+git diff --check
 ```
 
 Formal support and citation authority remain on exact ClaimRevision provenance

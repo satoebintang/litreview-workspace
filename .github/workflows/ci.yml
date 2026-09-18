@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: postgres://litreview:litreview@127.0.0.1:5432/litreview
+      PLAYWRIGHT_ADMIN_DATABASE_URL: postgres://litreview:litreview@127.0.0.1:5432/litreview
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: litreview
+          POSTGRES_PASSWORD: litreview
+          POSTGRES_DB: litreview
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U litreview -d litreview"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.13.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Node and PDF.js runtime contract
+        shell: bash
+        run: |
+          node --version
+          node --input-type=module <<'NODE'
+          import { access, readFile } from "node:fs/promises";
+          import { getDocument, version } from "pdfjs-dist/legacy/build/pdf.mjs";
+
+          const packageJson = JSON.parse(await readFile("node_modules/pdfjs-dist/package.json", "utf8"));
+          await access("node_modules/pdfjs-dist/legacy/build/pdf.mjs");
+
+          if (process.versions.node.split(".").slice(0, 3).join(".") !== "22.13.0") {
+            throw new Error(`Expected Node 22.13.0, found ${process.versions.node}`);
+          }
+          if (packageJson.version !== "6.3.289" || version !== "6.3.289") {
+            throw new Error(`Expected pdfjs-dist 6.3.289, found package=${packageJson.version} runtime=${version}`);
+          }
+          if (typeof getDocument !== "function") {
+            throw new Error("pdfjs-dist legacy getDocument is unavailable");
+          }
+
+          console.log(`Node ${process.versions.node}; pdfjs-dist ${packageJson.version}; legacy getDocument available`);
+          NODE
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check Drizzle schema
+        run: npm run db:check
+
+      - name: Run full Vitest suite
+        run: npm test
+
+      - name: Run full integration suite
+        run: npm run test:integration
+
+      - name: Build production application
+        run: npm run build
+
+      - name: Install Playwright Chromium and Linux dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Assert clean Playwright state before E2E
+        shell: bash
+        run: test ! -e .ai/playwright-db.json
+
+      # e2e:server intentionally performs its own migration-owning production
+      # build; keep this second build for the existing release lifecycle and
+      # retain the standalone build gate above for isolated diagnostics.
+      - name: Run serial Playwright release suite
+        run: npx playwright test --workers=1 --retries=0
+
+      - name: Assert Playwright cleanup
+        if: always()
+        shell: bash
+        run: test ! -e .ai/playwright-db.json
