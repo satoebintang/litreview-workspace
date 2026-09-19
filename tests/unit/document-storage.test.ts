@@ -92,7 +92,10 @@ describe("full-text document storage", () => {
     await writeFile(fileProbeTarget, "probe");
     const fileProbe = path.join(root, "file-symlink-probe");
     let fileSymlinkCapable = true;
-    try { await symlink(fileProbeTarget, fileProbe, "file"); }
+    // Linux does not need a type hint; omitting it avoids platform-specific
+    // interpretation while still exercising a real file symlink. Windows
+    // needs the explicit file type when the capability is available.
+    try { await symlink(fileProbeTarget, fileProbe, process.platform === "win32" ? "file" : undefined); }
     catch { fileSymlinkCapable = false; }
     await rm(fileProbe, { force: true });
     await rm(fileProbeOutside, { recursive: true, force: true });
@@ -150,7 +153,7 @@ describe("full-text document storage", () => {
     const sentinel = Buffer.from("outside sentinel");
     await writeFile(outsideFile, sentinel);
     const finalPath = path.join(finalParent, "source.pdf");
-    await symlink(outsideFile, finalPath, "file");
+    await symlink(outsideFile, finalPath, process.platform === "win32" ? "file" : undefined);
     const finalStaged = await storage.stage(Readable.from([Buffer.from("%PDF-1.7\nfinal")]))
     await expect(storage.promote(finalStaged.temporaryKey, `projects/${projectId}/papers/${paperId}/documents/${documentId}/source.pdf`)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
     expect(await readFile(outsideFile)).toEqual(sentinel);
