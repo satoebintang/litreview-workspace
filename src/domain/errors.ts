@@ -10,7 +10,9 @@ export type DomainErrorCode =
   | "DUPLICATE_DOCUMENT"
   | "DOCUMENT_ARCHIVED"
   | "DOCUMENT_NOT_FOUND"
-  | "STORAGE_ERROR";
+  | "STORAGE_ERROR"
+  | "CONCURRENT_MODIFICATION"
+  | "DUPLICATE_REVIEW_REQUIRED";
 
 export class DomainError extends Error {
   constructor(

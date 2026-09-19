@@ -31,6 +31,13 @@ has a stable ProseBlock/ProseRevision history and append-only editorial review;
 an explicit researcher action can also persist an immutable whole-manuscript
 Snapshot with frozen citation presentation and canonical Markdown export.
 
+Paper intake also supports offline BibTeX and RIS imports. Uploads retain their
+original bytes and parsed records as immutable intake provenance; a researcher
+must explicitly match an existing Paper, create a new canonical Paper, or leave
+the record unresolved. Project Papers can be exported as deterministic neutral
+BibTeX. Imported bibliographic records remain separate from SearchRun and
+RetrievedRecord acquisition history.
+
 ## Verification
 
 Everyday local verification (with PostgreSQL 16 running):

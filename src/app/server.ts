@@ -6,6 +6,7 @@ import { OpenAIExtractionSuggestionProvider } from "@/infrastructure/openai-extr
 import {
   createPdfjsTextExtractionParser,
 } from "@/infrastructure/pdfjs-text-extractor";
+import { bibliographicParser } from "@/infrastructure/bibliographic-parser";
 
 const globalForReview = globalThis as unknown as {
   reviewDatabase?: ReturnType<typeof createDb>;
@@ -23,7 +24,7 @@ const maxDocumentBytes = Number.isSafeInteger(configuredMaxBytes) && configuredM
 // contract; PDF.js types and import details remain server-side.
 const documentTextExtractor = createPdfjsTextExtractionParser();
 
-export const reviewServices = createReviewServices(database.db, { documentStorage, maxDocumentBytes, documentTextExtractor });
+export const reviewServices = createReviewServices(database.db, { documentStorage, maxDocumentBytes, documentTextExtractor, bibliographicParser });
 
 const openAiKey = process.env.OPENAI_API_KEY?.trim();
 const configuredAiModel = process.env.AI_EXTRACTION_MODEL?.trim() || "gpt-5.6-luna";
