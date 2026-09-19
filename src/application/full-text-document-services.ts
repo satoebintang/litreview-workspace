@@ -4,10 +4,73 @@ import { sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { fullTextDocuments } from "@/db/schema";
 import { DomainError, isConstraintError } from "@/domain/errors";
-import { documentStorageKey, validateDocumentFilename, validatePdfMetadata } from "@/domain/full-text-documents";
+import { documentStorageKey, isDocumentStorageKey, validateDocumentFilename, validatePdfMetadata } from "@/domain/full-text-documents";
 import type { Evidence, FullTextDocument } from "@/domain/types";
 import { FullTextDocumentRepository, PaperRepository, ProjectRepository } from "./repositories";
 import type { DocumentByteSource, DocumentStorage, StagedDocument } from "@/infrastructure/document-storage";
+
+type FullTextDocumentTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+export type CanonicalFullTextAttachmentResult =
+  | { kind: "created"; document: FullTextDocument; promotedKey: string }
+  | { kind: "duplicate"; document: FullTextDocument };
+
+/**
+ * Attach one already-staged PDF using the released FullTextDocument rules.
+ *
+ * The caller owns the transaction and the retry boundary. In particular, a
+ * retry after promote() has moved the temporary object must create a fresh
+ * StagedDocument before calling this function again.
+ */
+export async function attachStagedFullTextDocumentInTransaction(
+  tx: FullTextDocumentTransaction,
+  documentStorage: DocumentStorage,
+  projectId: string,
+  paperId: string,
+  metadata: FullTextDocumentUploadMetadata,
+  staged: StagedDocument,
+): Promise<CanonicalFullTextAttachmentResult> {
+  const parsed = validatePdfMetadata(metadata);
+  const originalFilename = validateDocumentFilename(parsed.originalFilename);
+  const paperRows = await tx.execute(sql`
+    select id
+    from papers
+    where project_id=${projectId} and id=${paperId}
+    for update
+  `) as unknown as Record<string, unknown>[];
+  if (!paperRows[0]) throw new DomainError("CROSS_PROJECT_REFERENCE", "Paper does not belong to this project");
+
+  const duplicateRows = await tx.execute(sql`
+    select id, project_id, paper_id, storage_key, original_filename, media_type,
+      byte_size, sha256, note, created_at, archived_at
+    from full_text_documents
+    where project_id=${projectId}
+      and paper_id=${paperId}
+      and sha256=${staged.sha256}
+      and archived_at is null
+    order by created_at, id
+    limit 1
+  `) as unknown as Record<string, unknown>[];
+  const duplicate = duplicateRows[0];
+  if (duplicate) {
+    return { kind: "duplicate", document: mapDocument(duplicate as typeof fullTextDocuments.$inferSelect) };
+  }
+
+  const id = randomUUID();
+  const storageKey = documentStorageKey(projectId, paperId, id);
+  const rows = await tx.execute(sql`
+    insert into full_text_documents
+      (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256, note)
+    values
+      (${id}::uuid, ${projectId}::uuid, ${paperId}::uuid, ${storageKey}, ${originalFilename}, 'application/pdf', ${staged.byteSize}, ${staged.sha256}, ${parsed.note ?? null})
+    returning id, project_id, paper_id, storage_key, original_filename, media_type,
+      byte_size, sha256, note, created_at, archived_at
+  `) as unknown as Record<string, unknown>[];
+  const row = rows[0];
+  if (!row) throw new DomainError("DATABASE_CONSTRAINT", "Full-text document could not be created");
+  await documentStorage.promote(staged.temporaryKey, storageKey);
+  return { kind: "created", document: mapDocument(row as typeof fullTextDocuments.$inferSelect), promotedKey: storageKey };
+}
 
 function mapDocument(row: typeof fullTextDocuments.$inferSelect): FullTextDocument {
   return {
@@ -91,30 +154,10 @@ export function createFullTextDocumentServices(db: Database, storage?: DocumentS
     let promotedKey: string | undefined;
     try {
       const documentStorage = requireStorage();
-      const paper = await requirePaper(projectId, paperId);
-      const parsed = validatePdfMetadata(metadata);
-      const originalFilename = validateDocumentFilename(parsed.originalFilename);
       const result = await db.transaction(async (tx) => {
-        const lockedPaper = await paperRepo.findForUpdate(tx, projectId, paper.id);
-        if (!lockedPaper) throw new DomainError("CROSS_PROJECT_REFERENCE", "Paper does not belong to this project");
-        const duplicate = await documentRepo.activeBySha(tx, projectId, paperId, staged.sha256);
-        if (duplicate) return { kind: "duplicate" as const, document: mapDocument(duplicate) };
-        const id = randomUUID();
-        const storageKey = documentStorageKey(projectId, paperId, id);
-        const row = await documentRepo.create(tx, {
-          id,
-          projectId,
-          paperId,
-          storageKey,
-          originalFilename,
-          mediaType: "application/pdf",
-          byteSize: staged.byteSize,
-          sha256: staged.sha256,
-          note: parsed.note ?? null,
-        });
-        promotedKey = storageKey;
-        await documentStorage.promote(staged.temporaryKey, storageKey);
-        return { kind: "created" as const, document: mapDocument(row) };
+        const attached = await attachStagedFullTextDocumentInTransaction(tx, documentStorage, projectId, paperId, metadata, staged);
+        if (attached.kind === "created") promotedKey = attached.promotedKey;
+        return attached;
       });
       if (result.kind === "duplicate") {
         await documentStorage.remove(staged.temporaryKey);
@@ -237,7 +280,7 @@ export function createFullTextDocumentServices(db: Database, storage?: DocumentS
       const keys = new Set(await documentStorage.listKeys());
       const referenced = new Set(rows.map((row) => String(row.storage_key)));
       const projectPrefix = projectId ? `projects/${projectId}/` : null;
-      const finalKeys = [...keys].filter((key) => key.startsWith("projects/") && (!projectPrefix || key.startsWith(projectPrefix)));
+      const finalKeys = [...keys].filter((key) => isDocumentStorageKey(key) && (!projectPrefix || key.startsWith(projectPrefix)));
       return {
         missingFiles: rows.filter((row) => !keys.has(String(row.storage_key))).map((row) => String(row.id)),
         orphanFiles: finalKeys.filter((key) => !referenced.has(key)),
