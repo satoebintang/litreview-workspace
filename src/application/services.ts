@@ -115,6 +115,8 @@ import {
   writeActiveSynthesisRevision,
   lockExtractionRevisionPapers,
 } from "./synthesis-writer";
+import { findPaperCandidates, writePaper } from "./paper-writer";
+import { createBibliographicImportServices, type BibliographicParser, type BibliographicImportServices } from "./bibliographic-import-services";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
   const result = schema.safeParse(input);
@@ -162,6 +164,7 @@ export function createReviewServices(db: Database, options: {
   documentStorage?: DocumentStorage;
   maxDocumentBytes?: number;
   documentTextExtractor?: DocumentTextExtractionParser;
+  bibliographicParser?: BibliographicParser;
 } = {}) {
   const projectRepo = new ProjectRepository(db);
   const paperRepo = new PaperRepository(db);
@@ -183,6 +186,9 @@ export function createReviewServices(db: Database, options: {
   const fullTextDecisionRepo = new FullTextScreeningDecisionRepository(db);
   const paperReviewRepo = new PaperReviewRepository(db);
   const fullTextRetrievalRepo = new FullTextRetrievalAttemptRepository(db);
+  const bibliographicImportServices: BibliographicImportServices | null = options.bibliographicParser
+    ? createBibliographicImportServices(db, { parser: options.bibliographicParser })
+    : null;
 
   async function requireProject(projectId: string) {
     ensureId(projectId);
@@ -1170,7 +1176,47 @@ export function createReviewServices(db: Database, options: {
     async addPaper(projectId: string, input: CreatePaperInput) {
       await requireProject(projectId);
       const values = validate(createPaperSchema, input);
-      return paperRepo.create({ projectId, ...values, publicationYear: values.publicationYear ?? null, venue: values.venue ?? null, doi: values.doi ?? null, abstract: values.abstract ?? null, bibliographicNote: values.bibliographicNote ?? null });
+      const reviewInput = input as CreatePaperInput & { distinctPaperAcknowledged?: boolean; candidatePaperIds?: string[] };
+      // Manual reviewed creation is the only workflow that uses the new
+      // project intake lock. Acquisition and deduplication keep their own
+      // RetrievedRecord/pair lock order and never enter this path.
+      return db.transaction(async (tx) => {
+        const lockedProject = await tx.execute(sql`select id from projects where id=${projectId} for update`);
+        if (!(lockedProject as unknown as unknown[]).length) throw new DomainError("PROJECT_NOT_FOUND", "Project was not found");
+        const candidateRows = await findPaperCandidates(tx, projectId, values);
+        const candidateIds = candidateRows.map((row) => String(row.id));
+        if (candidateIds.length > 0) {
+          const submittedIds = [...new Set(reviewInput.candidatePaperIds ?? [])].sort();
+          const expectedIds = [...candidateIds].sort();
+          if (!reviewInput.distinctPaperAcknowledged || submittedIds.join(",") !== expectedIds.join(",")) {
+            throw new DomainError("DUPLICATE_REVIEW_REQUIRED", "Review candidate Papers before creating a distinct Paper", { candidates: candidateRows });
+          }
+        }
+        return writePaper(tx, projectId, {
+          title: values.title,
+          authors: values.authors,
+          publicationYear: values.publicationYear ?? null,
+          venue: values.venue ?? null,
+          doi: values.doi ?? null,
+          abstract: values.abstract ?? null,
+          bibliographicNote: values.bibliographicNote ?? null,
+        }, { source: "manual" });
+      });
+    },
+    async findManualPaperCandidates(projectId: string, input: CreatePaperInput) {
+      await requireProject(projectId);
+      const values = validate(createPaperSchema, input);
+      return (await findPaperCandidates(db, projectId, values)).map((row) => ({
+        id: String(row.id),
+        projectId: String(row.project_id),
+        title: String(row.title),
+        authors: Array.isArray(row.authors) ? row.authors.map(String) : [],
+        publicationYear: row.publication_year == null ? null : Number(row.publication_year),
+        venue: row.venue == null ? null : String(row.venue),
+        doi: row.doi == null ? null : String(row.doi),
+        abstract: row.abstract == null ? null : String(row.abstract),
+        candidateReason: String(row.candidate_reason),
+      }));
     },
 
     async recordEvidence(projectId: string, input: RecordEvidenceInput) {
@@ -1524,6 +1570,7 @@ export function createReviewServices(db: Database, options: {
     answerWriteServices,
     answerReadServices,
     answerManuscriptServices,
+    ...(bibliographicImportServices ? [bibliographicImportServices] : []),
   ) as typeof baseServices &
     typeof reportingServices &
     DocumentTextExtractionServices &
@@ -1535,7 +1582,8 @@ export function createReviewServices(db: Database, options: {
     ResearchQuestionCoverageServices &
     ResearchQuestionAnswerWriteServices &
     ResearchQuestionAnswerReadServices &
-    ResearchQuestionAnswerManuscriptServices;
+    ResearchQuestionAnswerManuscriptServices &
+    Partial<BibliographicImportServices>;
 }
 
 export { createSynthesisInterpretationServices, createResearchQuestionTraceabilityServices, createResearchQuestionCoverageServices };

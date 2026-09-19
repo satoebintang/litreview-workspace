@@ -50,7 +50,7 @@ const labels: Record<ReviewReportMetricKey, string> = {
   finallyIncluded: "Finally currently included Papers",
   legacyAnalysisAwaitingFullText: "Papers with analysis predating full-text screening",
   historicalAcquisitionOnlyPapers: "Papers with historical but no current acquisition link",
-  manualPapers: "Papers never linked to a RetrievedRecord",
+  manualPapers: "Papers without historical search-acquisition links",
 };
 
 const explanations: Record<ReviewReportMetricKey, string> = {
@@ -90,7 +90,7 @@ const explanations: Record<ReviewReportMetricKey, string> = {
   finallyIncluded: "Papers with current include decisions at both title/abstract and full-text stages.",
   legacyAnalysisAwaitingFullText: "Papers with finalized extraction history and no full-text decision; this is informational and does not alter history.",
   historicalAcquisitionOnlyPapers: "Papers with a historical linked event but no current linked record.",
-  manualPapers: "Papers with no historical linked RetrievedRecord; distinct from the Manual SearchSource.",
+  manualPapers: "Papers with no historical linked RetrievedRecord; this includes manual and bibliographic intake and is distinct from the Manual SearchSource.",
 };
 
 function metric(summary: Record<string, unknown>, key: ReviewReportMetricKey): ReviewReportMetric {

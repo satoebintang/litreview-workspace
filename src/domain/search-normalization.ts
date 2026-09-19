@@ -24,6 +24,14 @@ export function normalizeDoiForComparison(value: string | null | undefined): str
   return normalized.length > 0 ? normalized : null;
 }
 
+/** DOI matching accepts the existing prefix/case normalization only when the
+ * result has the DOI namespace shape. Arbitrary URLs remain source metadata,
+ * but they are not identity signals for reviewed intake candidates. */
+export function isPlausibleDoiForComparison(value: string | null | undefined): boolean {
+  const normalized = normalizeDoiForComparison(value);
+  return normalized !== null && /^10\.\d+\/\S+$/i.test(normalized);
+}
+
 /** Title normalization intentionally does not remove punctuation, fold accents,
  * normalize Unicode, or infer tokens. It is exactly the SQL comparison rule. */
 export function normalizeTitleForComparison(value: string | null | undefined): string | null {

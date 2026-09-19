@@ -4,6 +4,26 @@
 
 The canonical downstream research identity used by screening, retrieval, full-text eligibility, extraction, synthesis, and manuscript work.
 
+## Bibliographic import
+
+An immutable project intake artifact containing the original uploaded BibTeX or
+RIS UTF-8 bytes, source hash, parser provenance, and durable parsed records. It
+is separate from SearchRun/RetrievedRecord acquisition and does not create a
+canonical Paper until an explicit resolution event.
+
+## Bibliographic import record
+
+An immutable parsed metadata snapshot with source key/ordinal, exact
+`[start_byte, end_byte)` offsets into the original upload, field states, and
+parse diagnostics. It remains historical after resolution and never rewrites
+the canonical Paper.
+
+## Bibliographic import resolution
+
+An append-only researcher decision that creates a new canonical Paper, matches
+an existing project Paper, or leaves a record unresolved. Matching establishes
+identity only; it does not merge or overwrite canonical metadata.
+
 ## Full-text retrieval attempt
 
 An immutable historical event recording an effort to obtain sufficient full-text material for a Paper. Its outcome is `pending`, `unavailable`, or `retrieved`.

@@ -33,7 +33,7 @@ async function runMigration(client: postgres.Sql, filename: string) {
   }
 }
 
-describe("Slice 24/26 migration boundaries", () => {
+describe("Slice 24/27 migration boundaries", () => {
   let client: postgres.Sql | undefined;
   let databaseCreated = false;
   let projectId = "";
@@ -168,7 +168,7 @@ describe("Slice 24/26 migration boundaries", () => {
     }
   });
 
-  it("applies the complete 0000 -> 0025 chain to a fresh database", async () => {
+  it("applies the complete 0000 -> 0026 chain to a fresh database", async () => {
     const freshName = `${databaseName}_fresh`;
     const admin = postgres(BASE_URL, { max: 1 });
     let fresh: ReturnType<typeof createDb> | undefined;
@@ -177,16 +177,56 @@ describe("Slice 24/26 migration boundaries", () => {
       fresh = createDb(databaseUrl(freshName));
       await migrate(fresh.db, { migrationsFolder: migrationFolder });
       const [latest] = await fresh.client`select id, hash from drizzle.__drizzle_migrations order by id desc limit 1`;
-      expect(Number(latest.id)).toBe(26);
-      const migrationHash = createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0025_ai_extraction_suggestions.sql"))).digest("hex");
+      expect(Number(latest.id)).toBe(27);
+      const migrationHash = createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0026_bibliographic_intake.sql"))).digest("hex");
       expect(latest.hash).toBe(migrationHash);
       const [revisionTable] = await fresh.client`select to_regclass('public.manuscript_prose_revisions') as table_name`;
       expect(revisionTable.table_name).toBe("manuscript_prose_revisions");
       const [snapshotTable] = await fresh.client`select to_regclass('public.manuscript_snapshots') as table_name`;
       expect(snapshotTable.table_name).toBe("manuscript_snapshots");
+      const [importTable] = await fresh.client`select to_regclass('public.bibliographic_imports') as table_name`;
+      expect(importTable.table_name).toBe("bibliographic_imports");
     } finally {
       if (fresh) await fresh.client.end();
       await admin.unsafe(`drop database if exists "${freshName}"`);
+      await admin.end();
+    }
+  });
+
+  it("applies 0025 -> 0026 to a populated database without rewriting existing Papers", async () => {
+    const populatedName = `${databaseName}_populated`;
+    const admin = postgres(BASE_URL, { max: 1 });
+    let populated: postgres.Sql | undefined;
+    try {
+      await admin.unsafe(`create database "${populatedName}"`);
+      populated = postgres(databaseUrl(populatedName), { max: 1 });
+      const journal = JSON.parse(fs.readFileSync(path.join(migrationFolder, "meta", "_journal.json"), "utf8")) as { entries: Array<{ idx: number; tag: string }> };
+      for (const entry of journal.entries.filter((candidate) => candidate.idx <= 25)) await runMigration(populated, `${entry.tag}.sql`);
+
+      const [{ id: populatedProjectId }] = await populated`insert into projects (title) values ('Populated Slice 27 upgrade') returning id`;
+      const [{ id: populatedPaperId }] = await populated`
+        insert into papers (project_id, title, authors, publication_year, venue, doi, abstract)
+        values (${populatedProjectId}, 'Preserved bibliographic Paper', array['Ada Lovelace'], 2024, 'Journal', '10.1234/preserved', 'Preserved abstract')
+        returning id
+      `;
+
+      await runMigration(populated, "0026_bibliographic_intake.sql");
+
+      const [paper] = await populated`select project_id, title, authors, publication_year, venue, doi, abstract from papers where id=${populatedPaperId}`;
+      expect(String(paper.project_id)).toBe(String(populatedProjectId));
+      expect(String(paper.title)).toBe("Preserved bibliographic Paper");
+      expect(paper.authors).toEqual(["Ada Lovelace"]);
+      expect(Number(paper.publication_year)).toBe(2024);
+      expect(String(paper.venue)).toBe("Journal");
+      expect(String(paper.doi)).toBe("10.1234/preserved");
+      expect(String(paper.abstract)).toBe("Preserved abstract");
+      const [importTable] = await populated`select to_regclass('public.bibliographic_imports') as table_name`;
+      expect(importTable.table_name).toBe("bibliographic_imports");
+      const [recordCount] = await populated`select count(*)::int as count from bibliographic_import_records`;
+      expect(Number(recordCount.count)).toBe(0);
+    } finally {
+      if (populated) await populated.end();
+      await admin.unsafe(`drop database if exists "${populatedName}"`);
       await admin.end();
     }
   });

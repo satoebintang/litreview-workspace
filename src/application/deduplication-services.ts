@@ -7,6 +7,7 @@ import { canonicalizeDeduplicationPair, type DeduplicationDecisionValue, type De
 import { DomainError, isConstraintError } from "@/domain/errors";
 import { createPaperSchema, idSchema } from "@/domain/validation";
 import { DeduplicationDecisionRepository } from "./deduplication-repositories";
+import { writePaper } from "./paper-writer";
 
 const resolutionInput = z.object({ paperId: idSchema.optional(), createFromRecordId: idSchema.optional(), overrides: createPaperSchema.partial().optional() }).refine((v) => Boolean(v.paperId || v.createFromRecordId), "Resolution requires a Paper or source record");
 
@@ -55,8 +56,8 @@ export function createDeduplicationServices(db: Database) {
         if (resolved.paperId) { await requirePaper(projectId, resolved.paperId, tx); targetPaper = resolved.paperId; }
         else if (resolved.createFromRecordId) {
           const source = await requireRecord(projectId, resolved.createFromRecordId, tx);
-          const [created] = await tx.insert(papers).values({ projectId, title: resolved.overrides?.title ?? source.title, authors: resolved.overrides?.authors ?? source.authors, publicationYear: resolved.overrides?.publicationYear ?? source.publicationYear, venue: resolved.overrides?.venue ?? source.venue, doi: resolved.overrides?.doi ?? source.doi, abstract: resolved.overrides?.abstract ?? source.abstract, bibliographicNote: resolved.overrides?.bibliographicNote ?? null }).returning();
-          if (!created) throw new DomainError("DATABASE_CONSTRAINT", "Paper could not be created"); targetPaper = String(created.id);
+          const created = await writePaper(tx, projectId, { title: resolved.overrides?.title ?? source.title, authors: resolved.overrides?.authors ?? source.authors, publicationYear: resolved.overrides?.publicationYear ?? source.publicationYear, venue: resolved.overrides?.venue ?? source.venue, doi: resolved.overrides?.doi ?? source.doi, abstract: resolved.overrides?.abstract ?? source.abstract, bibliographicNote: resolved.overrides?.bibliographicNote ?? null }, { source: "dedup" });
+          targetPaper = String(created.id);
         }
       }
       if (value === "same_work" && resolution !== undefined && !targetPaper) throw new DomainError("VALIDATION_ERROR", "same_work resolution requires a target Paper");
