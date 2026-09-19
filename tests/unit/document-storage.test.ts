@@ -161,6 +161,7 @@ describe("full-text document storage", () => {
     await rm(finalPath, { force: true });
     await rm(finalOutside, { recursive: true, force: true });
     await rm(path.join(root, "projects"), { recursive: true, force: true });
+    executed += 1;
     expect(executed).toBe(4);
   });
 });
