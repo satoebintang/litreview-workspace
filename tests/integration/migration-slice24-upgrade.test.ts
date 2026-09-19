@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -172,10 +173,16 @@ describe("Slice 24/27 migration boundaries", () => {
     const freshName = `${databaseName}_fresh`;
     const admin = postgres(BASE_URL, { max: 1 });
     let fresh: ReturnType<typeof createDb> | undefined;
+    const historicalFolder = fs.mkdtempSync(path.join(os.tmpdir(), "slice24-historical-migrations-"));
     try {
       await admin.unsafe(`create database "${freshName}"`);
       fresh = createDb(databaseUrl(freshName));
-      await migrate(fresh.db, { migrationsFolder: migrationFolder });
+      const journal = JSON.parse(fs.readFileSync(path.join(migrationFolder, "meta", "_journal.json"), "utf8")) as { entries: Array<{ idx: number; tag: string }> };
+      fs.mkdirSync(path.join(historicalFolder, "meta"), { recursive: true });
+      const historicalEntries = journal.entries.filter((entry) => entry.idx <= 26);
+      for (const entry of historicalEntries) fs.copyFileSync(path.join(migrationFolder, `${entry.tag}.sql`), path.join(historicalFolder, `${entry.tag}.sql`));
+      fs.writeFileSync(path.join(historicalFolder, "meta", "_journal.json"), JSON.stringify({ ...journal, entries: historicalEntries }));
+      await migrate(fresh.db, { migrationsFolder: historicalFolder });
       const [latest] = await fresh.client`select id, hash from drizzle.__drizzle_migrations order by id desc limit 1`;
       expect(Number(latest.id)).toBe(27);
       const migrationHash = createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0026_bibliographic_intake.sql"))).digest("hex");
@@ -188,6 +195,7 @@ describe("Slice 24/27 migration boundaries", () => {
       expect(importTable.table_name).toBe("bibliographic_imports");
     } finally {
       if (fresh) await fresh.client.end();
+      fs.rmSync(historicalFolder, { recursive: true, force: true });
       await admin.unsafe(`drop database if exists "${freshName}"`);
       await admin.end();
     }

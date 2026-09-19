@@ -38,6 +38,11 @@ the record unresolved. Project Papers can be exported as deterministic neutral
 BibTeX. Imported bibliographic records remain separate from SearchRun and
 RetrievedRecord acquisition history.
 
+Project intake also accepts PDFs as immutable staged source artifacts. Local
+PDF.js metadata proposals remain separate from canonical Paper metadata until a
+researcher explicitly creates or selects a Paper; only then are the exact bytes
+materialized as an ordinary FullTextDocument.
+
 ## Verification
 
 Everyday local verification (with PostgreSQL 16 running):

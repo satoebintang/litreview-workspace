@@ -4,6 +4,14 @@
 
 The canonical downstream research identity used by screening, retrieval, full-text eligibility, extraction, synthesis, and manuscript work.
 
+## PDF intake
+
+An immutable project-owned staged PDF source artifact. It is not a Paper or a
+FullTextDocument until explicit researcher resolution. Local metadata proposals
+and their field-level provenance remain intake audit history; resolution creates
+or selects the canonical Paper and materializes the exact bytes through the
+ordinary FullTextDocument workflow.
+
 ## Bibliographic import
 
 An immutable project intake artifact containing the original uploaded BibTeX or

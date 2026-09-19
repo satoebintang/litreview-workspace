@@ -20,7 +20,7 @@ export type PaperWriteInput = {
 export type PaperWriteReviewContext = {
   /** The caller owns candidate discovery and policy. The writer only records
    * a validated canonical Paper inside its transaction. */
-  source?: "manual" | "import" | "acquisition" | "dedup";
+  source?: "manual" | "import" | "acquisition" | "dedup" | "pdf_intake";
 };
 
 export async function findPaperCandidates(executor: Pick<Database, "execute">, projectId: string, input: Pick<PaperWriteInput, "title" | "doi" | "publicationYear">) {

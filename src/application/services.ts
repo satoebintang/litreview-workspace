@@ -117,6 +117,7 @@ import {
 } from "./synthesis-writer";
 import { findPaperCandidates, writePaper } from "./paper-writer";
 import { createBibliographicImportServices, type BibliographicParser, type BibliographicImportServices } from "./bibliographic-import-services";
+import { createPdfIntakeServices, type PdfIntakeStorage, type PdfMetadataInspector } from "./pdf-intake-services";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
   const result = schema.safeParse(input);
@@ -162,6 +163,8 @@ type ClaimSupportSnapshot = {
 
 export function createReviewServices(db: Database, options: {
   documentStorage?: DocumentStorage;
+  pdfIntakeStorage?: PdfIntakeStorage;
+  pdfMetadataInspector?: PdfMetadataInspector;
   maxDocumentBytes?: number;
   documentTextExtractor?: DocumentTextExtractionParser;
   bibliographicParser?: BibliographicParser;
@@ -1451,6 +1454,12 @@ export function createReviewServices(db: Database, options: {
     parser: textExtractionParser,
     maxBytes: options.maxDocumentBytes,
   });
+  const pdfIntakeServices = createPdfIntakeServices(db, {
+    intakeStorage: options.pdfIntakeStorage,
+    documentStorage: options.documentStorage,
+    metadataInspector: options.pdfMetadataInspector,
+    maxBytes: options.maxDocumentBytes,
+  });
   const reportingServices = createReviewReportingServices(db, deduplicationServices);
   const curationServices = createEvidenceCurationServices(db, { requireProject, requireEvidence });
   const evidenceSetServices = createEvidenceSetServices(db, { requireProject, requireEvidence });
@@ -1560,6 +1569,7 @@ export function createReviewServices(db: Database, options: {
   return Object.assign(
     baseServices,
     textExtractionServices,
+    pdfIntakeServices,
     reportingServices,
     curationServices,
     evidenceSetServices,
@@ -1574,6 +1584,7 @@ export function createReviewServices(db: Database, options: {
   ) as typeof baseServices &
     typeof reportingServices &
     DocumentTextExtractionServices &
+    typeof pdfIntakeServices &
     typeof curationServices &
     typeof evidenceSetServices &
     typeof synthesisPreparationServices &

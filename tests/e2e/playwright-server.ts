@@ -75,6 +75,10 @@ const requiredSchema = {
   bibliographic_imports: ["id", "project_id", "format", "filename", "source_bytes", "source_sha256", "source_byte_size", "parser_version", "adapter_version", "mapping_version", "status", "expected_record_count", "diagnostics", "error_code", "error_message", "created_at", "finalized_at"],
   bibliographic_import_records: ["id", "project_id", "import_id", "ordinal", "source_key", "source_type", "title", "authors", "abstract", "doi", "url", "publication_year", "venue", "start_byte", "end_byte", "parse_outcome", "field_states", "diagnostics", "created_at", "finalized_at"],
   bibliographic_import_resolutions: ["id", "sequence", "project_id", "import_id", "record_id", "event_type", "paper_id", "expected_previous_resolution_id", "creation_payload", "candidate_paper_id", "candidate_rank", "candidate_reason", "candidate_doi", "candidate_title", "candidate_publication_year", "candidate_venue", "candidate_context", "note", "created_at"],
+  pdf_intakes: ["id", "project_id", "storage_key", "original_filename", "media_type", "byte_size", "sha256", "created_at"],
+  pdf_intake_metadata_results: ["id", "sequence_no", "project_id", "intake_id", "status", "extractor_key", "extractor_version", "pdfjs_version", "mapping_version", "text_scan_version", "doi_algorithm_version", "page_count", "attempted_page_count", "succeeded_page_count", "scanned_code_points", "diagnostics", "error_code", "error_message", "completed_at", "created_at"],
+  pdf_intake_metadata_fields: ["id", "project_id", "intake_id", "result_id", "paper_field", "candidate_ordinal", "value_jsonb", "source_kind", "source_locator", "classification", "diagnostic", "normalized_value", "page_number", "start_offset", "end_offset", "exact_match", "page_text_sha256", "created_at"],
+  pdf_intake_resolutions: ["id", "sequence_no", "project_id", "intake_id", "metadata_result_id", "resolution_kind", "paper_id", "full_text_document_id", "materialization_kind", "creation_payload", "candidate_context", "preview_fingerprint", "request_fingerprint", "created_at"],
 } as const;
 
 type MigrationEntry = { idx: number; tag: string; when: number };
@@ -170,8 +174,8 @@ async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
 async function assertSchema(client: postgres.Sql, databaseName: string) {
   const { migrations } = readExpectedMigrations();
   const expectedLatest = migrations.at(-1);
-  if (!expectedLatest || expectedLatest.tag !== "0026_bibliographic_intake") {
-    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0026_bibliographic_intake, found ${expectedLatest?.tag ?? "none"}`);
+  if (!expectedLatest || expectedLatest.tag !== "0027_pdf_intake_metadata") {
+    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0027_pdf_intake_metadata, found ${expectedLatest?.tag ?? "none"}`);
   }
 
   const migrationRows = await client.unsafe("select id, hash, created_at from drizzle.__drizzle_migrations order by id") as unknown as MigrationRow[];
@@ -183,7 +187,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
     return [];
   });
   if (migrationRows.length !== migrations.length || migrationMismatches.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0026_bibliographic_intake; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0027_pdf_intake_metadata; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
   }
 
   const tableNames = Object.keys(requiredSchema);
@@ -199,7 +203,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
   const missingColumns = Object.entries(requiredSchema).flatMap(([tableName, columns]) => columns.filter((columnName) => !actualColumns.get(tableName)?.has(columnName)).map((columnName) => `${tableName}.${columnName}`));
   const legacyColumns = await client.unsafe("select table_name, column_name from information_schema.columns where table_schema = 'public' and ((table_name = 'projects' and column_name = 'research_question') or (table_name = 'manuscript_prose_blocks' and column_name in ('text', 'updated_at')))") as unknown as Array<{ table_name: string; column_name: string }>;
   if (missingTables.length > 0 || missingColumns.length > 0 || legacyColumns.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0026_bibliographic_intake; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `${row.table_name}.${row.column_name}`).join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0027_pdf_intake_metadata; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `${row.table_name}.${row.column_name}`).join(", ") || "none"}`);
   }
 }
 
@@ -252,7 +256,7 @@ async function main() {
     } finally {
       await database.client.end();
     }
-  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0026_bibliographic_intake verified; storage=${storageRoot}`);
+  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0027_pdf_intake_metadata verified; storage=${storageRoot}`);
 
     child = spawnNext("next-build", [nextBin, "build"], nextEnv);
     const buildExitCode = await waitForProcess(child, "next-build");
