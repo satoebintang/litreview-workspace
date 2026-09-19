@@ -92,6 +92,15 @@ export interface SynthesisWriterDependencies {
   synthesisSupportRepo: SynthesisRevisionSupportRepository;
 }
 
+export interface SynthesisWriterOptions {
+  /**
+   * Optional optimistic-concurrency precondition for an existing target.
+   * `undefined` preserves released manual-finalization semantics; `null`
+   * asserts that the statement currently has no finalized revision.
+   */
+  expectedCurrentTargetRevisionId?: string | null;
+}
+
 /**
  * Shared single authority for writing active synthesis revisions.
  * Canonical lock order: supporting Papers (in UUID order) -> SynthesisStatement.
@@ -103,6 +112,7 @@ export async function writeActiveSynthesisRevision(
   target: SynthesisTarget,
   input: SynthesisRevisionInput,
   deps: SynthesisWriterDependencies,
+  options: SynthesisWriterOptions = {},
 ): Promise<{
   statement: typeof synthesisStatements.$inferSelect;
   revision: typeof synthesisRevisions.$inferSelect;
@@ -110,6 +120,10 @@ export async function writeActiveSynthesisRevision(
 }> {
   const values = validate(synthesisRevisionInputSchema, input);
   const ids = values.extractionRevisionIds ?? [];
+
+  if (target.kind === "new" && options.expectedCurrentTargetRevisionId !== undefined) {
+    throw new DomainError("VALIDATION_ERROR", "A new synthesis target cannot have an expected current revision");
+  }
 
   // 1. Lock supporting Papers in UUID order
   await lockExtractionRevisionPapers(tx, projectId, ids, deps.paperRepo);
@@ -130,6 +144,22 @@ export async function writeActiveSynthesisRevision(
       throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis statement does not belong to this project");
     }
     statement = found;
+
+    if (options.expectedCurrentTargetRevisionId !== undefined) {
+      const currentRows = (await tx.execute(sql`
+        select id
+        from synthesis_revisions
+        where project_id=${projectId}::uuid
+          and synthesis_statement_id=${statement.id}::uuid
+          and finalized_at is not null
+        order by sequence desc
+        limit 1
+      `)) as unknown as Array<Record<string, unknown>>;
+      const currentId = currentRows[0]?.id == null ? null : String(currentRows[0].id);
+      if (currentId !== options.expectedCurrentTargetRevisionId) {
+        throw new DomainError("VALIDATION_ERROR", "The target synthesis statement changed after this AI request was created");
+      }
+    }
   }
 
   // 4. Create active draft revision

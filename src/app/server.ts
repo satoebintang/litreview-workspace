@@ -1,12 +1,15 @@
 import { createReviewServices } from "@/application/services";
 import { boundPdfIntakeDiagnostic, type PdfMetadataInspection, type PdfMetadataProposal } from "@/application/pdf-intake-services";
 import { createAiExtractionSuggestionServices } from "@/application/ai-extraction-suggestion-services";
+import { createAiSynthesisSuggestionServices } from "@/application/ai-synthesis-suggestion-services";
+import { FakeSynthesisSuggestionProvider, type ProviderSynthesisSuggestionResult, type SynthesisSuggestionInput } from "@/application/ai/synthesis-suggestion-provider";
 import { createDb } from "@/db/client";
 import { sha256Hex } from "@/domain/full-text-documents";
 import { LocalDocumentStorage, LocalPdfIntakeStorage } from "@/infrastructure/document-storage";
 import { createPdfMetadataInspector, extractPdfDoiCandidate, type PdfMetadataInspectionResult, type PdfMetadataFieldName } from "@/infrastructure/pdf-metadata-inspector";
 import { isPlausibleDoiForComparison, normalizeDoiForComparison } from "@/domain/search-normalization";
 import { OpenAIExtractionSuggestionProvider } from "@/infrastructure/openai-extraction-suggestion-provider";
+import { OpenAISynthesisSuggestionProvider } from "@/infrastructure/openai-synthesis-suggestion-provider";
 import {
   createPdfjsTextExtractionParser,
 } from "@/infrastructure/pdfjs-text-extractor";
@@ -120,5 +123,46 @@ export const aiExtractionServices = createAiExtractionSuggestionServices(databas
   defaultModel: configuredAiModel,
   defaultReasoningEffort: "low",
 });
+
+const configuredSynthesisModel = process.env.AI_SYNTHESIS_MODEL?.trim() || configuredAiModel;
+const useFakeSynthesisProvider = process.env.AI_SYNTHESIS_TEST_PROVIDER === "fake" && process.env.PLAYWRIGHT_TEST === "1";
+const fakeSynthesisProvider = useFakeSynthesisProvider
+  ? new FakeSynthesisSuggestionProvider({
+      result: (input: SynthesisSuggestionInput): ProviderSynthesisSuggestionResult => ({
+        kind: "success",
+        suggestion: {
+          outcome: "candidate",
+          title: "Deterministic AI synthesis suggestion",
+          statementText: "The selected extraction revisions support a deterministic synthesis candidate.",
+          explanation: "Test-only provider output grounded in every selected support.",
+          groundings: input.supports.map((support) => {
+            const evidence = support.connectingEvidence[0];
+            return { supportId: support.id, evidenceId: String(evidence.id ?? evidence.evidenceId), quote: String(evidence.text ?? evidence.sourceText) };
+          }),
+        },
+        metadata: {
+          provider: "fake",
+          configuredModel: input.model,
+          returnedModel: input.model,
+          responseId: `fake-${input.preparationId}`,
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null,
+          durationMs: 0,
+        },
+      }),
+    })
+  : undefined;
+const aiSynthesisProvider = fakeSynthesisProvider ?? (openAiKey && (process.env.AI_PROVIDER ?? "openai").trim() === "openai"
+  ? new OpenAISynthesisSuggestionProvider({ apiKey: openAiKey, defaultModel: configuredSynthesisModel, defaultReasoningEffort: "low" })
+  : undefined);
+
+export const aiSynthesisServices = createAiSynthesisSuggestionServices(database.db, aiSynthesisProvider, {
+  defaultModel: configuredSynthesisModel,
+  defaultReasoningEffort: "low",
+  finalizePreparationInTransaction: reviewServices.finalizeSynthesisPreparationInTransaction,
+});
+
+export const aiSynthesisProviderAvailable = Boolean(aiSynthesisProvider);
 
 export const aiExtractionProviderAvailable = Boolean(aiProvider);
