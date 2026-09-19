@@ -36,7 +36,7 @@ import {
   type FinalizeSynthesisPreparationSchemaInput,
   idSchema,
 } from "@/domain/validation";
-import { writeActiveSynthesisRevision } from "./synthesis-writer";
+import { writeActiveSynthesisRevision, type ReviewTransaction, type SynthesisWriterOptions } from "./synthesis-writer";
 import type {
   PaperRepository,
   SynthesisStatementRepository,
@@ -109,11 +109,109 @@ export interface SynthesisPreparationServiceDependencies {
   extractionFieldRepo: ExtractionFieldRepository;
 }
 
+export interface FinalizeSynthesisPreparationTransactionOptions extends SynthesisWriterOptions {
+  /** Exact support identities frozen by an AI request. */
+  expectedSelectionIds?: string[];
+}
+
 export function createSynthesisPreparationServices(
   db: Database,
   deps: SynthesisPreparationServiceDependencies,
 ) {
+  async function finalizeSynthesisPreparationInTransaction(
+    tx: ReviewTransaction,
+    projectId: string,
+    preparationId: string,
+    values: FinalizeSynthesisPreparationSchemaInput,
+    options: FinalizeSynthesisPreparationTransactionOptions = {},
+  ) {
+    const [prep] = await tx
+      .select()
+      .from(synthesisPreparations)
+      .where(and(eq(synthesisPreparations.projectId, projectId), eq(synthesisPreparations.id, preparationId)))
+      .for("update")
+      .limit(1);
+
+    if (!prep) {
+      throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis preparation does not belong to this project");
+    }
+    if (prep.status !== "active") {
+      throw new DomainError("VALIDATION_ERROR", "Only active preparations can be finalized");
+    }
+
+    const selectionRows = await tx
+      .select({ extractionRevisionId: synthesisPreparationSelections.extractionRevisionId })
+      .from(synthesisPreparationSelections)
+      .where(
+        and(
+          eq(synthesisPreparationSelections.projectId, projectId),
+          eq(synthesisPreparationSelections.preparationId, preparationId),
+        ),
+      );
+    const selectedIds = selectionRows.map((r) => r.extractionRevisionId);
+    if (options.expectedSelectionIds !== undefined) {
+      const expected = [...options.expectedSelectionIds].sort();
+      const actual = [...selectedIds].sort();
+      if (expected.length !== actual.length || expected.some((id, index) => id !== actual[index])) {
+        throw new DomainError("VALIDATION_ERROR", "Preparation selections changed after this AI request was created");
+      }
+    }
+
+    const target = prep.targetSynthesisStatementId
+      ? ({ kind: "existing", statementId: prep.targetSynthesisStatementId } as const)
+      : ({ kind: "new" } as const);
+
+    const writerOptions: SynthesisWriterOptions = target.kind === "existing" && options.expectedCurrentTargetRevisionId !== undefined
+      ? { expectedCurrentTargetRevisionId: options.expectedCurrentTargetRevisionId }
+      : {};
+    const writerResult = await writeActiveSynthesisRevision(
+      tx,
+      projectId,
+      target,
+      {
+        title: values.title ?? prep.workingTitle ?? null,
+        statementText: values.statementText,
+        researcherNote: values.researcherNote ?? prep.workingNote ?? null,
+        extractionRevisionIds: selectedIds,
+      },
+      {
+        paperRepo: deps.paperRepo,
+        synthesisStatementRepo: deps.synthesisStatementRepo,
+        synthesisRevisionRepo: deps.synthesisRevisionRepo,
+        synthesisSupportRepo: deps.synthesisSupportRepo,
+      },
+      writerOptions,
+    );
+
+    if (
+      writerResult.supportExtractionRevisionIds.length !== selectedIds.length ||
+      !selectedIds.every((id) => writerResult.supportExtractionRevisionIds.includes(id))
+    ) {
+      throw new DomainError("VALIDATION_ERROR", "Finalized synthesis supports must match preparation selections exactly");
+    }
+
+    const [finalizedPrep] = await tx
+      .update(synthesisPreparations)
+      .set({
+        status: "finalized",
+        targetSynthesisStatementId: writerResult.statement.id,
+        finalizedSynthesisRevisionId: writerResult.revision.id,
+        finalizedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(synthesisPreparations.projectId, projectId), eq(synthesisPreparations.id, preparationId)))
+      .returning();
+
+    return {
+      preparation: mapPreparation(finalizedPrep),
+      statement: writerResult.statement,
+      revision: mapSynthesisRevision(writerResult.revision),
+      selectedIds,
+    };
+  }
+
   return {
+    finalizeSynthesisPreparationInTransaction,
     async listEvidenceSetSynthesisFields(projectId: string, evidenceSetId: string) {
       await deps.requireProject(projectId);
       ensureId(evidenceSetId);
@@ -1042,86 +1140,7 @@ export function createSynthesisPreparationServices(
       ensureId(preparationId);
       const values = validate(finalizeSynthesisPreparationSchema, input);
 
-      return db.transaction(async (tx) => {
-        // Canonical lock order: Preparation -> supporting Papers (UUID order) -> SynthesisStatement.
-        // 1. Lock preparation
-        const [prep] = await tx
-          .select()
-          .from(synthesisPreparations)
-          .where(and(eq(synthesisPreparations.projectId, projectId), eq(synthesisPreparations.id, preparationId)))
-          .for("update")
-          .limit(1);
-
-        if (!prep) {
-          throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis preparation does not belong to this project");
-        }
-        if (prep.status !== "active") {
-          throw new DomainError("VALIDATION_ERROR", "Only active preparations can be finalized");
-        }
-
-        // 2. Read current selections
-        const selectionRows = await tx
-          .select({ extractionRevisionId: synthesisPreparationSelections.extractionRevisionId })
-          .from(synthesisPreparationSelections)
-          .where(
-            and(
-              eq(synthesisPreparationSelections.projectId, projectId),
-              eq(synthesisPreparationSelections.preparationId, preparationId),
-            ),
-          );
-        const selectedIds = selectionRows.map((r) => r.extractionRevisionId);
-
-        // 3. Resolve target
-        const target = prep.targetSynthesisStatementId
-          ? ({ kind: "existing", statementId: prep.targetSynthesisStatementId } as const)
-          : ({ kind: "new" } as const);
-
-        // 4. Delegate to shared synthesis writer single authority (locks Papers in UUID order, checks Slice 4 eligibility, locks statement, writes supports and finalizes revision)
-        const writerResult = await writeActiveSynthesisRevision(
-          tx,
-          projectId,
-          target,
-          {
-            title: values.title ?? prep.workingTitle ?? null,
-            statementText: values.statementText,
-            researcherNote: values.researcherNote ?? prep.workingNote ?? null,
-            extractionRevisionIds: selectedIds,
-          },
-          {
-            paperRepo: deps.paperRepo,
-            synthesisStatementRepo: deps.synthesisStatementRepo,
-            synthesisRevisionRepo: deps.synthesisRevisionRepo,
-            synthesisSupportRepo: deps.synthesisSupportRepo,
-          },
-        );
-
-        // 5. Verify exact equality between preparation selections and revision supports
-        if (
-          writerResult.supportExtractionRevisionIds.length !== selectedIds.length ||
-          !selectedIds.every((id) => writerResult.supportExtractionRevisionIds.includes(id))
-        ) {
-          throw new DomainError("VALIDATION_ERROR", "Finalized synthesis supports must match preparation selections exactly");
-        }
-
-        // 6. Update preparation to finalized
-        const [finalizedPrep] = await tx
-          .update(synthesisPreparations)
-          .set({
-            status: "finalized",
-            targetSynthesisStatementId: writerResult.statement.id,
-            finalizedSynthesisRevisionId: writerResult.revision.id,
-            finalizedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(and(eq(synthesisPreparations.projectId, projectId), eq(synthesisPreparations.id, preparationId)))
-          .returning();
-
-        return {
-          preparation: mapPreparation(finalizedPrep),
-          statement: writerResult.statement,
-          revision: mapSynthesisRevision(writerResult.revision),
-        };
-      });
+      return db.transaction((tx) => finalizeSynthesisPreparationInTransaction(tx, projectId, preparationId, values));
     },
 
     async getSynthesisPreparationContextForRevision(

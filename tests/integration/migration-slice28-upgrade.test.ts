@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
@@ -22,15 +23,30 @@ async function runMigration(client: postgres.Sql, filename: string) {
   for (const statement of content.split("--> statement-breakpoint").map((value) => value.trim()).filter(Boolean)) await client.unsafe(statement);
 }
 
+function createSlice28MigrationFolder() {
+  const historicalFolder = fs.mkdtempSync(path.join(os.tmpdir(), "slice28-migrations-"));
+  const journal = JSON.parse(fs.readFileSync(path.join(migrationFolder, "meta", "_journal.json"), "utf8")) as {
+    entries: Array<{ idx: number; tag: string }>;
+  };
+  const slice28Entries = journal.entries.filter((entry) => entry.idx <= 27);
+  fs.mkdirSync(path.join(historicalFolder, "meta"), { recursive: true });
+  for (const entry of slice28Entries) {
+    fs.copyFileSync(path.join(migrationFolder, `${entry.tag}.sql`), path.join(historicalFolder, `${entry.tag}.sql`));
+  }
+  fs.writeFileSync(path.join(historicalFolder, "meta", "_journal.json"), JSON.stringify({ ...journal, entries: slice28Entries }));
+  return historicalFolder;
+}
+
 describe("Slice 28 migration boundaries", () => {
   it("applies 0000 -> 0027 to a fresh database", async () => {
     const name = `slice28_fresh_${Date.now()}`;
+    const slice28MigrationFolder = createSlice28MigrationFolder();
     const admin = postgres(BASE_URL, { max: 1 });
     let db: ReturnType<typeof createDb> | undefined;
     try {
       await admin.unsafe(`create database "${name}"`);
       db = createDb(databaseUrl(name));
-      await migrate(db.db, { migrationsFolder: migrationFolder });
+      await migrate(db.db, { migrationsFolder: slice28MigrationFolder });
       const [latest] = await db.client`select id, hash from drizzle.__drizzle_migrations order by id desc limit 1`;
       expect(Number(latest.id)).toBe(28);
       const migrationHash = createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0027_pdf_intake_metadata.sql"))).digest("hex");
@@ -44,6 +60,7 @@ describe("Slice 28 migration boundaries", () => {
       ]);
     } finally {
       if (db) await db.client.end();
+      fs.rmSync(slice28MigrationFolder, { recursive: true, force: true });
       await admin.unsafe(`drop database if exists "${name}"`);
       await admin.end();
     }
@@ -71,8 +88,8 @@ describe("Slice 28 migration boundaries", () => {
       expect(after).toEqual(before);
       const [intakeTable] = await client`select to_regclass('public.pdf_intakes') as table_name`;
       expect(intakeTable.table_name).toBe("pdf_intakes");
-      expect(journal.entries.at(-1)?.tag).toBe("0027_pdf_intake_metadata");
-      expect(journal.entries.some((entry) => entry.tag.startsWith("0028_"))).toBe(false);
+      const publishedEntries = journal.entries.filter((entry) => entry.idx <= 27);
+      expect(publishedEntries.at(-1)?.tag).toBe("0027_pdf_intake_metadata");
     } finally {
       if (client) await client.end();
       await admin.unsafe(`drop database if exists "${name}"`);

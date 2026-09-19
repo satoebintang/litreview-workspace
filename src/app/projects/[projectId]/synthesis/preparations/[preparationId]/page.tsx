@@ -1,12 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  acceptAiSynthesisSuggestionAction,
   abandonSynthesisPreparationAction,
+  beginAiSynthesisSuggestionAction,
+  executeAiSynthesisSuggestionAction,
+  expireAiSynthesisSuggestionAction,
   finalizeSynthesisPreparationAction,
+  rejectAiSynthesisSuggestionAction,
   replaceSynthesisPreparationSelectionsAction,
   updateSynthesisPreparationAction,
 } from "@/app/actions";
-import { reviewServices } from "@/app/server";
+import { aiSynthesisProviderAvailable, aiSynthesisServices, reviewServices } from "@/app/server";
 import { DomainError } from "@/domain/errors";
 import type { SynthesisCandidate } from "@/domain/types";
 
@@ -45,6 +50,24 @@ function warningLabel(warning: string) {
   }
 }
 
+function frozenSupportValue(support: Record<string, unknown>) {
+  const state = String(support.value_state ?? "").replaceAll("_", " ");
+  if (state !== "present") return state;
+  switch (String(support.field_type)) {
+    case "short_text":
+    case "long_text":
+      return support.text_value == null ? "—" : String(support.text_value);
+    case "number":
+      return support.number_value == null ? "—" : String(support.number_value);
+    case "boolean":
+      return support.boolean_value == null ? "—" : Boolean(support.boolean_value) ? "Yes" : "No";
+    case "single_select":
+      return `${String(support.option_id ?? "—")} · ${String(support.option_label_snapshot ?? "(label unavailable)")}`;
+    default:
+      return String(support.value_canonical ?? "—");
+  }
+}
+
 export default async function SynthesisPreparationWorkspacePage({
   params,
   searchParams,
@@ -71,6 +94,20 @@ export default async function SynthesisPreparationWorkspacePage({
   const existingStatements = await reviewServices.listProjectSynthesis(projectId);
   const prep = workspace.preparation;
   const active = prep.status === "active";
+  type AiDetail = {
+    request: Record<string, unknown>;
+    result: Record<string, unknown> | null;
+    supports: Record<string, unknown>[];
+    sources: Record<string, unknown>[];
+    groundings: Record<string, unknown>[];
+    decision: Record<string, unknown> | null;
+    dispatch: Record<string, unknown> | null;
+  };
+  const aiDetails = (await Promise.all(
+    (await aiSynthesisServices.listAiSynthesisSuggestions(projectId, preparationId)).map(async (item) =>
+      aiSynthesisServices.getAiSynthesisSuggestion(String((item.request as Record<string, unknown>).id), projectId),
+    ),
+  )) as unknown as AiDetail[];
 
   const savedMessage =
     query.saved === "updated"
@@ -79,6 +116,12 @@ export default async function SynthesisPreparationWorkspacePage({
       ? "Candidate selections updated."
       : query.saved === "abandoned"
       ? "Preparation abandoned and frozen."
+      : query.saved === "ai-requested"
+      ? "AI synthesis request created. Execute it below when ready."
+      : query.saved === "ai-rejected"
+      ? "AI synthesis suggestion rejected."
+      : query.saved === "ai-accepted"
+      ? "AI synthesis suggestion accepted into the canonical synthesis path."
       : undefined;
 
   return (
@@ -142,6 +185,99 @@ export default async function SynthesisPreparationWorkspacePage({
           <div className="success-note" role="status">
             {savedMessage}
           </div>
+        )}
+
+        {active && workspace.selectedCount > 0 && (
+          <section className="card section-card" style={{ marginBottom: 16 }}>
+            <div className="section-heading">
+              <div>
+                <h2>AI synthesis suggestion</h2>
+                <p className="hint">
+                  AI will draft from the currently selected ExtractionRevisions and every connecting Evidence passage in this pinned composition. It cannot choose formal support or write canonical research state without your decision.
+                </p>
+              </div>
+              <span className={`status ${aiSynthesisProviderAvailable ? "supported" : "stale"}`}>
+                {aiSynthesisProviderAvailable ? "Provider configured" : "Provider unavailable"}
+              </span>
+            </div>
+            <form action={beginAiSynthesisSuggestionAction}>
+              <input type="hidden" name="projectId" value={projectId} />
+              <input type="hidden" name="preparationId" value={preparationId} />
+              <input type="hidden" name="disclosureVersion" value="openai-synthesis-transmission-v1" />
+              <div className="field">
+                <label>
+                  <input type="checkbox" name="externalTransmissionAcknowledged" required /> I understand the selected values, paper metadata, researcher notes, and connecting Evidence text may be transmitted to the configured AI provider.
+                </label>
+              </div>
+              <button className="button primary" type="submit">Suggest synthesis with AI</button>
+            </form>
+          </section>
+        )}
+
+        {aiDetails.length > 0 && (
+          <section className="card section-card" style={{ marginBottom: 16 }}>
+            <div className="section-heading"><h2>AI suggestion history</h2><span className="count">{aiDetails.length} request{aiDetails.length === 1 ? "" : "s"}</span></div>
+            {aiDetails.map((detail) => {
+              const request = detail.request;
+              const result = detail.result;
+              const decision = detail.decision;
+              const outcome = result == null ? "unresolved" : String(result.outcome);
+              const candidate = result != null && String(result.outcome) === "succeeded";
+              return (
+                <div key={String(request.id)} className="item" style={{ marginBottom: 12 }}>
+                  <div className="item-row">
+                    <div>
+                      <div className="item-title">Request {String(request.id).slice(0, 8)}…</div>
+                      <div className="item-meta">{outcome} · {String(request.supportCount ?? request.support_count ?? "?")} frozen supports · {detail.sources.length} frozen Evidence passages</div>
+                    </div>
+                    <span className={`status ${decision ? "supported" : result ? "stale" : "unsupported"}`}>{decision ? String(decision.decision) : outcome}</span>
+                  </div>
+                  {detail.sources.length > 0 && (
+                    <div className="hint" style={{ marginTop: 8 }}>
+                      Curation states: {[...new Set(detail.sources.map((source) => String(source.evidence_review_state)))].join(", ")}. Source coverage is frozen and includes all connecting Evidence, including rejected or needs-review items.
+                    </div>
+                  )}
+                  <div className="hint" style={{ marginTop: 8 }}>
+                    Frozen field snapshot: {String(request.fieldName ?? request.field_name_snapshot ?? "")} · type {String(request.fieldType ?? request.field_type ?? "")}
+                    {request.fieldDescription != null || request.field_description_snapshot != null ? ` · ${String(request.fieldDescription ?? request.field_description_snapshot)}` : ""}
+                  </div>
+                  {detail.sources.length > 0 && <details style={{ marginTop: 8 }}><summary>Frozen Evidence manifest ({detail.sources.length})</summary><ul className="hint">{detail.sources.map((source) => <li key={`${String(source.extraction_revision_id)}-${String(source.evidence_id)}`}><div><strong>Evidence {String(source.evidence_id)}</strong> · revision {String(source.extraction_revision_id)} · page {String(source.page_number)} · {String(source.evidence_review_state)}</div><div>Frozen text: <span>{String(source.source_text)}</span></div>{source.evidence_note_snapshot != null && <div>Frozen Evidence note: <span>{String(source.evidence_note_snapshot)}</span></div>}</li>)}</ul></details>}
+                  {detail.supports.length > 0 && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary>Frozen support manifest ({detail.supports.length})</summary>
+                      <ul className="hint">
+                        {detail.supports.map((support) => <li key={String(support.extraction_revision_id)}><div><strong>{String(support.paper_title_snapshot)}</strong>{support.paper_publication_year_snapshot != null ? ` (${String(support.paper_publication_year_snapshot)})` : ""} · ExtractionRevision {String(support.extraction_revision_id)}</div><div>Field type: {String(support.field_type)} · value state: {String(support.value_state)} · typed value: <span>{frozenSupportValue(support)}</span></div>{support.researcher_note != null && <div>Frozen researcher extraction note: <span>{String(support.researcher_note)}</span></div>}</li>)}
+                      </ul>
+                    </details>
+                  )}
+                  {detail.groundings.length > 0 && <details className="hint" style={{ marginTop: 8 }}><summary>Frozen grounding locators ({detail.groundings.length})</summary><ul>{detail.groundings.map((grounding) => <li key={String(grounding.id)}><div>ExtractionRevision {String(grounding.extraction_revision_id)} · Evidence {String(grounding.evidence_id)} · offsets {String(grounding.start_offset)}–{String(grounding.end_offset)}</div><div>Exact quote: <span>{String(grounding.locator_quote)}</span></div>{grounding.locator_prefix != null && <div>Prefix: <span>{String(grounding.locator_prefix)}</span></div>}{grounding.locator_suffix != null && <div>Suffix: <span>{String(grounding.locator_suffix)}</span></div>}</li>)}</ul></details>}
+                  {result == null && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <form action={executeAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button secondary" type="submit">Execute provider call</button></form>
+                      <form action={expireAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button ghost" type="submit">Materialize expiry</button></form>
+                    </div>
+                  )}
+                  {candidate && !decision && (
+                    <>
+                      <div className="quote" style={{ marginTop: 8 }}><strong>{String(result?.title ?? "Untitled suggestion")}</strong><br />{String(result?.statementText ?? "")}</div>
+                      {result?.explanation != null && <p className="hint">{String(result.explanation)}</p>}
+                      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                        <form action={acceptAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><input type="hidden" name="mode" value="accept" /><button className="button primary" type="submit">Use unchanged</button></form>
+                        <form action={rejectAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button ghost" type="submit">Reject</button></form>
+                      </div>
+                      <form action={acceptAiSynthesisSuggestionAction} style={{ marginTop: 10 }}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><input type="hidden" name="mode" value="edit_and_accept" /><div className="field"><label htmlFor={`ai-title-${String(request.id)}`}>Edit title</label><input id={`ai-title-${String(request.id)}`} name="title" defaultValue={String(result?.title ?? "")} maxLength={500} /></div><div className="field"><label htmlFor={`ai-statement-${String(request.id)}`}>Edit statement</label><textarea id={`ai-statement-${String(request.id)}`} name="statementText" defaultValue={String(result?.statementText ?? "")} maxLength={10000} required /></div><div className="field"><label htmlFor={`ai-note-${String(request.id)}`}>Researcher note</label><textarea id={`ai-note-${String(request.id)}`} name="researcherNote" maxLength={10000} /></div><button className="button secondary" type="submit">Edit and accept</button></form>
+                    </>
+                  )}
+                  {result != null && String(result.outcome) === "no_candidate" && !decision && (
+                    <>
+                      {result.explanation != null && <p className="hint">{String(result.explanation)}</p>}
+                      <form action={rejectAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button ghost" type="submit">Acknowledge and reject</button></form>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </section>
         )}
 
         {workspace.sourceSetChanged && (
