@@ -87,20 +87,20 @@ describe("full-text document storage", () => {
       return;
     }
 
-    const fileProbeOutside = await mkdtemp(path.join(os.tmpdir(), "litreview_file_symlink_probe_"));
-    const fileProbeTarget = path.join(fileProbeOutside, "file-probe");
-    await writeFile(fileProbeTarget, "probe");
-    const fileProbe = path.join(root, "file-symlink-probe");
-    let fileSymlinkCapable = true;
-    // Linux does not need a type hint; omitting it avoids platform-specific
-    // interpretation while still exercising a real file symlink. Windows
-    // needs the explicit file type when the capability is available.
-    try { await symlink(fileProbeTarget, fileProbe, process.platform === "win32" ? "file" : undefined); }
-    catch { fileSymlinkCapable = false; }
-    await rm(fileProbe, { force: true });
-    await rm(fileProbeOutside, { recursive: true, force: true });
+    // On POSIX, a successful directory-symlink probe is sufficient evidence
+    // that the final-file symlink case must execute. Windows may lack file
+    // symlink privilege even when junctions are available, so retain an
+    // explicit capability probe only for that platform.
+    let fileSymlinkCapable = process.platform !== "win32";
     if (!fileSymlinkCapable) {
-      expect(process.platform).toBe("win32");
+      const fileProbeOutside = await mkdtemp(path.join(os.tmpdir(), "litreview_file_symlink_probe_"));
+      const fileProbeTarget = path.join(fileProbeOutside, "file-probe");
+      await writeFile(fileProbeTarget, "probe");
+      const fileProbe = path.join(root, "file-symlink-probe");
+      try { await symlink(fileProbeTarget, fileProbe, "file"); }
+      catch { fileSymlinkCapable = false; }
+      await rm(fileProbe, { force: true });
+      await rm(fileProbeOutside, { recursive: true, force: true });
     }
 
     let executed = 0;
