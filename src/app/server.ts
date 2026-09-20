@@ -14,6 +14,15 @@ import {
   createPdfjsTextExtractionParser,
 } from "@/infrastructure/pdfjs-text-extractor";
 import { bibliographicParser } from "@/infrastructure/bibliographic-parser";
+import { createPostgresDoiLookupServices } from "@/application/doi-lookup-services";
+import { createCrossrefBibliographicMetadataLookupProvider, buildCrossrefWorkUrl } from "@/infrastructure/crossref-bibliographic-metadata-lookup-provider";
+import {
+  BIBLIOGRAPHIC_METADATA_LOOKUP_CONTRACT_VERSION,
+  CROSSREF_WORK_MAPPING_VERSION,
+  type BibliographicMetadataLookupAttemptAccounting,
+  type BibliographicMetadataLookupResult,
+} from "@/application/bibliographic-metadata-lookup-provider";
+import { createDoiResolutionServices } from "@/application/doi-resolution-services";
 
 const globalForReview = globalThis as unknown as {
   reviewDatabase?: ReturnType<typeof createDb>;
@@ -166,3 +175,74 @@ export const aiSynthesisServices = createAiSynthesisSuggestionServices(database.
 export const aiSynthesisProviderAvailable = Boolean(aiSynthesisProvider);
 
 export const aiExtractionProviderAvailable = Boolean(aiProvider);
+
+function fakeDoiProvider(attemptAccounting: BibliographicMetadataLookupAttemptAccounting) {
+  return {
+    provider: "crossref",
+    contractVersion: BIBLIOGRAPHIC_METADATA_LOOKUP_CONTRACT_VERSION,
+    mappingVersion: CROSSREF_WORK_MAPPING_VERSION,
+    lookup: async (input: { doi: string }): Promise<BibliographicMetadataLookupResult> => {
+      const startedAt = new Date();
+      const endpoint = buildCrossrefWorkUrl(input.doi) ?? "https://api.crossref.org/v1/works/";
+      const lease = await attemptAccounting.begin({ provider: "crossref", doi: input.doi, url: endpoint, attempt: 1, redirect: 0, startedAt });
+      await lease.release({ status: "succeeded", httpStatus: 200, outcomeCode: "fake_response" });
+      const finalizedAt = new Date();
+      return {
+        kind: "success",
+        proposal: {
+          requestedDoi: input.doi,
+          returnedDoi: input.doi,
+          title: "Deterministic Crossref DOI fixture",
+          authors: ["Tracework Fixture"],
+          authorDetails: [{ given: "Tracework", family: "Fixture", literal: null, suffix: null, orcid: null, displayName: "Tracework Fixture", providerSequence: null }],
+          publicationYear: 2026,
+          venue: "Tracework Test Journal",
+          providerType: "journal-article",
+          publisher: "Tracework Test Publisher",
+          url: `https://doi.org/${input.doi}`,
+          sourceSnapshot: {
+            DOI: input.doi,
+            title: ["Deterministic Crossref DOI fixture"],
+            author: [{ given: "Tracework", family: "Fixture" }],
+            authorCount: 1,
+            published: { "date-parts": [[2026]] },
+            "published-print": null,
+            "published-online": null,
+            issued: null,
+            "container-title": ["Tracework Test Journal"],
+            type: "journal-article",
+            publisher: "Tracework Test Publisher",
+            URL: `https://doi.org/${input.doi}`,
+          },
+          warnings: [],
+        },
+        evidence: {
+          provider: "crossref",
+          endpoint,
+          httpStatus: 200,
+          contentType: "application/json",
+          responseByteSize: null,
+          responseSha256: null,
+          observedRateLimitPerSecond: null,
+          observedConcurrencyLimit: null,
+          attemptCount: 1,
+          startedAt,
+          finalizedAt,
+        },
+      };
+    },
+  };
+}
+
+const configuredCrossrefMailto = process.env.CROSSREF_MAILTO?.trim() || (process.env.PLAYWRIGHT_TEST === "1" ? "test@example.com" : "");
+export const doiLookupServices = configuredCrossrefMailto
+  ? createPostgresDoiLookupServices(database.db, (attemptAccounting) => process.env.PLAYWRIGHT_TEST === "1"
+    ? fakeDoiProvider(attemptAccounting)
+    : createCrossrefBibliographicMetadataLookupProvider({
+        mailto: configuredCrossrefMailto,
+        userAgent: process.env.CROSSREF_USER_AGENT?.trim() || undefined,
+        attemptAccounting,
+      }))
+  : undefined;
+export const doiLookupProviderAvailable = Boolean(doiLookupServices);
+export const doiResolutionServices = createDoiResolutionServices(database.db);

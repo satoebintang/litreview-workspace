@@ -37,12 +37,12 @@ async function runMigration(client: postgres.Sql, filename: string) {
   }
 }
 
-function createPublishedMigrationFolder() {
+function createPublishedMigrationFolder(lastIndex = 27) {
   const historicalFolder = fs.mkdtempSync(path.join(os.tmpdir(), "slice29-published-migrations-"));
   const journal = JSON.parse(fs.readFileSync(path.join(migrationFolder, "meta", "_journal.json"), "utf8")) as {
     entries: Array<{ idx: number; tag: string }>;
   };
-  const publishedEntries = journal.entries.filter((entry) => entry.idx <= 27);
+  const publishedEntries = journal.entries.filter((entry) => entry.idx <= lastIndex);
   fs.mkdirSync(path.join(historicalFolder, "meta"), { recursive: true });
   for (const entry of publishedEntries) {
     fs.copyFileSync(path.join(migrationFolder, `${entry.tag}.sql`), path.join(historicalFolder, `${entry.tag}.sql`));
@@ -65,11 +65,12 @@ describe("Slice 29 migration boundaries", () => {
   it("applies 0000 -> 0028 to a fresh database with empty AI synthesis history", async () => {
     const name = `slice29_fresh_${Date.now()}_${randomUUID().slice(0, 8)}`;
     const admin = postgres(BASE_URL, { max: 1 });
+    const historicalFolder = createPublishedMigrationFolder(28);
     let created: ReturnType<typeof createDb> | undefined;
     try {
       await admin.unsafe(`create database "${name}"`);
       created = createDb(databaseUrl(name));
-      await migrate(created.db, { migrationsFolder: migrationFolder });
+      await migrate(created.db, { migrationsFolder: historicalFolder });
 
       const [latest] = await created.client`select id, hash from drizzle.__drizzle_migrations order by id desc limit 1`;
       expect(Number(latest.id)).toBe(29);
@@ -88,6 +89,7 @@ describe("Slice 29 migration boundaries", () => {
       await assertAiSynthesisTablesEmpty(created.client);
     } finally {
       if (created) await created.client.end();
+      fs.rmSync(historicalFolder, { recursive: true, force: true });
       await admin.unsafe(`drop database if exists "${name}"`);
       await admin.end();
     }
