@@ -1,6 +1,7 @@
 import { createReviewServices } from "@/application/services";
 import { boundPdfIntakeDiagnostic, type PdfMetadataInspection, type PdfMetadataProposal } from "@/application/pdf-intake-services";
 import { createAiExtractionSuggestionServices } from "@/application/ai-extraction-suggestion-services";
+import { createAiExtractionBatchServices } from "@/application/ai-extraction-batch-services";
 import { createAiSynthesisSuggestionServices } from "@/application/ai-synthesis-suggestion-services";
 import { FakeSynthesisSuggestionProvider, type ProviderSynthesisSuggestionResult, type SynthesisSuggestionInput } from "@/application/ai/synthesis-suggestion-provider";
 import { createDb } from "@/db/client";
@@ -9,6 +10,7 @@ import { LocalDocumentStorage, LocalPdfIntakeStorage } from "@/infrastructure/do
 import { createPdfMetadataInspector, extractPdfDoiCandidate, type PdfMetadataInspectionResult, type PdfMetadataFieldName } from "@/infrastructure/pdf-metadata-inspector";
 import { isPlausibleDoiForComparison, normalizeDoiForComparison } from "@/domain/search-normalization";
 import { OpenAIExtractionSuggestionProvider } from "@/infrastructure/openai-extraction-suggestion-provider";
+import { FakeExtractionSuggestionProvider, type ProviderSuggestionResult } from "@/application/ai/extraction-suggestion-provider";
 import { OpenAISynthesisSuggestionProvider } from "@/infrastructure/openai-synthesis-suggestion-provider";
 import {
   createPdfjsTextExtractionParser,
@@ -120,17 +122,38 @@ export const reviewServices = createReviewServices(database.db, {
 
 const openAiKey = process.env.OPENAI_API_KEY?.trim();
 const configuredAiModel = process.env.AI_EXTRACTION_MODEL?.trim() || "gpt-5.6-luna";
-const aiProvider = openAiKey && (process.env.AI_PROVIDER ?? "openai").trim() === "openai"
+const useFakeExtractionProvider = process.env.AI_EXTRACTION_TEST_PROVIDER === "fake" && process.env.PLAYWRIGHT_TEST === "1";
+const fakeExtractionProvider = useFakeExtractionProvider
+  ? new FakeExtractionSuggestionProvider({
+      result: (input): ProviderSuggestionResult => {
+        const metadata = { provider: "fake" as const, configuredModel: input.model, returnedModel: input.model, responseId: `fake-${input.field.id}`, inputTokens: null, outputTokens: null, totalTokens: null, durationMs: 0 };
+        const mode = input.field.name.toLowerCase();
+        if (mode.includes("failure")) return { kind: "failure", failure: "api_error", code: "fake_failure", metadata };
+        if (mode.includes("no candidate") || input.pages.length === 0) return { kind: "success", suggestion: { outcome: "no_candidate", state: null, value: null, explanation: "The deterministic test provider found no candidate.", groundings: [] }, metadata };
+        const page = input.pages[0];
+        const quote = page.text.trim().slice(0, 80);
+        if (!quote) return { kind: "success", suggestion: { outcome: "no_candidate", state: null, value: null, explanation: "The deterministic test provider found no candidate.", groundings: [] }, metadata };
+        const value = input.field.fieldType === "boolean" ? true : input.field.fieldType === "number" ? "42" : input.field.fieldType === "single_select" ? input.field.options[0]?.id ?? null : quote;
+        if (value === null) return { kind: "success", suggestion: { outcome: "no_candidate", state: null, value: null, explanation: "The deterministic test provider found no candidate.", groundings: [] }, metadata };
+        return { kind: "success", suggestion: { outcome: "candidate", state: "present", value, explanation: "Deterministic test provider output.", groundings: [{ pageId: page.id, quote }] }, metadata };
+      },
+    })
+  : undefined;
+const aiProvider = fakeExtractionProvider ?? (openAiKey && (process.env.AI_PROVIDER ?? "openai").trim() === "openai"
   ? new OpenAIExtractionSuggestionProvider({
       apiKey: openAiKey,
       defaultModel: configuredAiModel,
       defaultReasoningEffort: "low",
     })
-  : undefined;
+  : undefined);
 
 export const aiExtractionServices = createAiExtractionSuggestionServices(database.db, aiProvider, {
   defaultModel: configuredAiModel,
   defaultReasoningEffort: "low",
+});
+export const aiExtractionBatchServices = createAiExtractionBatchServices(database.db, aiExtractionServices, {
+  configuredModel: configuredAiModel,
+  providerAvailable: Boolean(aiProvider),
 });
 
 const configuredSynthesisModel = process.env.AI_SYNTHESIS_MODEL?.trim() || configuredAiModel;

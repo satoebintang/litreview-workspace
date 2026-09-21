@@ -182,6 +182,27 @@ export function utf8ByteLength(value: string): number {
 }
 
 /**
+ * This is the exact JSON payload sent to the provider.  Keep the field order
+ * stable: the byte count is part of the request eligibility contract and is
+ * also used by batch preview.  The provider configuration belongs in the
+ * payload as well as the Responses API envelope so a large description or
+ * option vocabulary cannot pass preview and fail only at dispatch.
+ */
+export function serializeExtractionSuggestionInput(input: ExtractionSuggestionInput): string {
+  return JSON.stringify({
+    field: input.field,
+    pages: input.pages,
+    model: input.model,
+    reasoningEffort: input.reasoningEffort,
+    promptVersion: input.promptVersion,
+    responseSchemaVersion: input.responseSchemaVersion,
+    groundingResolverVersion: input.groundingResolverVersion,
+    contextSelectionVersion: input.contextSelectionVersion,
+    sourceCoverage: input.sourceCoverage,
+  });
+}
+
+/**
  * Validate the frozen request before any source text is transmitted. This
  * deliberately does not trim, normalize, or otherwise transform page text.
  */
@@ -210,11 +231,7 @@ export function validateSuggestionInput(input: ExtractionSuggestionInput):
   if (input.pages.some((page) => !Number.isInteger(page.pageNumber) || page.pageNumber <= 0 || page.text.length === 0)) {
     return { ok: false, code: "invalid_input", detail: "invalid_page" };
   }
-  const serializedInput = JSON.stringify({
-    field: input.field,
-    sourceCoverage: input.sourceCoverage,
-    pages: input.pages,
-  });
+  const serializedInput = serializeExtractionSuggestionInput(input);
   const serializedInputBytes = utf8ByteLength(serializedInput);
   if (serializedInputBytes > AI_EXTRACTION_LIMITS.maxSerializedInputBytes) {
     return { ok: false, code: "input_too_large", detail: "serialized_input_limit_exceeded" };
@@ -311,7 +328,7 @@ export const PROVIDER_SUGGESTION_JSON_SCHEMA = {
 } as const;
 
 export interface FakeProviderOptions {
-  result: ProviderSuggestionResult;
+  result: ProviderSuggestionResult | ((input: ExtractionSuggestionInput) => ProviderSuggestionResult);
   onInvocation?: (input: ExtractionSuggestionInput) => void;
 }
 
@@ -324,6 +341,7 @@ export class FakeExtractionSuggestionProvider implements ExtractionSuggestionPro
   async suggest(input: ExtractionSuggestionInput): Promise<ProviderSuggestionResult> {
     this.invocationCount += 1;
     this.options.onInvocation?.(input);
-    return structuredClone(this.options.result);
+    const result = typeof this.options.result === "function" ? this.options.result(input) : this.options.result;
+    return structuredClone(result);
   }
 }

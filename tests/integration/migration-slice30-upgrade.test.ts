@@ -53,10 +53,11 @@ async function freshDatabase(prefix: string) {
 describe("Slice 30 migration boundary", () => {
   it("applies the complete chain through 0029 with empty DOI lookup history", async () => {
     const createdDatabase = await freshDatabase("slice30_fresh");
+    const folder = historicalFolder(29);
     let created: ReturnType<typeof createDb> | undefined;
     try {
       created = createDb(createdDatabase.url);
-      await migrate(created.db, { migrationsFolder: migrationFolder });
+      await migrate(created.db, { migrationsFolder: folder });
       const [latest] = await created.client`select id, hash from drizzle.__drizzle_migrations order by id desc limit 1`;
       expect(Number(latest.id)).toBe(30);
       expect(latest.hash).toBe(createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0029_doi_metadata_lookup.sql"))).digest("hex"));
@@ -66,6 +67,7 @@ describe("Slice 30 migration boundary", () => {
       }
     } finally {
       if (created) await created.client.end();
+      fs.rmSync(folder, { recursive: true, force: true });
       await createdDatabase.admin.unsafe(`drop database if exists "${createdDatabase.name}"`);
       await createdDatabase.admin.end();
     }

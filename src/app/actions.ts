@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { DomainError } from "@/domain/errors";
 import type { FullTextRetrievalMethod, ConvergenceState, LimitationCategory } from "@/domain/types";
-import { aiExtractionServices, aiSynthesisServices, doiLookupServices, doiResolutionServices, reviewServices } from "./server";
+import { aiExtractionBatchServices, aiExtractionServices, aiSynthesisServices, doiLookupServices, doiResolutionServices, reviewServices } from "./server";
 
 function text(form: FormData, key: string) {
   const value = form.get(key);
@@ -211,6 +211,80 @@ export async function acceptAiExtractionSuggestionAction(form: FormData) {
     fail(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`, error);
   }
   redirect(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}?saved=accepted`);
+}
+
+function batchItems(form: FormData) {
+  const raw = verbatimText(form, "itemsJson");
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) throw new Error("itemsJson must be an array");
+    return parsed.map((item) => {
+      if (!item || typeof item !== "object") throw new Error("Every batch item must be an object");
+      const value = item as Record<string, unknown>;
+      return {
+        paperId: String(value.paperId ?? ""),
+        fieldId: String(value.fieldId ?? ""),
+        fullTextDocumentId: value.fullTextDocumentId == null ? undefined : String(value.fullTextDocumentId),
+        documentTextExtractionId: value.documentTextExtractionId == null ? undefined : String(value.documentTextExtractionId),
+        idempotencyKey: value.idempotencyKey == null ? undefined : String(value.idempotencyKey),
+      };
+    });
+  } catch (error) {
+    throw new DomainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Batch item JSON is invalid");
+  }
+}
+
+export async function previewAiExtractionBatchAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  let preview: Awaited<ReturnType<typeof aiExtractionBatchServices.previewAiExtractionBatch>>;
+  try {
+    preview = await aiExtractionBatchServices.previewAiExtractionBatch({
+      projectId,
+      items: batchItems(form),
+      model: optional(form, "model"),
+      reasoningEffort: "low",
+      externalTransmissionAcknowledged: form.get("externalTransmissionAcknowledged") === "on",
+    });
+  } catch (error) {
+    fail(`/projects/${projectId}/extraction/batches/new`, error);
+  }
+  redirect(`/projects/${projectId}/extraction/batches/new?previewHash=${encodeURIComponent(preview.confirmationHash)}&cells=${preview.counts.cells}&executable=${preview.counts.executable}&reusable=${preview.counts.reusable}`);
+}
+
+export async function createAiExtractionBatchAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  let batch: Awaited<ReturnType<typeof aiExtractionBatchServices.createAiExtractionBatch>>;
+  try {
+    const confirmationHash = optional(form, "confirmationHash");
+    if (!confirmationHash) throw new DomainError("VALIDATION_ERROR", "Review the batch preview before creating it");
+    const preview = await aiExtractionBatchServices.previewAiExtractionBatch({
+      projectId,
+      items: batchItems(form),
+      model: optional(form, "model"),
+      reasoningEffort: "low",
+      externalTransmissionAcknowledged: form.get("externalTransmissionAcknowledged") === "on",
+    });
+    batch = await aiExtractionBatchServices.createAiExtractionBatch(preview, confirmationHash);
+  } catch (error) {
+    fail(`/projects/${projectId}/extraction/batches/new`, error);
+  }
+  redirect(`/projects/${projectId}/extraction/batches/${batch.batchId}`);
+}
+
+export async function processAiExtractionBatchAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const batchId = text(form, "batchId");
+  try { await aiExtractionBatchServices.executeAiExtractionBatch(projectId, batchId); }
+  catch (error) { fail(`/projects/${projectId}/extraction/batches/${batchId}`, error); }
+  redirect(`/projects/${projectId}/extraction/batches/${batchId}`);
+}
+
+export async function cancelAiExtractionBatchAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const batchId = text(form, "batchId");
+  try { await aiExtractionBatchServices.cancelAiExtractionBatch(batchId, projectId); }
+  catch (error) { fail(`/projects/${projectId}/extraction/batches/${batchId}`, error); }
+  redirect(`/projects/${projectId}/extraction/batches/${batchId}`);
 }
 
 export async function beginAiSynthesisSuggestionAction(form: FormData) {
