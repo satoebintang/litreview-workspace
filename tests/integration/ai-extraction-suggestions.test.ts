@@ -6,6 +6,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { createDb } from "@/db/client";
 import { createReviewServices } from "@/application/services";
 import { createAiExtractionSuggestionServices } from "@/application/ai-extraction-suggestion-services";
+import { createAiExtractionBatchServices } from "@/application/ai-extraction-batch-services";
 import type { ExtractionSuggestionProvider, ProviderSuggestionResult } from "@/application/ai/extraction-suggestion-provider";
 
 const BASE_URL = process.env.DATABASE_URL ?? "postgres://litreview:litreview@127.0.0.1:5432/litreview";
@@ -280,5 +281,54 @@ describe("Slice 26 AI extraction suggestion persistence boundary", () => {
     expect((duplicate as Record<string, unknown>).id).toBe((accepted.decision as Record<string, unknown>).id);
     await expect(ai.acceptAiExtractionSuggestion({ projectId: value.project.id, requestId: String(first.requestId), mode: "edit_and_accept", expectedCurrentRevisionId: null, state: "cleared", groundingIds: [] })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     await expect(ai.rejectAiExtractionSuggestion(value.project.id, String(first.requestId))).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+  });
+
+  it("preserves the Slice 26 unresolved-request guard after a terminal undecided result", async () => {
+    const value = await fixture("short_text");
+    const provider = new CountingProvider(candidateResult(value.pageId, "42"));
+    const ai = createAiExtractionSuggestionServices(db, provider);
+    const base = {
+      projectId: value.project.id,
+      paperId: value.paper.id,
+      fieldId: value.field.id,
+      fullTextDocumentId: value.documentId,
+      documentTextExtractionId: value.extractionId,
+      externalTransmissionAcknowledged: true,
+      disclosureVersion: "openai-extraction-transmission-v1",
+    } as const;
+    const first = await ai.beginAiExtractionSuggestion({ ...base, idempotencyKey: randomUUID() });
+    await ai.executeAiExtractionSuggestion(String(first.requestId));
+    const second = await ai.beginAiExtractionSuggestion({ ...base, idempotencyKey: randomUUID() });
+    expect(second).toMatchObject({ created: true });
+    expect(String(second.requestId)).not.toBe(String(first.requestId));
+    await expect(ai.beginAiExtractionSuggestion({ ...base, idempotencyKey: randomUUID() })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(provider.invocationCount).toBe(1);
+  });
+
+  it("creates an immutable batch, claims through Slice 26, and leaves acceptance researcher-controlled", async () => {
+    const value = await fixture("short_text");
+    await client`insert into paper_full_text_preferences (project_id, paper_id, full_text_document_id) values (${value.project.id}::uuid, ${value.paper.id}::uuid, ${value.documentId}::uuid)`;
+    const provider = new CountingProvider(candidateResult(value.pageId, "42 participants"));
+    const ai = createAiExtractionSuggestionServices(db, provider, { defaultModel: "fake-model", defaultReasoningEffort: "low" });
+    const batches = createAiExtractionBatchServices(db, ai, { configuredModel: "fake-model" });
+    const input = { projectId: value.project.id, items: [{ paperId: value.paper.id, fieldId: value.field.id, fullTextDocumentId: value.documentId, documentTextExtractionId: value.extractionId, idempotencyKey: randomUUID() }], externalTransmissionAcknowledged: true } as const;
+    const preview = await batches.previewAiExtractionBatch(input);
+    expect(preview.items[0]).toMatchObject({ ordinal: 0, initialDisposition: "executable", initialReasonCode: "eligible" });
+    const created = await batches.createAiExtractionBatch(preview, preview.confirmationHash);
+    expect(created.items[0]).toMatchObject({ state: "pending", requestId: null });
+    const processed = await batches.executeAiExtractionBatch(value.project.id, created.batchId);
+    expect(provider.invocationCount).toBe(1);
+    expect(processed.items[0]).toMatchObject({ state: "suggestion_ready", requestRelationship: "authoritative" });
+    expect(await client`select count(*)::int as count from extraction_value_revisions where project_id=${value.project.id}::uuid and paper_id=${value.paper.id}::uuid and field_id=${value.field.id}::uuid`).toEqual([{ count: 0 }]);
+    const requestId = processed.items[0].requestId;
+    expect(requestId).toBeTruthy();
+    expect(await client`select count(*)::int as count from ai_extraction_dispatches where request_id=${requestId}::uuid`).toEqual([{ count: 1 }]);
+
+    const reusePreview = await batches.previewAiExtractionBatch({ ...input, items: [{ ...input.items[0], idempotencyKey: randomUUID() }] });
+    expect(reusePreview.items[0]).toMatchObject({ initialDisposition: "reusable", initialReasonCode: "existing_successful_undecided" });
+    const reusedBatch = await batches.createAiExtractionBatch(reusePreview, reusePreview.confirmationHash);
+    const reusedProcessed = await batches.executeAiExtractionBatch(value.project.id, reusedBatch.batchId);
+    expect(provider.invocationCount).toBe(1);
+    expect(reusedProcessed.items[0]).toMatchObject({ state: "suggestion_ready", requestId, requestRelationship: "authoritative" });
   });
 });
