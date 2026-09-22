@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   createPaperFromRetrievedRecordAction,
@@ -32,9 +31,8 @@ export default async function SearchRunPage({ params, searchParams }: {
   const paperById = new Map(papers.map((paper) => [paper.id, paper]));
   const recordViews = projectedRecords;
 
-  return <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-    <div className="container workspace"><Link className="back-link" href={`/projects/${projectId}/protocol`}>← Protocol &amp; search</Link>
-      <div className="workspace-header"><div><p className="eyebrow">Historical search run · {project.title}</p><h1>Run {run.sequence} · {run.sourceDisplayNameSnapshot}</h1><p>{run.executedAt.toLocaleString()} · {run.reportedResultCount} reported results</p></div><span className="status supported">Immutable snapshot</span></div>
+  return <div className="project-page">
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Historical search run · {project.title}</p><h1>Run {run.sequence} · {run.sourceDisplayNameSnapshot}</h1><p>{run.executedAt.toLocaleString()} · {run.reportedResultCount} reported results</p></div><span className="status supported">Immutable snapshot</span></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">{query.saved === "paper" ? "Paper created and linked from the retrieved record." : `Record ${query.saved}.`}</div>}
       <div className="workspace-grid">
         <section className="card section-card"><div className="section-heading"><h2>Run provenance</h2><span className="count">source snapshot</span></div>
@@ -54,5 +52,5 @@ export default async function SearchRunPage({ params, searchParams }: {
         </section>
       </div>
       <p className="footer-note">This view uses run and record snapshots for provenance; changing a source or strategy later does not rewrite this historical run.</p>
-    </div></main>;
+    </div></div>;
 }

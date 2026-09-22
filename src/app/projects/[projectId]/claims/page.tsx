@@ -27,9 +27,8 @@ export default async function ClaimsWorkspacePage({
 }) {
   const { projectId } = await params;
   const query = searchParams ? await searchParams : {};
-  let project;
   try {
-    project = await reviewServices.getProject(projectId);
+    await reviewServices.getProject(projectId);
   } catch (error) {
     if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "VALIDATION_ERROR"].includes(error.code)) notFound();
     throw error;
@@ -49,10 +48,9 @@ export default async function ClaimsWorkspacePage({
   const unsupported = claims.filter((claim) => claim.currentRevision.state === "active" && claim.currentRevision.supportStatus === "unsupported").length;
   const withdrawn = claims.filter((claim) => claim.currentRevision.state === "withdrawn").length;
   return (
-    <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-      <div className="container workspace"><Link className="back-link" href={`/projects/${projectId}`}>← {project.title}</Link>
-        <div className="workspace-header"><div><p className="eyebrow">Manuscript claims</p><h1>Claims workspace</h1><p>Write researcher-authored assertions and keep every support choice tied to exact research history.</p></div><span className="status supported">● {claims.length} {claims.length === 1 ? "claim" : "claims"}</span></div>
-        <nav className="stagebar" aria-label="Review stages"><Link className="stage active" href={`/projects/${projectId}`}>1. Question</Link><Link className="stage active" href={`/projects/${projectId}/screening`}>2. Papers</Link><Link className="stage active" href={`/projects/${projectId}`}>3. Evidence</Link><Link className="stage active" href={`/projects/${projectId}/claims`}>4. Claims</Link><Link className="stage active" href={`/projects/${projectId}/extraction`}>5. Extraction</Link><Link className="stage active" href={`/projects/${projectId}/synthesis`}>6. Synthesis</Link><span className="stage">7. Writing</span></nav>
+    <div className="project-page">
+      <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Manuscript claims</p><h1>Claims workspace</h1><p>Write researcher-authored assertions and keep every support choice tied to exact research history.</p></div><span className="status supported">● {claims.length} {claims.length === 1 ? "claim" : "claims"}</span></div>
+
         {query.error && <div className="error-banner" role="alert">{query.error}</div>}
         {query.saved && <div className="success-note" role="status">{query.saved === "created_from_interpretation" ? "Claim created with exact synthesis support from interpretation context." : query.saved === "created" ? "Claim created as unsupported." : query.saved === "revised" ? "New Claim revision saved." : query.saved === "withdrawn" ? "Claim withdrawn. Its history remains available." : query.saved === "reactivated" ? "Claim reactivated with an explicit support snapshot." : "Claim updated."}</div>}
         <div className="screening-stats claim-stats" aria-label="Claim summary"><Link className={`screening-stat ${filter === "all" ? "active" : ""}`} href={`/projects/${projectId}/claims`}><span>All claims</span><strong>{claims.length}</strong></Link><Link className={`screening-stat ${filter === "supported" ? "active" : ""}`} href={`/projects/${projectId}/claims?filter=supported`}><span>Supported</span><strong>{supported}</strong></Link><Link className={`screening-stat ${filter === "unsupported" ? "active" : ""}`} href={`/projects/${projectId}/claims?filter=unsupported`}><span>Unsupported</span><strong>{unsupported}</strong></Link><Link className={`screening-stat ${filter === "withdrawn" ? "active" : ""}`} href={`/projects/${projectId}/claims?filter=withdrawn`}><span>Withdrawn</span><strong>{withdrawn}</strong></Link></div>
@@ -111,6 +109,6 @@ export default async function ClaimsWorkspacePage({
         </div>
         <p className="footer-note">Claim history is append-only. Citation candidates are derived from exact Evidence paths and deduplicated by Paper.</p>
       </div>
-    </main>
+    </div>
   );
 }

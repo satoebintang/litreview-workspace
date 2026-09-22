@@ -6,14 +6,18 @@ test.describe("Slice 7 manuscript workspace", () => {
     await page.goto("/");
     await page.getByLabel("Project title").fill(`Manuscript review ${unique}`);
     await page.getByRole("button", { name: /Create project/ }).click();
-    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
-    const projectId = new URL(page.url()).pathname.split("/").pop()!;
+      await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
+      const projectId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/papers`);
 
     for (const [title, passage] of [["First study", "First study supports the claim."], ["Second study", "Second study supports the claim."]] as const) {
+      await page.goto(`/projects/${projectId}/papers`);
       await page.getByLabel("Title", { exact: true }).fill(title);
       await page.getByRole("button", { name: "Add paper" }).click();
-      await expect(page.getByLabel("Paper").locator("option", { hasText: title })).toHaveCount(1);
-      await page.getByLabel("Paper").selectOption({ label: title });
+      await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
+      await page.goto(`/projects/${projectId}/evidence`);
+      await expect(page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").locator("option", { hasText: title })).toHaveCount(1);
+      await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: title });
       await page.getByLabel("Verbatim source passage").fill(passage);
       await page.getByLabel("Page number").fill("1");
       await page.getByRole("button", { name: "Record evidence" }).click();
@@ -36,6 +40,8 @@ test.describe("Slice 7 manuscript workspace", () => {
     }
 
     await page.goto(`/projects/${projectId}/manuscript`);
+    await page.getByRole("button", { name: "Start manuscript" }).click();
+    await expect(page.getByLabel("Section title")).toBeVisible();
     await page.getByLabel("Section title").fill("Introduction");
     await page.getByRole("button", { name: "Create section" }).click();
     await expect(page.getByRole("heading", { name: "Introduction" })).toBeVisible();

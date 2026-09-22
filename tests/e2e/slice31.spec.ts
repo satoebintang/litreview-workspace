@@ -88,22 +88,22 @@ test.describe("Slice 31 batch AI extraction orchestration", () => {
       await page.getByRole("button", { name: "Create batch" }).click();
       await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/extraction/batches/[0-9a-f-]+$`));
       const batchId = new URL(page.url()).pathname.split("/").pop()!;
-      await expect(page.locator(".workspace-header").getByText(/3 cells · .* · active/)).toBeVisible();
+      await expect(page.locator(".workspace-header").getByText(/3 cells · .* · Active/)).toBeVisible();
       expect(await sql`select count(*)::int as count from extraction_value_revisions where project_id=${projectId}::uuid and field_id=${clearedFieldId}::uuid`).toEqual([{ count: 1 }]);
       expect(await sql`select count(*)::int as count from ai_extraction_requests where project_id=${projectId}::uuid`).toEqual([{ count: 0 }]);
-      await expect(page.getByText("Existing cleared revision.", { exact: false })).toBeVisible();
+      await expect(page.getByText("An existing cleared value was found.", { exact: false })).toBeVisible();
       await expect(page.getByRole("link", { name: "Continue in the individual extraction workflow." })).toHaveAttribute("href", `/projects/${projectId}/extraction/${paperOneId}`);
 
       await page.getByRole("button", { name: "Process next two" }).click();
       await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/extraction/batches/${batchId}$`));
-      await expect(page.locator(".status").filter({ hasText: "suggestion_ready" })).toBeVisible();
-      await expect(page.locator(".status").filter({ hasText: "no_candidate" })).toBeVisible();
+      await expect(page.locator(".status").filter({ hasText: "Suggestion ready" })).toBeVisible();
+      await expect(page.locator(".status").filter({ hasText: "No candidate" })).toBeVisible();
       expect(await sql`select count(*)::int as count from ai_extraction_requests where project_id=${projectId}::uuid`).toEqual([{ count: 2 }]);
       expect(await sql`select count(*)::int as count from ai_extraction_dispatches where project_id=${projectId}::uuid`).toEqual([{ count: 2 }]);
       expect(await sql`select count(*)::int as count from extraction_value_revisions where project_id=${projectId}::uuid and field_id in (${outcomeFieldId}::uuid, ${noCandidateFieldId}::uuid)`).toEqual([{ count: 0 }]);
 
       const outcomeItem = page.locator("article.item").filter({ hasText: "Batch candidate paper" });
-      await outcomeItem.getByRole("link", { name: /Review Slice 26 suggestion/ }).click();
+      await outcomeItem.getByRole("link", { name: /Review AI suggestion/ }).click();
       await expect(page.getByRole("heading", { name: "Outcome" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Edit & accept" })).toBeVisible();
       await page.locator('form.extraction-form input[name="value"]').last().fill("42 participants");
@@ -116,8 +116,8 @@ test.describe("Slice 31 batch AI extraction orchestration", () => {
       expect(await sql`select count(*)::int as count from extraction_value_revisions where project_id=${projectId}::uuid and paper_id=${paperOneId}::uuid and field_id=${outcomeFieldId}::uuid`).toEqual([{ count: 1 }]);
 
       await page.goto(`/projects/${projectId}/extraction/batches/${batchId}`);
-      await expect(page.locator(".status").filter({ hasText: "accepted" })).toBeVisible();
-      await expect(page.locator("span.status").filter({ hasText: "no_candidate" })).toBeVisible();
+      await expect(page.locator(".status").filter({ hasText: "Accepted" })).toBeVisible();
+      await expect(page.locator("span.status").filter({ hasText: "No candidate" })).toBeVisible();
       await expect(page.getByRole("link", { name: "Continue in the individual extraction workflow." })).toHaveAttribute("href", `/projects/${projectId}/extraction/${paperOneId}`);
       const requestCount = await sql`select count(*)::int as count from ai_extraction_requests where project_id=${projectId}::uuid`;
       await page.reload();

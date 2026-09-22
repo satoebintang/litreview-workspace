@@ -75,6 +75,7 @@ import { createManuscriptProseHistoryServices } from "./manuscript-prose-history
 import { createManuscriptReviewServices } from "./manuscript-review-services";
 import { createManuscriptSnapshotServices } from "./manuscript-snapshot-services";
 import { createAcquisitionServices } from "./acquisition-services";
+import { createProjectWorkspaceReadServices } from "./project-workspace-read-services";
 import { createDeduplicationServices } from "./deduplication-services";
 import { createReviewReportingServices } from "./review-reporting";
 import { createFullTextDocumentServices, type FullTextDocumentServices } from "./full-text-document-services";
@@ -1439,6 +1440,7 @@ export function createReviewServices(db: Database, options: {
   const manuscriptReviewServices = createManuscriptReviewServices(db);
   const manuscriptSnapshotServices = createManuscriptSnapshotServices(db, manuscriptServices.loadManuscriptProjection);
   const acquisitionServices = createAcquisitionServices(db);
+  const projectWorkspaceReadServices = createProjectWorkspaceReadServices(db);
   const documentServices: FullTextDocumentServices = createFullTextDocumentServices(db, options.documentStorage, options.maxDocumentBytes);
   const baseServices = Object.assign(services, manuscriptServices, manuscriptProseHistoryServices, manuscriptReviewServices, manuscriptSnapshotServices, acquisitionServices, deduplicationServices, documentServices as unknown as Record<string, unknown>) as typeof services & typeof manuscriptServices & typeof manuscriptProseHistoryServices & typeof manuscriptReviewServices & typeof manuscriptSnapshotServices & typeof acquisitionServices & typeof deduplicationServices & FullTextDocumentServices;
   const textExtractionParser: DocumentTextExtractionParser = options.documentTextExtractor ?? {
@@ -1580,6 +1582,7 @@ export function createReviewServices(db: Database, options: {
     answerWriteServices,
     answerReadServices,
     answerManuscriptServices,
+    projectWorkspaceReadServices,
     ...(bibliographicImportServices ? [bibliographicImportServices] : []),
   ) as typeof baseServices &
     typeof reportingServices &
@@ -1594,6 +1597,7 @@ export function createReviewServices(db: Database, options: {
     ResearchQuestionAnswerWriteServices &
     ResearchQuestionAnswerReadServices &
     ResearchQuestionAnswerManuscriptServices &
+    ReturnType<typeof createProjectWorkspaceReadServices> &
     Partial<BibliographicImportServices>;
 }
 

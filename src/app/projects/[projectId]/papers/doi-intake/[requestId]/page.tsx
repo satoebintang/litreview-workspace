@@ -17,9 +17,7 @@ export default async function DoiIntakeDetailPage({ params, searchParams }: { pa
   const diagnostics = detail?.diagnostics;
   const currentResolution = detail?.resolutions.at(-1) ?? null;
 
-  return <main className="shell"><div className="container workspace">
-    <Link className="back-link" href={`/projects/${projectId}/papers/doi-intake`}>← DOI lookup history</Link>
-    <div className="workspace-header"><div><p className="eyebrow">DOI lookup detail</p><h1>{detail?.request.doi || requestId}</h1><p className="hint">Request {requestId} · {detail?.request.provider ?? "provider unavailable"} · {detail?.request.status ?? "not loaded"}</p></div><Link className="button ghost" href={`/projects/${projectId}`}>Paper collection</Link></div>
+  return <div className="project-page"><div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">DOI lookup detail</p><h1>{detail?.request.doi || requestId}</h1><p className="hint">Request {requestId} · {detail?.request.provider ?? "provider unavailable"} · {detail?.request.status ?? "not loaded"}</p></div><Link className="button ghost" href={`/projects/${projectId}`}>Paper collection</Link></div>
     {query.error && <div className="error-banner" role="alert">{query.error}</div>}
     {query.saved && <div className="success-note" role="status">Resolution recorded.</div>}
     {!loaded.configured && <div className="support-warning" role="status">The DOI lookup detail adapter is not exported by the shared server wiring in this worktree yet. This page is intentionally read-only until the expected interfaces are connected.</div>}
@@ -53,5 +51,5 @@ export default async function DoiIntakeDetailPage({ params, searchParams }: { pa
         <form action={clearDoiLookupResolutionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="requestId" value={requestId} /><input type="hidden" name="resultId" value={detail.result.id} /><input type="hidden" name="expectedPreviousResolutionId" value={detail.resolutionPreview?.expectedPreviousResolutionId ?? ""} /><button className="button ghost" type="submit">Clear resolution</button></form>
         <div className="support-warning" style={{ marginTop: 12 }}>Current state: {currentResolution ? `latest decision is ${currentResolution.kind}` : "unresolved"}. A later decision appends an immutable resolution event and requires the exact current predecessor.</div></section>}
     </>}
-  </div></main>;
+  </div></div>;
 }

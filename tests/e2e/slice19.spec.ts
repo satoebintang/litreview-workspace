@@ -12,6 +12,7 @@ test.describe("Slice 19 Synthesis Interpretation Context", () => {
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = page.url().match(/projects\/([0-9a-f-]+)$/)?.[1] as string;
+    await page.goto(`/projects/${projectId}/papers`);
 
     // 2. Add two Papers
     await page.getByLabel("Title", { exact: true }).fill("Study Alpha");
@@ -27,14 +28,14 @@ test.describe("Slice 19 Synthesis Interpretation Context", () => {
     await expect(page.locator(".paper-chip, .item-title").filter({ hasText: "Study Beta" }).first()).toBeVisible({ timeout: 30_000 });
 
     // 3. Record Evidence for both papers
-    await page.reload();
-    await page.getByLabel("Paper").selectOption({ label: "Study Alpha" });
+    await page.goto(`/projects/${projectId}/evidence`);
+    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Study Alpha" });
     await page.getByLabel("Verbatim source passage").fill("Primary outcome was significantly enhanced by 85%.");
     await page.getByLabel("Page number").fill("12");
     await page.getByRole("button", { name: "Record evidence" }).click();
     await expect(page.locator(".quote").filter({ hasText: "Primary outcome was significantly enhanced by 85%." })).toBeVisible({ timeout: 30_000 });
 
-    await page.getByLabel("Paper").selectOption({ label: "Study Beta" });
+    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Study Beta" });
     await page.getByLabel("Verbatim source passage").fill("Primary outcome showed minimal change of only 15%.");
     await page.getByLabel("Page number").fill("34");
     await page.getByRole("button", { name: "Record evidence" }).click();

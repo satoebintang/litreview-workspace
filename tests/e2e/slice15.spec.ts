@@ -11,11 +11,13 @@ test.describe("Slice 15 immutable PDF text extraction", () => {
     await page.getByLabel("Project title").fill(`Text extraction review ${Date.now()}`);
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
+    const projectId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Native text study");
     await page.getByLabel("Abstract").fill("Deterministic parser fixture");
     await page.getByRole("button", { name: "Add paper" }).click();
-    const documentsLink = page.getByRole("link", { name: "Documents" }).first();
+    const documentsLink = page.getByRole("link", { name: "Native text study", exact: true });
     await documentsLink.click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+\/papers\/[0-9a-f-]+\/documents$/);
     const documentsUrl = page.url();
@@ -54,6 +56,7 @@ test.describe("Slice 15 immutable PDF text extraction", () => {
     await page.goto(documentHref!);
     await expect(page.getByRole("link", { name: /Run 2/ })).toBeVisible();
     await page.getByRole("button", { name: "Archive artifact" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Archive artifact" }).click();
     await expect(page.getByText(/historical Evidence remains available/)).toBeVisible();
     await page.goto(documentHref!);
     await expect(page.getByText(/Extraction-grounded/)).toBeVisible();

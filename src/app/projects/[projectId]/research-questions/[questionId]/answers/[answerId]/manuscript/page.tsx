@@ -155,14 +155,8 @@ export default async function ResearchQuestionAnswerManuscriptPage({
   const selectedManuscript = projection.manuscripts.find((manuscript: AnswerManuscriptOption) => manuscript.id === projection.selectedManuscriptId);
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link>
-        <span className="top-note">Evidence-first literature reviews</span>
-      </header>
-      <div className="container workspace">
-        <Link className="back-link" href={`/projects/${projectId}/research-questions/${questionId}/answers/${answerId}`}>← Back to exact Answer snapshot</Link>
-        <div className="workspace-header">
+    <div className="project-page">
+      <div className="container workspace"><div className="workspace-header">
           <div>
             <p className="eyebrow">Answer-centric manuscript drafting</p>
             <h1>{projection.researchQuestion.identifier} · Answer #{projection.answer.sequence}</h1>
@@ -267,6 +261,6 @@ export default async function ResearchQuestionAnswerManuscriptPage({
 
         <p className="footer-note">Answer context does not create an Answer reference on Manuscript records. Only researcher-authored prose and explicitly selected exact ClaimRevisions are applied.</p>
       </div>
-    </main>
+    </div>
   );
 }

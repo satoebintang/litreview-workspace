@@ -10,6 +10,7 @@ test.describe("Slice 4 evidence synthesis", () => {
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = page.url().match(/projects\/([0-9a-f-]+)$/)?.[1] as string;
+    await page.goto(`/projects/${projectId}/papers`);
 
     async function addPaper(title: string) {
       await page.getByLabel("Title", { exact: true }).fill(title);
@@ -22,8 +23,8 @@ test.describe("Slice 4 evidence synthesis", () => {
     await addPaper("Study B");
 
     async function recordEvidence(title: string, passage: string) {
-      await page.reload();
-      await page.getByLabel("Paper").selectOption({ label: title });
+      await page.goto(`/projects/${projectId}/evidence`);
+      await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: title });
       await page.getByLabel("Verbatim source passage").fill(passage);
       await page.getByLabel("Page number").fill("7");
       await page.getByRole("button", { name: "Record evidence" }).click();
@@ -120,6 +121,7 @@ test.describe("Slice 4 evidence synthesis", () => {
     await expect(page.getByText("Study B reports data poisoning.")).toBeVisible();
 
     await page.getByRole("button", { name: "Withdraw synthesis" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Withdraw synthesis" }).click();
     await expect(page.getByText("Synthesis withdrawn. Its history remains available.")).toBeVisible();
     await expect(page.getByText("This conclusion is already withdrawn.")).toBeVisible();
     await expect(page.getByText(/3 revisions/)).toBeVisible();

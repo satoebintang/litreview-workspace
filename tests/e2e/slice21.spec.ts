@@ -30,10 +30,14 @@ test.describe("Slice 21 Research Question Answers", () => {
 
     await page.goto("/");
     await page.getByLabel("Project title").fill(`Slice 21 Answer Review ${Date.now()}`);
-    await page.getByLabel("Research question").fill("Which supported finding answers the question?");
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/protocol`);
+    await page.getByLabel("Identifier").fill("RQ1");
+    await page.getByLabel("Question").fill("Which supported finding answers the question?");
+    await page.getByRole("button", { name: "Add research question" }).click();
+    await expect(page.getByText("Which supported finding answers the question?", { exact: true })).toBeVisible();
 
     const sql = await getTestDbClient();
     try {

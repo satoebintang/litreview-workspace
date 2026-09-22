@@ -41,9 +41,8 @@ export default async function DeduplicationQueuePage({ params, searchParams }: {
     reviewServices.getReviewFlowSummary(projectId),
   ]) as unknown as [QueueItem[], { unresolvedDuplicatePairs: number; unresolvedRecords: number }];
 
-  return <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-    <div className="container workspace"><Link className="back-link" href={`/projects/${projectId}`}>← Back to workspace</Link>
-      <div className="workspace-header"><div><p className="eyebrow">Acquisition review · {project.title}</p><h1>Deduplication queue</h1><p>Review candidate record pairs before they enter the canonical Paper population.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Link className="button secondary" href={`/projects/${projectId}/review-flow`}>Review flow →</Link><span className="status unsupported">{summary.unresolvedDuplicatePairs} unresolved pairs</span></div></div>
+  return <div className="project-page">
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Acquisition review · {project.title}</p><h1>Deduplication queue</h1><p>Review candidate record pairs before they enter the canonical Paper population.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Link className="button secondary" href={`/projects/${projectId}/review-flow`}>Review flow →</Link><span className="status unsupported">{summary.unresolvedDuplicatePairs} unresolved pairs</span></div></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">Deduplication decision recorded.</div>}
       <section className="card section-card full"><div className="section-heading"><h2>Unresolved candidate pairs</h2><span className="count">{queue.length} shown · {summary.unresolvedRecords} records still unmatched</span></div>
         <p className="hint">Candidates are conservative, derived from DOI, source record identity, or normalized title and year. A decision suppresses a pair from this queue while preserving its history.</p>
@@ -59,5 +58,5 @@ export default async function DeduplicationQueuePage({ params, searchParams }: {
         })}</div>}
       </section>
       <p className="footer-note">Candidate reasons are advisory. Decisions and Paper resolution are explicit, append-only actions; no Paper merge or automated bulk adjudication is performed.</p>
-    </div></main>;
+    </div></div>;
 }

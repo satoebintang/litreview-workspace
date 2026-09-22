@@ -14,6 +14,8 @@ import {
 import { aiSynthesisProviderAvailable, aiSynthesisServices, reviewServices } from "@/app/server";
 import { DomainError } from "@/domain/errors";
 import type { SynthesisCandidate } from "@/domain/types";
+import { AuditDetails, ConfirmAction } from "@/components";
+import { humanizeWorkspaceToken } from "@/application/project-workspace-labels";
 
 function displayCandidateValue(candidate: SynthesisCandidate) {
   const rev = candidate.extractionRevision;
@@ -46,7 +48,7 @@ function warningLabel(warning: string) {
     case "extraction_revision_cleared":
       return "Value cleared";
     default:
-      return warning.replaceAll("_", " ");
+      return humanizeWorkspaceToken(warning);
   }
 }
 
@@ -125,18 +127,8 @@ export default async function SynthesisPreparationWorkspacePage({
       : undefined;
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <Link className="brand" href="/">
-          <span className="brand-mark">T</span> Tracework
-        </Link>
-        <span className="top-note">Evidence-first literature reviews</span>
-      </header>
-      <div className="container workspace">
-        <Link className="back-link" href={`/projects/${projectId}/synthesis/preparations`}>
-          ← Synthesis preparations
-        </Link>
-        <div className="workspace-header">
+    <div className="project-page">
+      <div className="container workspace"><div className="workspace-header">
           <div>
             <p className="eyebrow">Preparation workspace</p>
             <h1>{prep.workingTitle ?? "Untitled preparation"}</h1>
@@ -187,13 +179,15 @@ export default async function SynthesisPreparationWorkspacePage({
           </div>
         )}
 
+        <AuditDetails items={[{ label: "Preparation identity", value: preparationId }, { label: "Evidence Set", value: workspace.evidenceSet.name }, { label: "Pinned composition", value: workspace.pinnedCompositionSequence }, { label: "Extraction field", value: workspace.field.name }, { label: "Candidate observations", value: workspace.candidates.length }, { label: "Selected observations", value: workspace.selectedCount }, { label: "Status", value: humanizeWorkspaceToken(prep.status) }]} />
+
         {active && workspace.selectedCount > 0 && (
           <section className="card section-card" style={{ marginBottom: 16 }}>
             <div className="section-heading">
               <div>
                 <h2>AI synthesis suggestion</h2>
                 <p className="hint">
-                  AI will draft from the currently selected ExtractionRevisions and every connecting Evidence passage in this pinned composition. It cannot choose formal support or write canonical research state without your decision.
+                  AI will draft from the currently selected extraction value versions and every connecting Evidence passage in this pinned composition. It cannot choose formal support or write canonical research state without your decision.
                 </p>
               </div>
               <span className={`status ${aiSynthesisProviderAvailable ? "supported" : "stale"}`}>
@@ -227,7 +221,7 @@ export default async function SynthesisPreparationWorkspacePage({
                 <div key={String(request.id)} className="item" style={{ marginBottom: 12 }}>
                   <div className="item-row">
                     <div>
-                      <div className="item-title">Request {String(request.id).slice(0, 8)}…</div>
+                      <div className="item-title">AI request details</div>
                       <div className="item-meta">{outcome} · {String(request.supportCount ?? request.support_count ?? "?")} frozen supports · {detail.sources.length} frozen Evidence passages</div>
                     </div>
                     <span className={`status ${decision ? "supported" : result ? "stale" : "unsupported"}`}>{decision ? String(decision.decision) : outcome}</span>
@@ -246,15 +240,15 @@ export default async function SynthesisPreparationWorkspacePage({
                     <details style={{ marginTop: 8 }}>
                       <summary>Frozen support manifest ({detail.supports.length})</summary>
                       <ul className="hint">
-                        {detail.supports.map((support) => <li key={String(support.extraction_revision_id)}><div><strong>{String(support.paper_title_snapshot)}</strong>{support.paper_publication_year_snapshot != null ? ` (${String(support.paper_publication_year_snapshot)})` : ""} · ExtractionRevision {String(support.extraction_revision_id)}</div><div>Field type: {String(support.field_type)} · value state: {String(support.value_state)} · typed value: <span>{frozenSupportValue(support)}</span></div>{support.researcher_note != null && <div>Frozen researcher extraction note: <span>{String(support.researcher_note)}</span></div>}</li>)}
+                        {detail.supports.map((support) => <li key={String(support.extraction_revision_id)}><div><strong>{String(support.paper_title_snapshot)}</strong>{support.paper_publication_year_snapshot != null ? ` (${String(support.paper_publication_year_snapshot)})` : ""} · extraction value version {String(support.extraction_revision_id)}</div><div>Field type: {String(support.field_type)} · value state: {String(support.value_state)} · typed value: <span>{frozenSupportValue(support)}</span></div>{support.researcher_note != null && <div>Frozen researcher extraction note: <span>{String(support.researcher_note)}</span></div>}</li>)}
                       </ul>
                     </details>
                   )}
-                  {detail.groundings.length > 0 && <details className="hint" style={{ marginTop: 8 }}><summary>Frozen grounding locators ({detail.groundings.length})</summary><ul>{detail.groundings.map((grounding) => <li key={String(grounding.id)}><div>ExtractionRevision {String(grounding.extraction_revision_id)} · Evidence {String(grounding.evidence_id)} · offsets {String(grounding.start_offset)}–{String(grounding.end_offset)}</div><div>Exact quote: <span>{String(grounding.locator_quote)}</span></div>{grounding.locator_prefix != null && <div>Prefix: <span>{String(grounding.locator_prefix)}</span></div>}{grounding.locator_suffix != null && <div>Suffix: <span>{String(grounding.locator_suffix)}</span></div>}</li>)}</ul></details>}
+                  {detail.groundings.length > 0 && <details className="hint" style={{ marginTop: 8 }}><summary>Frozen grounding locators ({detail.groundings.length})</summary><ul>{detail.groundings.map((grounding) => <li key={String(grounding.id)}><div>extraction value version {String(grounding.extraction_revision_id)} · Evidence {String(grounding.evidence_id)} · offsets {String(grounding.start_offset)}–{String(grounding.end_offset)}</div><div>Exact quote: <span>{String(grounding.locator_quote)}</span></div>{grounding.locator_prefix != null && <div>Prefix: <span>{String(grounding.locator_prefix)}</span></div>}{grounding.locator_suffix != null && <div>Suffix: <span>{String(grounding.locator_suffix)}</span></div>}</li>)}</ul></details>}
                   {result == null && (
                     <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <form action={executeAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button secondary" type="submit">Execute provider call</button></form>
-                      <form action={expireAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button ghost" type="submit">Materialize expiry</button></form>
+                      <form action={executeAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button secondary" type="submit">Generate suggestion</button></form>
+                      <form action={expireAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button ghost" type="submit">Mark request timed out</button></form>
                     </div>
                   )}
                   {candidate && !decision && (
@@ -382,7 +376,7 @@ export default async function SynthesisPreparationWorkspacePage({
                       <option value="">(Create new statement upon finalization)</option>
                       {existingStatements.map((stmt) => (
                         <option key={stmt.synthesisStatementId} value={stmt.synthesisStatementId}>
-                          {stmt.title ?? "Untitled statement"} · {stmt.state} (id: {stmt.synthesisStatementId.slice(0, 8)}...)
+                          {stmt.title ?? "Untitled statement"} · {stmt.state} (existing statement)
                         </option>
                       ))}
                     </select>
@@ -391,13 +385,7 @@ export default async function SynthesisPreparationWorkspacePage({
                     Save settings
                   </button>
                 </form>
-                <form action={abandonSynthesisPreparationAction} style={{ marginTop: 16 }}>
-                  <input type="hidden" name="projectId" value={projectId} />
-                  <input type="hidden" name="preparationId" value={prep.id} />
-                  <button className="button ghost" type="submit">
-                    Abandon preparation
-                  </button>
-                </form>
+                <ConfirmAction action={abandonSynthesisPreparationAction} label="Abandon preparation" title="Abandon this preparation?" description="The pinned selection and its history will remain available for audit." consequence="This preparation will be frozen and cannot be edited or finalized." hiddenFields={{ projectId, preparationId: prep.id }} confirmLabel="Abandon preparation" />
               </>
             ) : (
               <div className="item-list">
@@ -406,9 +394,7 @@ export default async function SynthesisPreparationWorkspacePage({
                 <div className="item-meta">
                   Target statement:{" "}
                   {prep.targetSynthesisStatementId ? (
-                    <Link href={`/projects/${projectId}/synthesis/${prep.targetSynthesisStatementId}`}>
-                      {prep.targetSynthesisStatementId}
-                    </Link>
+                    <Link href={`/projects/${projectId}/synthesis/${prep.targetSynthesisStatementId}`}>Existing synthesis statement</Link>
                   ) : (
                     "New statement"
                   )}
@@ -425,7 +411,7 @@ export default async function SynthesisPreparationWorkspacePage({
                 <span className="count">{workspace.selectedCount} selected</span>
               </div>
               <p className="hint">
-                Finalizing transitions selected candidate observations into an immutable SynthesisRevision with exact Slice 4 supports. Zero supports are permitted.
+                Finalizing transitions selected candidate observations into an immutable synthesis version with exact support links. Zero supports are permitted.
               </p>
               <form action={finalizeSynthesisPreparationAction}>
                 <input type="hidden" name="projectId" value={projectId} />
@@ -477,7 +463,7 @@ export default async function SynthesisPreparationWorkspacePage({
           <section className="card section-card full">
             <div className="section-heading">
               <div>
-                <h2>Candidate ExtractionRevisions</h2>
+                <h2>Candidate extraction value versions</h2>
                 <p className="hint">
                   Revisions reachable through Evidence in the pinned Evidence Set composition for field &ldquo;{workspace.field.name}&rdquo;.
                 </p>
@@ -588,6 +574,6 @@ export default async function SynthesisPreparationWorkspacePage({
           Preparation workspaces maintain isolated selections and do not mutate analytical support until finalization.
         </p>
       </div>
-    </main>
+    </div>
   );
 }

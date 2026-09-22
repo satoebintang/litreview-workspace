@@ -43,6 +43,18 @@ PDF.js metadata proposals remain separate from canonical Paper metadata until a
 researcher explicitly creates or selects a Paper; only then are the exact bytes
 materialized as an ordinary FullTextDocument.
 
+## Workspace navigation
+
+The root route is project discovery and creation. After entering a project,
+Tracework uses a derived workspace shell with eight navigational categories:
+Overview, Plan, Papers, Screen, Extract, Synthesize, Write, and Reports.
+Navigation location is presentation only; it is not a persisted workflow stage
+and does not change research provenance or canonical state. The Overview is a
+read-only summary of current facts and recommendations, while each category
+links to the existing domain workspaces. Paper intake methods remain visibly
+separate so staged imports and PDFs are not mistaken for canonical Papers
+before explicit researcher resolution.
+
 ## Verification
 
 Everyday local verification (with PostgreSQL 16 running):

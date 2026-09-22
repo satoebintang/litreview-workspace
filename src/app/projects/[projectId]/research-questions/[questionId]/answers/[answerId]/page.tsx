@@ -32,18 +32,8 @@ export default async function ResearchQuestionAnswerSnapshotPage({
   }
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <Link className="brand" href="/">
-          <span className="brand-mark">T</span> Tracework
-        </Link>
-        <span className="top-note">Evidence-first literature reviews</span>
-      </header>
-      <div className="container workspace">
-        <Link className="back-link" href={`/projects/${projectId}/research-questions/${questionId}`}>
-          ← Back to {detail.question.identifier} workspace
-        </Link>
-        <div className="workspace-header">
+    <div className="project-page">
+      <div className="container workspace"><div className="workspace-header">
           <div>
             <p className="eyebrow">Research Question Answer Snapshot</p>
             <h1>{detail.question.identifier} · Answer #{snapshot.sequence}</h1>
@@ -70,6 +60,6 @@ export default async function ResearchQuestionAnswerSnapshotPage({
           Answer contexts are not formal support or citation edges and are not projected into manuscript, ReviewFlow, or PRISMA records.
         </p>
       </div>
-    </main>
+    </div>
   );
 }

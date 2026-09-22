@@ -8,6 +8,7 @@ test.describe("Slice 12 full-text eligibility screening", () => {
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/papers`);
 
     for (const title of ["Eligible study", "Excluded study"]) {
       await page.getByLabel("Title", { exact: true }).fill(title);

@@ -100,22 +100,8 @@ export default async function ExactSynthesisRevisionPage({
   }
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <Link className="brand" href="/">
-          <span className="brand-mark">T</span> Tracework
-        </Link>
-        <span className="top-note">Evidence-first literature reviews</span>
-      </header>
-      <div className="container workspace">
-        <Link
-          className="back-link"
-          href={`/projects/${projectId}/synthesis/${statementId}`}
-        >
-          ← Back to synthesis statement
-        </Link>
-
-        <div className="workspace-header">
+    <div className="project-page">
+      <div className="container workspace"><div className="workspace-header">
           <div>
             <p className="eyebrow">
               Synthesis revision {revision.sequence} · Exact interpretation context
@@ -634,6 +620,6 @@ export default async function ExactSynthesisRevisionPage({
           Interpretation context remains distinct from formal support and citation paths.
         </p>
       </div>
-    </main>
+    </div>
   );
 }

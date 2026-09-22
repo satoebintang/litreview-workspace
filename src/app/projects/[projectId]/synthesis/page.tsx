@@ -30,10 +30,9 @@ export default async function SynthesisDashboardPage({ params, searchParams }: {
   const summary = field ? await reviewServices.getExtractionFieldSummary(projectId, field.id) : null;
   const savedMessage = query.saved === "created" ? "Synthesis statement created." : undefined;
 
-  return <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-    <div className="container workspace"><Link className="back-link" href={`/projects/${projectId}`}>← Back to workspace</Link>
-      <div className="workspace-header"><div><p className="eyebrow">Evidence synthesis</p><h1>{project.title}</h1><p>Compare structured observations and author source-backed conclusions.</p></div><div style={{ display: "flex", gap: 8, alignItems: "center" }}><span className="status supported">● Researcher-entered</span><Link className="button ghost" href={`/projects/${projectId}/synthesis/preparations`}>Preparation workspaces →</Link></div></div>
-      <nav className="stagebar" aria-label="Review stages"><span className="stage active">1. Question</span><span className="stage active">2. Papers</span><span className="stage active">3. Evidence</span><span className="stage active">4. Claims</span><span className="stage active">5. Extraction</span><span className="stage active">6. Synthesis</span><span className="stage">7. Writing</span></nav>
+  return <div className="project-page">
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Evidence synthesis</p><h1>{project.title}</h1><p>Compare structured observations and author source-backed conclusions.</p></div><div style={{ display: "flex", gap: 8, alignItems: "center" }}><span className="status supported">● Researcher-entered</span><Link className="button ghost" href={`/projects/${projectId}/synthesis/preparations`}>Preparation workspaces →</Link></div></div>
+
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{savedMessage && <div className="success-note" role="status">{savedMessage}</div>}
       <div className="workspace-grid">
         <section className="card section-card full"><div className="section-heading"><h2>Evidence matrix</h2><span className="count">{comparison.length} included papers</span></div>
@@ -59,5 +58,5 @@ export default async function SynthesisDashboardPage({ params, searchParams }: {
         </section>
       </div>
       <p className="footer-note">Synthesis is researcher-authored. Supporting observations are descriptive coverage, not proof or statistical certainty.</p>
-    </div></main>;
+    </div></div>;
 }

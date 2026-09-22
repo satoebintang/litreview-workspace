@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import Link from "next/link";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { DomainError } from "@/domain/errors";
 import { reviewServices } from "@/app/server";
 import {
@@ -52,10 +52,9 @@ export default async function ManuscriptReviewPage({
   const activeSection = activeItem ? (formatted.sections ?? []).find((section: any) => (section.items ?? []).some((item: any) => String(item.id) === query.item)) : null;
   const saveMessage: Record<string, string> = { comment: "Comment added.", resolved: "Thread resolved.", reopened: "Thread reopened." };
 
-  return <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-    <div className="container workspace"><Link className="back-link" href={`/projects/${projectId}/manuscript`}>← Manuscript composition</Link>
-      <div className="workspace-header"><div><p className="eyebrow">Editorial review</p><h1>Manuscript review threads</h1><p>Editorial concerns keep immutable opening context. They are not manuscript version history and never alter research provenance, support, or citation state.</p></div><div className="claim-list-actions"><span className="status supported">● {projection.counts.open} open</span><span className="status">{projection.counts.resolved} resolved</span></div></div>
-      <nav className="stagebar" aria-label="Review stages"><Link className="stage active" href={`/projects/${projectId}`}>1. Question</Link><Link className="stage active" href={`/projects/${projectId}/claims`}>4. Claims</Link><Link className="stage active" href={`/projects/${projectId}/manuscript`}>7. Writing</Link><span className="stage active">Editorial review</span></nav>
+  return <div className="project-page">
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Editorial review</p><h1>Manuscript review threads</h1><p>Editorial concerns keep immutable opening context. They are not manuscript version history and never alter research provenance, support, or citation state.</p></div><div className="claim-list-actions"><Link className="button ghost" href={`/projects/${projectId}/manuscript`}>← Manuscript composition</Link><span className="status supported">● {projection.counts.open} open</span><span className="status">{projection.counts.resolved} resolved</span></div></div>
+
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">{saveMessage[query.saved] ?? "Review updated."}</div>}
       <section className="card section-card full"><div className="section-heading"><h2>Review workspace</h2><span className="count">Opening snapshots are exact persisted target context</span></div>
         <form className="inline-form" method="get"><label htmlFor="review-state">State</label><select id="review-state" name="state" defaultValue={requestedState}><option value="all">All threads</option><option value="open">Open first</option><option value="resolved">Resolved history</option></select><label htmlFor="review-section">Section</label><select id="review-section" name="section" defaultValue={query.section ?? ""}><option value="">All sections</option>{projection.sections.map((section: any) => <option key={section.id} value={section.id}>{section.title}{section.archivedAt ? " (archived)" : ""}</option>)}</select><button className="button secondary" type="submit">Filter</button></form>
@@ -71,5 +70,5 @@ export default async function ManuscriptReviewPage({
         <div className="claim-list-actions" style={{ marginTop: 10 }}>{entry.state === "open" ? <form action={resolveManuscriptReviewThreadAction}><input type="hidden" name="projectId" value={projectId}/><input type="hidden" name="manuscriptId" value={manuscript.id}/><input type="hidden" name="threadId" value={entry.thread.id}/><input name="note" maxLength={10000} placeholder="Optional resolution note"/><button className="button secondary" type="submit">Resolve</button></form> : <form action={reopenManuscriptReviewThreadAction}><input type="hidden" name="projectId" value={projectId}/><input type="hidden" name="manuscriptId" value={manuscript.id}/><input type="hidden" name="threadId" value={entry.thread.id}/><input name="note" maxLength={10000} placeholder="Optional reopening note"/><button className="button secondary" type="submit">Reopen</button></form>}</div>
       </article>)}</div>}
       <p className="footer-note">Editorial review is separate from Evidence, ExtractionRevision, SynthesisRevision, ClaimRevision support, citations, Research Questions, Answers, and PRISMA/ReviewFlow. It is intentionally excluded from Markdown export.</p>
-    </div></main>;
+    </div></div>;
 }

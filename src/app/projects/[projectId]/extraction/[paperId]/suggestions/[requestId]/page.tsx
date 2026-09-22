@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   acceptAiExtractionSuggestionAction,
@@ -40,9 +39,8 @@ export default async function AiExtractionSuggestionPage({ params, searchParams 
   const terminal = Boolean(result);
   const successful = result?.outcome === "succeeded" && result.state != null;
 
-  return <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-    <div className="container workspace"><Link className="back-link" href={`/projects/${projectId}/extraction/${paperId}`}>← Extraction worksheet</Link>
-      <div className="workspace-header"><div><p className="eyebrow">AI extraction suggestion</p><h1>{String(request.fieldName ?? "Extraction field")}</h1><p className="hint">Request {String(request.id)}</p></div><span className="status">{terminal ? String(result?.outcome).replaceAll("_", " ") : "ready to execute"}</span></div>
+  return <div className="project-page">
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">AI extraction suggestion</p><h1>{String(request.fieldName ?? "Extraction field")}</h1><p className="hint">Request {String(request.id)}</p></div><span className="status">{terminal ? String(result?.outcome).replaceAll("_", " ") : "ready to execute"}</span></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{savedMessage && <div className="success-note" role="status">{savedMessage}</div>}
       <section className="card section-card"><h2>Durable request</h2><p className="hint">The request was finalized before any provider call. Source pages are frozen by immutable identity and exact persisted text.</p><dl className="metadata-grid"><div><dt>Model</dt><dd>{String(request.model)}</dd></div><div><dt>Pages</dt><dd>{pages.length}</dd></div><div><dt>Baseline revision</dt><dd>{request.baselineRevisionId ? String(request.baselineRevisionId) : "No prior revision"}</dd></div><div><dt>Transmission</dt><dd>Acknowledged · {String(request.disclosureVersion)}</dd></div></dl>
         {sourceCoverage?.status === "partial" && <p className="support-warning">This request uses a partial text extraction. {Number(sourceCoverage.omittedPageCount ?? 0)} page(s) were failed or empty and were not sent to the provider; absence claims must be reviewed cautiously.</p>}
@@ -58,5 +56,5 @@ export default async function AiExtractionSuggestionPage({ params, searchParams 
         {!successful && result && <p className="hint">This terminal result cannot be accepted. A new request is required for another provider attempt.</p>}
         <form action={rejectAiExtractionSuggestionAction} className="inline-form"><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="paperId" value={paperId} /><input type="hidden" name="requestId" value={requestId} /><button className="button secondary" type="submit">Reject suggestion</button></form>
       </section>}
-    </div></main>;
+    </div></div>;
 }

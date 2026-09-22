@@ -359,7 +359,6 @@ export async function createProjectAction(form: FormData) {
     project = await reviewServices.createProject({
       title: text(form, "title"),
       description: optional(form, "description"),
-      researchQuestion: optional(form, "researchQuestion"),
     });
   } catch (error) {
     fail("/", error);
@@ -393,11 +392,11 @@ export async function addPaperAction(form: FormData) {
         reviewDoi: text(form, "doi"),
         reviewAbstract: verbatimText(form, "abstract"),
       });
-      redirect(`/projects/${projectId}?${params.toString()}`);
+      redirect(`/projects/${projectId}/papers?${params.toString()}`);
     }
-    fail(`/projects/${projectId}`, error);
+    fail(`/projects/${projectId}/papers`, error);
   }
-  redirect(`/projects/${projectId}?saved=paper`);
+  redirect(`/projects/${projectId}/papers?saved=paper`);
 }
 
 export async function inspectPdfIntakeAction(form: FormData) {
@@ -459,9 +458,9 @@ export async function recordEvidenceAction(form: FormData) {
       note: optional(form, "note"),
     });
   } catch (error) {
-    fail(`/projects/${projectId}`, error);
+    fail(`/projects/${projectId}/evidence`, error);
   }
-  redirect(`/projects/${projectId}?saved=evidence`);
+  redirect(`/projects/${projectId}/evidence?saved=evidence`);
 }
 
 export async function setPreferredFullTextDocumentAction(form: FormData) {
@@ -658,7 +657,7 @@ export async function createClaimAction(form: FormData) {
   try {
     claim = await reviewServices.createClaim(projectId, { claimText: text(form, "claimText") });
   } catch (error) {
-    fail(`/projects/${projectId}`, error);
+    fail(`/projects/${projectId}/claims`, error);
   }
   redirect(`/projects/${projectId}/claims/${claim.id}`);
 }
@@ -998,6 +997,7 @@ export async function reactivateClaimAction(form: FormData) {
 }
 
 const manuscriptServices = reviewServices as typeof reviewServices & {
+  createDefaultManuscript: (projectId: string) => Promise<{ id: string }>;
   createSection: (projectId: string, manuscriptId: string, input: { title: string; sectionType?: string }) => Promise<unknown>;
   renameSection: (projectId: string, manuscriptId: string, sectionId: string, title: string) => Promise<unknown>;
   reorderSections: (projectId: string, manuscriptId: string, ids: string[]) => Promise<unknown>;
@@ -1024,6 +1024,14 @@ const manuscriptSnapshotServices = reviewServices as typeof reviewServices & {
 };
 
 function many(form: FormData, key: string) { return form.getAll(key).filter((value): value is string => typeof value === "string" && value.trim().length > 0).map((value) => value.trim()); }
+
+export async function createDefaultManuscriptAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  let manuscript: { id: string };
+  try { manuscript = await manuscriptServices.createDefaultManuscript(projectId); }
+  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
+  redirect(`/projects/${projectId}/manuscript?created=${encodeURIComponent(manuscript.id)}`);
+}
 
 export async function createManuscriptSectionAction(form: FormData) {
   const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId");
