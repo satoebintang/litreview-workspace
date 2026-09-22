@@ -12,9 +12,9 @@
     "e2e:server": "tsx tests/e2e/playwright-server.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "tsx tests/vitest-runner.ts",
     "test:watch": "vitest",
-    "test:integration": "vitest run tests/integration",
+    "test:integration": "tsx tests/vitest-runner.ts tests/integration",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:check": "drizzle-kit check"

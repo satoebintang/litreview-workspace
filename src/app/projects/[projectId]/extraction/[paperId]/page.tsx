@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { beginAiExtractionSuggestionAction, reviseExtractionValueAction } from "@/app/actions";
 import { aiExtractionProviderAvailable, reviewServices } from "@/app/server";
@@ -51,9 +50,8 @@ export default async function ExtractionPaperPage({ params, searchParams }: {
   const historicalOnly = !included && screening.reviewStatus.warnings.includes("legacy_analysis_precedes_full_text_screening");
   const savedMessage = query.saved === "value" ? "Extraction revision saved." : query.saved === "evidence" ? "Evidence support revised as a new extraction revision." : undefined;
 
-  return <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-    <div className="container workspace"><Link className="back-link" href={`/projects/${projectId}/extraction`}>← Extraction dashboard</Link>
-      <div className="workspace-header"><div><p className="eyebrow">Structured extraction · {included ? "Included paper" : "Paper not included"}</p><h1>{extraction.paper.title}</h1><p>{extraction.paper.authors.join(", ") || "Author details not added"}{extraction.paper.publicationYear ? ` · ${extraction.paper.publicationYear}` : ""}{extraction.paper.venue ? ` · ${extraction.paper.venue}` : ""}</p></div><span className={`status screening-${screening.currentState}`}>{screening.currentState}</span></div>
+  return <div className="project-page">
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Structured extraction · {included ? "Included paper" : "Paper not included"}</p><h1>{extraction.paper.title}</h1><p>{extraction.paper.authors.join(", ") || "Author details not added"}{extraction.paper.publicationYear ? ` · ${extraction.paper.publicationYear}` : ""}{extraction.paper.venue ? ` · ${extraction.paper.venue}` : ""}</p></div><span className={`status screening-${screening.currentState}`}>{screening.currentState}</span></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{savedMessage && <div className="success-note" role="status">{savedMessage}</div>}
       {!included && <div className="error-banner" role="status">{historicalOnly ? "This Paper has historical extraction work from before full-text screening. Its existing history remains readable, but new revisions cannot be saved until it is finally included." : "Extraction is available for finally included Papers only. This Paper’s existing extraction history remains readable, but new revisions cannot be saved."}</div>}
       <section className="card section-card extraction-worksheet"><div className="section-heading"><div><h2>Extraction worksheet</h2><p className="hint">Structured observations are separate from the verbatim Evidence passages that support them.</p></div>{progressItem && <span className="count">{progressItem.completedRequired} / {progressItem.requiredCount} required · {progressItem.percentage ?? 0}%</span>}</div>
@@ -75,5 +73,5 @@ export default async function ExtractionPaperPage({ params, searchParams }: {
         </article>; })}</div>}
       </section>
       <p className="footer-note">Each save records the complete observation, note, and Evidence set as a new immutable revision. Older revisions retain their own provenance.</p>
-    </div></main>;
+    </div></div>;
 }

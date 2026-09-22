@@ -32,12 +32,13 @@ test.describe("Slice 23 manuscript editorial review", () => {
 
     await page.goto("/");
     await page.getByLabel("Project title").fill(`Slice 23 review ${Date.now()}`);
-    await page.getByLabel("Research question").fill("Which wording needs editorial review?");
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = new URL(page.url()).pathname.split("/").pop()!;
 
     await page.goto(`/projects/${projectId}/manuscript`);
+    await page.getByRole("button", { name: "Start manuscript" }).click();
+    await expect(page.getByLabel("Section title")).toBeVisible();
     await page.getByLabel("Section title").fill("Discussion");
     await page.getByRole("button", { name: "Create section" }).click();
     await expect(page.getByRole("heading", { name: "Discussion" })).toBeVisible();
@@ -96,6 +97,7 @@ test.describe("Slice 23 manuscript editorial review", () => {
 
     await page.goto(`/projects/${projectId}/manuscript`);
     await page.getByRole("button", { name: "Remove prose" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Remove prose" }).click();
     await expect(page.getByText("Prose removed.", { exact: true })).toBeVisible();
     await page.goto(`/projects/${projectId}/manuscript/review`);
     await expect(page.getByText("Target is removed", { exact: false })).toBeVisible();

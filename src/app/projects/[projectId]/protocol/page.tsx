@@ -43,9 +43,8 @@ export default async function ProtocolPage({ params, searchParams }: {
   const defaultStrategy = activeStrategies[0];
   const defaultSource = defaultStrategy ? sourceById.get(defaultStrategy.searchSourceId) : activeSources[0];
 
-  return <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-    <div className="container workspace"><Link className="back-link" href={`/projects/${projectId}`}>← Back to workspace</Link>
-      <div className="workspace-header"><div><p className="eyebrow">Review protocol</p><h1>Protocol &amp; search</h1><p>{project.title} · preserve the exact history of every search.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Link className="button secondary" href={`/projects/${projectId}/review-report`}>Open review report →</Link><Link className="button secondary" href={`/projects/${projectId}/screening`}>Open screening criteria →</Link></div></div>
+  return <div className="project-page">
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Review protocol</p><h1>Protocol &amp; search</h1><p>{project.title} · preserve the exact history of every search.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Link className="button secondary" href={`/projects/${projectId}/review-report`}>Open review report →</Link><Link className="button secondary" href={`/projects/${projectId}/screening`}>Open screening criteria →</Link></div></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">Protocol updated.</div>}
 
        <div className="workspace-grid">
@@ -85,5 +84,5 @@ export default async function ProtocolPage({ params, searchParams }: {
         </section>
       </div>
       <p className="footer-note">Search runs and match history are append-only. Source snapshots remain readable even if a project-local source is later renamed.</p>
-    </div></main>;
+    </div></div>;
 }

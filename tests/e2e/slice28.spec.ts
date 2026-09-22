@@ -35,7 +35,7 @@ test.describe("Slice 28 PDF-first intake", () => {
       await page.getByRole("button", { name: /Create project/ }).click();
       await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
       const actualProjectId = new URL(page.url()).pathname.split("/").pop()!;
-    await page.getByRole("link", { name: /Upload PDF/ }).click();
+    await page.goto(`/projects/${actualProjectId}/papers/pdf-intake`);
     await page.locator("#pdf-file").setInputFiles(firstPdf);
     await page.getByRole("button", { name: "Stage PDF" }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${actualProjectId}/papers/pdf-intake/[0-9a-f-]+\\?saved=staged$`));
@@ -93,7 +93,7 @@ test.describe("Slice 28 PDF-first intake", () => {
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = new URL(page.url()).pathname.split("/").pop()!;
-    await page.getByRole("link", { name: /Upload PDF/ }).click();
+    await page.goto(`/projects/${projectId}/papers/pdf-intake`);
     await page.locator("#pdf-file").setInputFiles({ name: "native-intake.pdf", mimeType: "application/pdf", buffer: nativePdf });
     await page.getByRole("button", { name: "Stage PDF" }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/papers/pdf-intake/[0-9a-f-]+\\?saved=staged$`));

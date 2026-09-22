@@ -1,58 +1,140 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { addPaperAction, recordEvidenceAction, createClaimAction } from "@/app/actions";
+import { Alert, EmptyState, PageHeader, StatusBadge } from "@/components";
+import { deriveProjectGuidance } from "@/application/project-workspace-read-services";
 import { DomainError } from "@/domain/errors";
 import { reviewServices } from "@/app/server";
+import { projectPrimaryHref } from "../route-contract";
 
-export default async function ProjectPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams?: Promise<{ error?: string; saved?: string; manualReview?: string; reviewTitle?: string; reviewAuthors?: string; reviewYear?: string; reviewVenue?: string; reviewDoi?: string; reviewAbstract?: string }> }) {
+type OverviewSearchParams = { error?: string };
+
+function MetricCard({ title, href, children }: { title: string; href: string; children: React.ReactNode }) {
+  return (
+    <section className="card overview-card">
+      <div className="section-heading"><h2>{title}</h2><Link className="text-link" href={href}>Open <span aria-hidden="true">→</span></Link></div>
+      <dl className="overview-metrics">{children}</dl>
+    </section>
+  );
+}
+
+function Metric({ label, value, note }: { label: string; value: React.ReactNode; note?: string }) {
+  return <div className="overview-metric"><dt>{label}</dt><dd>{value}{note && <span className="hint">{note}</span>}</dd></div>;
+}
+
+export default async function ProjectOverviewPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams?: Promise<OverviewSearchParams> }) {
   const { projectId } = await params;
   const query = searchParams ? await searchParams : {};
-  let project;
-  try { project = await reviewServices.getProject(projectId); } catch (error) { if (error instanceof DomainError && (error.code === "PROJECT_NOT_FOUND" || error.code === "VALIDATION_ERROR")) notFound(); throw error; }
-  const [papers, evidence, claims, screeningPapers, researchQuestions] = await Promise.all([reviewServices.listPapers(projectId), reviewServices.listEvidence(projectId), reviewServices.listClaims(projectId), reviewServices.listScreeningPapers(projectId), reviewServices.listResearchQuestions(projectId)]);
-  const reviewTitle = query.reviewTitle ?? "";
-  const reviewAuthors = query.reviewAuthors ?? "";
-  const reviewYear = query.reviewYear ?? "";
-  const reviewVenue = query.reviewVenue ?? "";
-  const reviewDoi = query.reviewDoi ?? "";
-  const reviewAbstract = query.reviewAbstract ?? "";
-  const manualCandidates = query.manualReview === "1" && reviewTitle
-    ? await reviewServices.findManualPaperCandidates(projectId, {
-      title: reviewTitle,
-      authors: reviewAuthors ? reviewAuthors.split(",").map((author) => author.trim()).filter(Boolean) : [],
-      publicationYear: reviewYear ? Number(reviewYear) : null,
-      venue: reviewVenue || null,
-      doi: reviewDoi || null,
-      abstract: reviewAbstract || null,
-    })
-    : [];
-  const screeningByPaperId = new Map(screeningPapers.map((paper) => [paper.id, paper]));
-  const paperById = new Map(papers.map((paper) => [paper.id, paper]));
+  let facts;
+  try {
+    facts = await reviewServices.getProjectOverview(projectId);
+  } catch (error) {
+    if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "VALIDATION_ERROR"].includes(error.code)) notFound();
+    throw error;
+  }
+
+  const guidance = deriveProjectGuidance({
+    projectId,
+    researchQuestionCount: facts.plan.researchQuestionCount,
+    canonicalPaperCount: facts.papers.canonicalPaperCount,
+    unresolvedDuplicatePairCount: facts.screening.unresolvedDuplicatePairCount,
+    unscreenedPaperCount: facts.papers.unscreenedPaperCount,
+    maybePaperCount: facts.papers.maybePaperCount,
+    retrievalNotSoughtCount: facts.screening.retrievalNotSoughtCount,
+    retrievalPendingCount: facts.screening.retrievalPendingCount,
+    retrievalUnavailableCount: facts.screening.retrievalUnavailableCount,
+    awaitingFullTextAssessmentCount: facts.screening.awaitingFullTextAssessmentCount,
+    fullTextMaybeCount: facts.screening.fullTextMaybeCount,
+    fullTextConflictCount: facts.screening.fullTextConflictCount,
+    finallyIncludedPaperCount: facts.screening.finallyIncludedPaperCount,
+    requiredFieldCount: facts.extraction.requiredFieldCount,
+    aiExtractionSuggestionCount: facts.extraction.aiSuggestionAwaitingReviewCount,
+    missingRequiredExtractionPaperCount: facts.extraction.missingRequiredExtractionPaperCount,
+    evidenceCount: facts.evidence.evidenceCount,
+    evidenceSetCount: facts.evidence.evidenceSetCount,
+    aiSynthesisSuggestionCount: facts.synthesis.aiSuggestionAwaitingReviewCount,
+    activePreparationCount: facts.synthesis.activePreparationCount,
+    activeUnsupportedClaimCount: facts.writing.activeUnsupportedClaimCount,
+    openEditorialThreadCount: facts.writing.openEditorialThreadCount,
+    manuscriptWorkExists: facts.writing.manuscriptCount > 0 || facts.writing.snapshotCount > 0,
+    nextAiExtractionHref: facts.extraction.nextAiSuggestionHref,
+    nextAiSynthesisHref: facts.synthesis.nextAiSuggestionHref,
+    nextPreparationHref: facts.synthesis.nextPreparationHref,
+  });
+
   return (
-    <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-      <div className="container workspace"><Link className="back-link" href="/">← All projects</Link>
-        <div className="workspace-header"><div><p className="eyebrow">Review workspace</p><h1>{project.title}</h1>{researchQuestions[0] && <p>Research question: {researchQuestions[0].label}</p>}</div><span className="status supported">● Workspace active</span></div>
-        <nav className="stagebar" aria-label="Review stages"><span className="stage active">1. Question</span><span className="stage active">2. Papers</span><span className="stage active">3. Evidence</span><span className="stage active">4. Claims</span><span className="stage active">5. Extraction</span><span className="stage">6. Synthesis</span><span className="stage">7. Writing</span></nav>
-        {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">{query.saved === "paper" ? "Paper added to the collection." : "Evidence recorded with source provenance."}</div>}
-         <div className="workspace-grid">
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}><Link className="button ghost" href={`/projects/${projectId}/research-questions`}>Open Research Questions →</Link><Link className="button ghost" href={`/projects/${projectId}/evidence`}>Open Evidence curation →</Link><Link className="button ghost" href={`/projects/${projectId}/evidence-sets`}>Open Evidence Sets →</Link><Link className="button ghost" href={`/projects/${projectId}/deduplication`}>Open deduplication queue →</Link><Link className="button ghost" href={`/projects/${projectId}/review-flow`}>Open review flow →</Link><Link className="button ghost" href={`/projects/${projectId}/review-report`}>Open review report →</Link></div>
-          <section className="card section-card"><div className="section-heading"><h2>Paper collection</h2><span className="count">{papers.length} {papers.length === 1 ? "paper" : "papers"}</span></div>
-            <p className="hint" style={{ marginBottom: 18 }}>Collect sources, document screening decisions, and extract structured observations from included papers.</p><div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}><Link className="button secondary" href={`/projects/${projectId}/research-questions`}>Open research questions →</Link><Link className="button secondary" href={`/projects/${projectId}/protocol`}>Open protocol &amp; search →</Link><Link className="button ghost" href={`/projects/${projectId}/papers/doi-intake`}>Look up DOI →</Link><Link className="button ghost" href={`/projects/${projectId}/papers/imports/upload`}>Import BibTeX / RIS →</Link><Link className="button ghost" href={`/projects/${projectId}/papers/imports`}>Import history →</Link><Link className="button ghost" href={`/projects/${projectId}/papers/pdf-intake`}>Upload PDF →</Link><Link className="button ghost" href={`/projects/${projectId}/papers/export`}>Export BibTeX →</Link><Link className="button ghost" href={`/projects/${projectId}/screening`}>Open screening dashboard →</Link><Link className="button ghost" href={`/projects/${projectId}/extraction`}>Open extraction →</Link><Link className="button ghost" href={`/projects/${projectId}/synthesis`}>Open synthesis →</Link><Link className="button ghost" href={`/projects/${projectId}/manuscript`}>Open manuscript →</Link></div>
-            {manualCandidates.length > 0 && <section className="card section-card" style={{ marginTop: 16 }}><h3>Review possible duplicate Papers</h3><p className="hint">A DOI or title/year match already exists. Confirm that this is a distinct work before creating another canonical Paper.</p><div className="item-list">{manualCandidates.map((candidate) => <div className="item" key={candidate.id}><div className="item-title">{candidate.title}</div><div className="item-meta">{candidate.authors?.join(", ") || "Authors absent"}{candidate.publicationYear ? ` · ${candidate.publicationYear}` : ""}{candidate.venue ? ` · ${candidate.venue}` : ""}</div>{candidate.doi && <div className="item-meta">DOI: {candidate.doi}</div>}<div className="item-meta">Candidate signal: {candidate.candidateReason}</div></div>)}</div><form action={addPaperAction} style={{ marginTop: 16 }}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="title" value={reviewTitle} /><input type="hidden" name="authors" value={reviewAuthors} /><input type="hidden" name="publicationYear" value={reviewYear} /><input type="hidden" name="venue" value={reviewVenue} /><input type="hidden" name="doi" value={reviewDoi} /><input type="hidden" name="abstract" value={reviewAbstract} />{manualCandidates.map((candidate) => <input key={candidate.id} type="hidden" name="candidatePaperIds" value={candidate.id} />)}<label className="checkbox"><input type="checkbox" name="distinctPaperAcknowledged" required /> I reviewed these candidate Papers and confirm this is a distinct work.</label><button className="button" type="submit">Create distinct Paper</button></form></section>}
-            <form action={addPaperAction}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="paper-title">Title</label><input id="paper-title" name="title" required placeholder="Paper title" /></div><div className="field"><label htmlFor="paper-authors">Authors <span className="hint">comma-separated, in order</span></label><input id="paper-authors" name="authors" placeholder="First Author, Second Author" /></div><div className="field"><label htmlFor="paper-year">Publication year <span className="hint">optional</span></label><input id="paper-year" name="publicationYear" type="number" min="1000" max="3000" placeholder="2024" /></div><div className="field"><label htmlFor="paper-venue">Venue <span className="hint">optional</span></label><input id="paper-venue" name="venue" placeholder="Journal or conference" /></div><div className="field"><label htmlFor="paper-doi">DOI <span className="hint">optional</span></label><input id="paper-doi" name="doi" placeholder="10.1234/example" /></div><div className="field"><label htmlFor="paper-abstract">Abstract <span className="hint">optional · used for screening</span></label><textarea id="paper-abstract" name="abstract" placeholder="Paste the title/abstract text for screening" /></div><button className="button" type="submit">Add paper</button></form>
-            <div className="item-list" style={{ marginTop: 22 }}>{papers.length === 0 ? <div className="empty">Your source collection is empty. Add the first paper above.</div> : papers.map((paper) => <div className="item" key={paper.id}><div className="item-row"><div><div className="item-title">{paper.title}</div><div className="item-meta">{paper.authors.length ? paper.authors.join(", ") : "Author details not added"}{paper.publicationYear ? ` · ${paper.publicationYear}` : ""}</div>{paper.venue && <div className="item-meta">{paper.venue}</div>}</div><div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><span className={`status screening-${screeningByPaperId.get(paper.id)?.screeningState ?? "unscreened"}`}>{screeningByPaperId.get(paper.id)?.screeningState ?? "unscreened"}</span><Link className="button ghost" href={`/projects/${projectId}/papers/${paper.id}/documents`}>Documents</Link></div></div></div>)}</div>
-          </section>
-          <section className="card section-card"><div className="section-heading"><h2>Source evidence</h2><span className="count">{evidence.length} captured</span></div>
-            {papers.length === 0 ? <div className="empty">Add a paper before recording source evidence.</div> : <form action={recordEvidenceAction}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="evidence-paper">Paper</label><select id="evidence-paper" name="paperId" required defaultValue=""><option value="" disabled>Select a paper</option>{papers.map((paper) => <option key={paper.id} value={paper.id}>{paper.title}</option>)}</select></div><div className="field"><label htmlFor="source-text">Verbatim source passage</label><textarea id="source-text" name="sourceText" required placeholder="Copy the exact passage that supports your work" /></div><div className="field"><label htmlFor="page-number">Page number</label><input id="page-number" name="pageNumber" required type="number" min="1" placeholder="12" /></div><div className="field"><label htmlFor="evidence-note">Researcher note <span className="hint">optional · not source text</span></label><textarea id="evidence-note" name="note" placeholder="Your context or interpretation" /></div><button className="button" type="submit">Record evidence</button></form>}
-            <div className="item-list" style={{ marginTop: 22 }}>{evidence.length === 0 ? <div className="empty">Evidence you capture will appear here with its source page.</div> : evidence.map((item) => <div className="item" key={item.id}><div className="quote">“{item.sourceText}”</div><div className="item-meta">Page {item.pageNumber} · <span className="paper-chip">{paperById.get(item.paperId)?.title ?? "Source paper"}</span></div><div className="item-meta">{item.fullTextDocumentId ? <Link href={`/projects/${projectId}/papers/${item.paperId}/documents/${item.fullTextDocumentId}`}>Document artifact: {item.fullTextDocumentId}</Link> : "Document artifact: none recorded"}</div>{item.note && <div className="item-meta">Note: {item.note}</div>}{item.curationWarning && <div className="support-warning">{item.reviewState === "rejected" ? "Currently rejected for new direct use." : item.reviewState === "needs_review" ? "Needs review; direct use remains allowed." : item.reviewState === "unreviewed" ? "Never reviewed; direct use remains allowed." : "Accepted for direct use."}</div>}</div>)}</div>
-          </section>
-          <section className="card section-card full"><div className="section-heading"><h2>Manuscript Claims</h2><span className="count">{claims.length} {claims.length === 1 ? "claim" : "claims"}</span></div>
-            <p className="hint" style={{ marginBottom: 18 }}>Turn researcher-authored assertions into immutable, revision-aware records with exact Evidence, observations, syntheses, and grounded citation candidates.</p><Link className="button" href={`/projects/${projectId}/claims`}>Open Claims workspace →</Link>
-            <form action={createClaimAction} style={{ marginTop: 18 }}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="new-claim">New claim</label><textarea id="new-claim" name="claimText" required placeholder="State a researcher-authored assertion" /></div><button className="button secondary" type="submit">Create claim</button></form>
-          </section>
-        </div>
-        <p className="footer-note">Your research record is source-first: claims become supported only when linked to captured evidence.</p>
+    <div className="overview-page">
+      <PageHeader
+        eyebrow="Project overview"
+        title={facts.project.title}
+        description={facts.project.description ?? "A read-only view of the current research record and the next available work."}
+        status={<StatusBadge tone="info">Operational guidance</StatusBadge>}
+      />
+      {query.error && <Alert tone="danger" title="Could not complete that action">{query.error}</Alert>}
+
+      <section className="overview-guidance card" aria-labelledby="guidance-heading">
+        <div className="section-heading"><div><p className="eyebrow">Attention</p><h2 id="guidance-heading">What to do next</h2></div><StatusBadge tone={guidance.length ? "warning" : "neutral"}>{guidance.length ? `${guidance.length} available` : "No pending recommendation"}</StatusBadge></div>
+        {guidance.length > 0 ? (
+          <div className="guidance-list">
+            <div className="guidance-item guidance-item--recommended"><div><span className="eyebrow">Recommended next</span><strong>{guidance[0].label}</strong></div><Link className="button" href={guidance[0].href}>Open workspace <span aria-hidden="true">→</span></Link></div>
+            {guidance.slice(1, 4).map((action) => <div className="guidance-item" key={action.key}><span>{action.label}</span><Link className="button ghost" href={action.href}>Open <span aria-hidden="true">→</span></Link></div>)}
+          </div>
+        ) : (
+          <EmptyState title="Your workspace is ready for review" description="No immediate recommendation is pending. Use the workspace links below to inspect the current research record." />
+        )}
+      </section>
+
+      <div className="overview-card-grid">
+        <MetricCard title="Plan" href={projectPrimaryHref(projectId, "plan")}>
+          <Metric label="Research Questions" value={facts.plan.researchQuestionCount} />
+          <Metric label="Search strategies" value={facts.plan.searchStrategyCount} />
+          <Metric label="SearchRuns" value={facts.plan.searchRunCount} />
+        </MetricCard>
+        <MetricCard title="Papers" href={projectPrimaryHref(projectId, "papers")}>
+          <Metric label="Canonical Papers" value={facts.papers.canonicalPaperCount} />
+        </MetricCard>
+        <MetricCard title="Screening" href={projectPrimaryHref(projectId, "screen")}>
+          <Metric label="Possible duplicate pairs" value={facts.screening.unresolvedDuplicatePairCount} />
+          <Metric label="Unscreened" value={facts.papers.unscreenedPaperCount} />
+          <Metric label="Awaiting full-text assessment" value={facts.screening.awaitingFullTextAssessmentCount} />
+          <Metric label="Finally included" value={facts.screening.finallyIncludedPaperCount} />
+        </MetricCard>
+        <MetricCard title="Extraction" href={projectPrimaryHref(projectId, "extract")}>
+          <Metric label="Required fields" value={facts.extraction.requiredFieldCount} />
+          <Metric label="Papers missing a required value" value={facts.extraction.missingRequiredExtractionPaperCount} />
+          <Metric label="AI suggestions awaiting review" value={facts.extraction.aiSuggestionAwaitingReviewCount} />
+        </MetricCard>
+        <MetricCard title="Synthesis" href={projectPrimaryHref(projectId, "synthesize")}>
+          <Metric label="Active preparations" value={facts.synthesis.activePreparationCount} />
+          <Metric label="Active synthesis statements" value={facts.synthesis.activeSynthesisStatementCount} />
+          <Metric label="Finalized RQ Answers" value={facts.synthesis.finalizedAnswerCount} />
+          <Metric label="AI suggestions awaiting review" value={facts.synthesis.aiSuggestionAwaitingReviewCount} />
+        </MetricCard>
+        <MetricCard title="Writing" href={projectPrimaryHref(projectId, "write")}>
+          <Metric label="Active unsupported Claims" value={facts.writing.activeUnsupportedClaimCount} />
+          <Metric label="Open editorial threads" value={facts.writing.openEditorialThreadCount} />
+          <Metric label="Snapshots" value={facts.writing.snapshotCount} />
+        </MetricCard>
       </div>
-    </main>
+
+      <section className="workspace-shortcuts" aria-labelledby="workspace-shortcuts-heading">
+        <div className="section-heading"><div><p className="eyebrow">Workspace</p><h2 id="workspace-shortcuts-heading">Open a workspace</h2></div></div>
+        <div className="shortcut-grid">
+          {[
+            ["Plan", "Define Research Questions, protocol, and search runs.", "plan"],
+            ["Papers", "Collect canonical Papers and choose an intake boundary.", "papers"],
+            ["Screen", "Review duplicate, title/abstract, and full-text decisions.", "screen"],
+            ["Extract", "Record structured values and review AI suggestions.", "extract"],
+            ["Synthesize", "Curate Evidence Sets and write supported synthesis.", "synthesize"],
+            ["Write", "Build the manuscript and continue editorial review.", "write"],
+            ["Reports", "Inspect review-flow accounting and reporting views.", "reports"],
+          ].map(([label, description, key]) => (
+            <Link className="shortcut-card" href={projectPrimaryHref(projectId, key as "plan" | "papers" | "screen" | "extract" | "synthesize" | "write" | "reports")} key={key}>
+              <strong>{label}</strong><span>{description}</span><span aria-hidden="true">→</span>
+            </Link>
+          ))}
+        </div>
+      </section>
+      <p className="footer-note">Navigation, recommendations, and these metrics are presentation derived; they are not workflow state or provenance.</p>
+    </div>
   );
 }

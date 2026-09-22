@@ -14,11 +14,10 @@ export default async function FullTextRetrievalPage({ params, searchParams }: { 
   const queue = await reviewServices.listFullTextRetrievalQueue(projectId, state === "all" ? undefined : state);
   const all = state === "all" ? queue : await reviewServices.listFullTextRetrievalQueue(projectId);
   const count = (key: typeof states[number]) => key === "all" ? all.length : all.filter(({ reviewStatus }) => key === "conflict" ? reviewStatus.warnings.includes("retrieval_history_without_current_title_abstract_inclusion") : reviewStatus.fullTextRetrievalState === key).length;
-  return <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-    <div className="container workspace"><Link className="back-link" href={`/projects/${projectId}/screening/full-text`}>← Full-text screening</Link>
-      <div className="workspace-header"><div><p className="eyebrow">Retrieval stage · {project.title}</p><h1>Full-text retrieval</h1><p>Record attempts to obtain sufficient full-text material. Retrieval history is separate from eligibility screening.</p></div></div>
+  return <div className="project-page">
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Retrieval stage · {project.title}</p><h1>Full-text retrieval</h1><p>Record attempts to obtain sufficient full-text material. Retrieval history is separate from eligibility screening.</p></div></div>
       <div className="screening-stats">{states.map((key) => <Link key={key} className={`screening-stat ${state === key ? "active" : ""}`} href={key === "all" ? `/projects/${projectId}/screening/full-text/retrieval` : `/projects/${projectId}/screening/full-text/retrieval?state=${key}`}><span>{key.replaceAll("_", " ")}</span><strong>{count(key)}</strong></Link>)}</div>
       <section className="card section-card full"><div className="section-heading"><h2>Retrieval queue</h2><span className="count">{queue.length} shown</span></div>{queue.length === 0 ? <div className="empty">No Papers match this retrieval state.</div> : <div className="item-list">{queue.map(({ paper, reviewStatus }) => <Link className="item item-row" key={paper.id} href={`/projects/${projectId}/screening/full-text/retrieval/${paper.id}`}><div><div className="item-title">{paper.title}</div><div className="item-meta">TA: {reviewStatus.titleAbstractState} · current retrieval: {reviewStatus.fullTextRetrievalState} · ever retrieved: {reviewStatus.everRetrieved ? "yes" : "no"}</div></div><span className="status supported">{reviewStatus.fullTextRetrievalState.replaceAll("_", " ")}</span></Link>)}</div>}</section>
       <p className="footer-note">Only currently title/abstract-included Papers can receive new retrieval attempts. Historical retrieval and screening records remain readable.</p>
-    </div></main>;
+    </div></div>;
 }

@@ -8,10 +8,13 @@ test.describe("Slice 5 manuscript Claims", () => {
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Grounded study");
     await page.getByRole("button", { name: "Add paper" }).click();
-    await page.getByLabel("Paper").selectOption({ label: "Grounded study" });
+    await expect(page.getByText("Grounded study", { exact: true }).first()).toBeVisible();
+    await page.goto(`/projects/${projectId}/evidence`);
+    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Grounded study" });
     await page.getByLabel("Verbatim source passage").fill("The observed result was significant.");
     await page.getByLabel("Page number").fill("7");
     await page.getByRole("button", { name: "Record evidence" }).click();
@@ -30,6 +33,7 @@ test.describe("Slice 5 manuscript Claims", () => {
     await expect(page.getByText("The observed result was significant.", { exact: false }).first()).toBeVisible();
 
     await page.getByRole("button", { name: "Withdraw Claim" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Withdraw Claim" }).click();
     await expect(page).toHaveURL(/saved=withdrawn$/);
     await expect(page.getByText("withdrawn", { exact: true })).toBeVisible();
     await expect(page.getByText(/Complete Claim history/)).toBeVisible();

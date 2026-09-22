@@ -3,9 +3,11 @@ import { notFound } from "next/navigation";
 import {
   archiveEvidenceLabelAction,
   createEvidenceLabelAction,
+  recordEvidenceAction,
 } from "@/app/actions";
 import { DomainError } from "@/domain/errors";
 import { reviewServices } from "@/app/server";
+import { ConfirmAction } from "@/components";
 
 const states = ["attention", "unreviewed", "needs_review", "accepted", "rejected", "all"] as const;
 
@@ -19,8 +21,7 @@ export default async function EvidenceWorkspacePage({
   const { projectId } = await params;
   const query = searchParams ? await searchParams : {};
   const state = states.includes(query.state as typeof states[number]) ? query.state as typeof states[number] : "attention";
-  let project;
-  try { project = await reviewServices.getProject(projectId); }
+  try { await reviewServices.getProject(projectId); }
   catch (error) { if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "VALIDATION_ERROR"].includes(error.code)) notFound(); throw error; }
   const [workspace, papers, labels] = await Promise.all([
     reviewServices.listEvidenceWorkspace(projectId, { state, paperId: query.paperId, labelId: query.labelId }),
@@ -29,15 +30,16 @@ export default async function EvidenceWorkspacePage({
   ]);
   const paperById = new Map(papers.map((paper) => [paper.id, paper]));
   const stateLabel: Record<string, string> = { attention: "Attention", unreviewed: "Unreviewed", needs_review: "Needs review", accepted: "Accepted", rejected: "Rejected", all: "All" };
-  return <main className="shell">
-    <header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-    <div className="container workspace">
-      <Link className="back-link" href={`/projects/${projectId}`}>← {project.title}</Link>
-      <div className="workspace-header"><div><p className="eyebrow">Evidence curation</p><h1>Evidence workspace</h1><p>Review researcher curation around immutable source passages.</p></div><span className="status supported">{workspace.total} matching</span></div>
+  return <div className="project-page">
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Evidence curation</p><h1>Evidence workspace</h1><p>Review researcher curation around immutable source passages.</p></div><span className="status supported">{workspace.total} matching</span></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}
-      {query.saved && <div className="success-note" role="status">{query.saved === "label" ? "Label change saved." : query.saved === "label-archived" ? "Label archived." : "Curation change saved."}</div>}
-      <nav className="stagebar" aria-label="Evidence review states">{states.map((item) => <Link key={item} className={`stage ${state === item ? "active" : ""}`} href={`/projects/${projectId}/evidence?state=${item}`}>{stateLabel[item]}</Link>)}</nav>
+      {query.saved && <div className="success-note" role="status">{query.saved === "evidence" ? "Evidence recorded with source provenance." : query.saved === "label" ? "Label change saved." : query.saved === "label-archived" ? "Label archived." : "Curation change saved."}</div>}
+
       <div className="workspace-grid">
+        <section className="card section-card full" aria-labelledby="capture-evidence-heading">
+          <div className="section-heading"><div><p className="eyebrow">Source capture</p><h2 id="capture-evidence-heading">Record Evidence</h2></div><span className="count">Manual capture</span></div>
+          {papers.length === 0 ? <div className="empty">Add a Paper before recording a source passage.</div> : <form action={recordEvidenceAction}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="evidence-paper">Paper</label><select id="evidence-paper" name="paperId" required defaultValue=""><option value="" disabled>Select a Paper</option>{papers.map((paper) => <option key={paper.id} value={paper.id}>{paper.title}</option>)}</select></div><div className="field"><label htmlFor="source-text">Verbatim source passage</label><textarea id="source-text" name="sourceText" required placeholder="Copy the exact passage that supports your work" /></div><div className="field"><label htmlFor="page-number">Page number</label><input id="page-number" name="pageNumber" required type="number" min="1" placeholder="12" /></div><div className="field"><label htmlFor="evidence-note">Researcher note <span className="hint">optional · not source text</span></label><textarea id="evidence-note" name="note" placeholder="Your context or interpretation" /></div><button className="button" type="submit">Record evidence</button></form>}
+        </section>
         <section className="card section-card full">
           <div className="section-heading"><h2>Filter Evidence</h2><span className="count">{stateLabel[state]}</span></div>
           <form method="get" className="filter-grid">
@@ -60,10 +62,10 @@ export default async function EvidenceWorkspacePage({
         <section className="card section-card">
           <div className="section-heading"><h2>Project labels</h2><span className="count">{labels.filter((label) => !label.archivedAt).length} active</span></div>
           <form action={createEvidenceLabelAction}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="label-name">New label</label><input id="label-name" name="name" required maxLength={100} placeholder="methodology" /></div><div className="field"><label htmlFor="label-description">Description <span className="hint">optional</span></label><textarea id="label-description" name="description" maxLength={500} /></div><button className="button" type="submit">Create label</button></form>
-          <div className="item-list" style={{ marginTop: 18 }}>{labels.length === 0 ? <div className="empty">No labels yet.</div> : labels.map((label) => <article className="item" key={label.id}><div className="item-row"><div><div className="item-title">{label.name}</div>{label.description && <div className="item-meta">{label.description}</div>}</div>{label.archivedAt ? <span className="status stale">Archived</span> : <form action={archiveEvidenceLabelAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="labelId" value={label.id} /><button className="button ghost" type="submit">Archive</button></form>}</div></article>)}</div>
+          <div className="item-list" style={{ marginTop: 18 }}>{labels.length === 0 ? <div className="empty">No labels yet.</div> : labels.map((label) => <article className="item" key={label.id}><div className="item-row"><div><div className="item-title">{label.name}</div>{label.description && <div className="item-meta">{label.description}</div>}</div>{label.archivedAt ? <span className="status stale">Archived</span> : <ConfirmAction action={archiveEvidenceLabelAction} label="Archive" title="Archive this Evidence label?" consequence={`The label “${label.name}” will no longer be assignable. Historical label events remain preserved.`} hiddenFields={{ projectId, labelId: label.id }} confirmLabel="Archive label" />}</div></article>)}</div>
         </section>
       </div>
       <p className="footer-note">Curation never edits source text, Paper identity, document provenance, extraction identity, page, or offsets.</p>
     </div>
-  </main>;
+  </div>;
 }

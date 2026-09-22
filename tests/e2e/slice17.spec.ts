@@ -8,11 +8,13 @@ test.describe("Slice 17 Evidence Sets", () => {
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Evidence Set study");
     await page.getByRole("button", { name: "Add paper" }).click();
     await expect(page.getByText("Evidence Set study", { exact: true }).first()).toBeVisible();
-    await page.getByLabel("Paper").selectOption({ label: "Evidence Set study" });
+    await page.goto(`/projects/${projectId}/evidence`);
+    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Evidence Set study" });
     await page.getByLabel("Verbatim source passage").fill("An exact passage retained in the set");
     await page.getByLabel("Page number").fill("6");
     await page.getByRole("button", { name: "Record evidence" }).click();
@@ -46,6 +48,7 @@ test.describe("Slice 17 Evidence Sets", () => {
     await expect(page.getByRole("status")).toHaveText("Evidence Set annotation saved.");
     await expect(page.getByText("Compare this passage with the next study", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Archive and freeze set" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Archive and freeze set" }).click();
     await expect(page.getByRole("status")).toHaveText("Evidence Set archived and frozen.");
     await expect(page.getByText("This set is frozen. Its composition and annotations remain readable, but no changes are allowed.", { exact: true })).toBeVisible();
     await expect(page.getByText("created · sequence 1 · 0 active", { exact: true })).toBeVisible();

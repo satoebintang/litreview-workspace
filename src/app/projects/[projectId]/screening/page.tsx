@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { archiveScreeningCriterionAction, createScreeningCriterionAction } from "@/app/actions";
 import { reviewServices } from "@/app/server";
+import { ConfirmAction } from "@/components/ConfirmAction";
 import { DomainError } from "@/domain/errors";
 
 const states = ["all", "unscreened", "included", "excluded", "maybe"] as const;
@@ -20,9 +21,8 @@ export default async function ScreeningDashboardPage({ params, searchParams }: {
   const state = states.includes(query.state as typeof states[number]) ? query.state as typeof states[number] : "all";
   const papers = state === "all" ? allPapers : allPapers.filter((paper) => paper.screeningState === state);
   const counts = Object.fromEntries(states.slice(1).map((key) => [key, allPapers.filter((paper) => paper.screeningState === key).length]));
-  return <main className="shell"><header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-    <div className="container workspace"><Link className="back-link" href={`/projects/${projectId}`}>← Back to workspace</Link>
-      <div className="workspace-header"><div><p className="eyebrow">Paper collection</p><h1>Title/abstract screening</h1><p>{project.title} · {allPapers.length} {allPapers.length === 1 ? "paper" : "papers"}</p></div>{allPapers.length > 0 ? <a className="button" href={`/projects/${projectId}/screening/${allPapers.find((paper) => paper.screeningState === "unscreened")?.id ?? allPapers[0].id}`}>Start screening</a> : <span className="hint">Add a paper to start screening.</span>}</div>
+  return <div className="project-page">
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Paper collection</p><h1>Title/abstract screening</h1><p>{project.title} · {allPapers.length} {allPapers.length === 1 ? "paper" : "papers"}</p></div>{allPapers.length > 0 ? <a className="button" href={`/projects/${projectId}/screening/${allPapers.find((paper) => paper.screeningState === "unscreened")?.id ?? allPapers[0].id}`}>Start screening</a> : <span className="hint">Add a paper to start screening.</span>}</div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">Screening protocol updated.</div>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}><Link className="button ghost" href={`/projects/${projectId}/review-flow`}>Review flow →</Link><Link className="button ghost" href={`/projects/${projectId}/screening/full-text/retrieval`}>Full-text retrieval →</Link><Link className="button ghost" href={`/projects/${projectId}/screening/full-text`}>Full-text screening →</Link><Link className="button ghost" href={`/projects/${projectId}/deduplication`}>Deduplication queue →</Link></div>
       <div className="screening-stats">{states.slice(1).map((key) => <Link key={key} className={`screening-stat ${state === key ? "active" : ""}`} href={`/projects/${projectId}/screening?state=${key}`}><span>{key}</span><strong>{counts[key]}</strong></Link>)}</div>
@@ -32,7 +32,7 @@ export default async function ScreeningDashboardPage({ params, searchParams }: {
       </section>
       <section className="card section-card"><div className="section-heading"><h2>Screening criteria</h2><span className="count">{criteria.filter((criterion) => !criterion.archivedAt).length} active</span></div>
         <form action={createScreeningCriterionAction}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="criterion-type">Type</label><select id="criterion-type" name="type" defaultValue="inclusion"><option value="inclusion">Inclusion</option><option value="exclusion">Exclusion</option></select></div><div className="field"><label htmlFor="criterion-text">Criterion</label><textarea id="criterion-text" name="text" required placeholder="Document the review protocol" /></div><button className="button" type="submit">Add criterion</button></form>
-        <div className="item-list" style={{ marginTop: 22 }}>{criteria.length === 0 ? <div className="empty">Add criteria to document why papers are included or excluded.</div> : criteria.map((criterion) => <div className="item" key={criterion.id}><div className="item-row"><div><div className="item-meta">{criterion.type}</div><div className="item-title">{criterion.text}</div></div>{criterion.archivedAt ? <span className="status unsupported">archived</span> : <form action={archiveScreeningCriterionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="criterionId" value={criterion.id} /><button className="button ghost" type="submit">Archive</button></form>}</div></div>)}</div>
+        <div className="item-list" style={{ marginTop: 22 }}>{criteria.length === 0 ? <div className="empty">Add criteria to document why papers are included or excluded.</div> : criteria.map((criterion) => <div className="item" key={criterion.id}><div className="item-row"><div><div className="item-meta">{criterion.type}</div><div className="item-title">{criterion.text}</div></div>{criterion.archivedAt ? <span className="status unsupported">archived</span> : <ConfirmAction action={archiveScreeningCriterionAction} label="Archive" title="Archive this screening criterion?" consequence="The criterion will remain readable in history but will no longer be available for active screening decisions." hiddenFields={{ projectId, criterionId: criterion.id }} confirmLabel="Archive criterion" />}</div></div>)}</div>
       </section></div>
-    </div></main>;
+    </div></div>;
 }

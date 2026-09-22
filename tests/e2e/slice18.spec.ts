@@ -10,6 +10,7 @@ test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = page.url().match(/projects\/([0-9a-f-]+)$/)?.[1] as string;
+    await page.goto(`/projects/${projectId}/papers`);
 
     // 1. Add Paper
     await page.getByLabel("Title", { exact: true }).fill("Study Alpha");
@@ -19,8 +20,8 @@ test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     await expect(page.locator(".paper-chip, .item-title").filter({ hasText: "Study Alpha" }).first()).toBeVisible({ timeout: 30_000 });
 
     // 2. Record Evidence
-    await page.reload();
-    await page.getByLabel("Paper").selectOption({ label: "Study Alpha" });
+    await page.goto(`/projects/${projectId}/evidence`);
+    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Study Alpha" });
     await page.getByLabel("Verbatim source passage").fill("Primary outcome was significantly enhanced by 42%.");
     await page.getByLabel("Page number").fill("4");
     await page.getByRole("button", { name: "Record evidence" }).click();

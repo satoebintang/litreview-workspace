@@ -58,8 +58,7 @@ test.describe("Slice 20 Research Questions Traceability", () => {
     await expect(page.locator(".status.supported").filter({ hasText: "42 results" })).toBeVisible({ timeout: 30_000 });
 
     // 3. Navigate to Research Questions Matrix View
-    await page.goto(`/projects/${projectId}`);
-    await page.getByRole("link", { name: /Open Research Questions/i }).first().click();
+    await page.goto(`/projects/${projectId}/research-questions`);
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/research-questions$`));
 
     // Verify Project Protocol Context banner
@@ -76,7 +75,7 @@ test.describe("Slice 20 Research Questions Traceability", () => {
 
     // 4. Create source paper, evidence, screening, extraction, evidence set, synthesis, claim
     // Add paper
-    await page.goto(`/projects/${projectId}`);
+    await page.goto(`/projects/${projectId}/papers`);
     await page.getByLabel("Title", { exact: true }).fill("Study Alpha");
     await page.getByLabel("Authors").fill("Dr. Alice, Dr. Bob");
     await page.getByLabel("Abstract").fill("Empirical study on cyber defense effectiveness.");
@@ -84,8 +83,8 @@ test.describe("Slice 20 Research Questions Traceability", () => {
     await expect(page.locator(".item-title").filter({ hasText: "Study Alpha" })).toBeVisible({ timeout: 30_000 });
 
     // Record Evidence
-    await page.reload();
-    await page.getByLabel("Paper").selectOption({ label: "Study Alpha" });
+    await page.goto(`/projects/${projectId}/evidence`);
+    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Study Alpha" });
     await page.getByLabel("Verbatim source passage").fill("Automated defense mechanisms reduced intrusion success by 92%.");
     await page.getByLabel("Page number").fill("8");
     await page.getByRole("button", { name: "Record evidence" }).click();

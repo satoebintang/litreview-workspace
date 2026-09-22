@@ -7,12 +7,13 @@ test.describe("Slice 25 immutable manuscript snapshots", () => {
 
     await page.goto("/");
     await page.getByLabel("Project title").fill(`Slice 25 snapshots ${Date.now()}`);
-    await page.getByLabel("Research question").fill("What did the manuscript look like at each milestone?");
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = new URL(page.url()).pathname.split("/").pop()!;
 
     await page.goto(`/projects/${projectId}/manuscript`);
+    await page.getByRole("button", { name: "Start manuscript" }).click();
+    await expect(page.locator('input[name="manuscriptId"]').first()).toHaveValue(/[0-9a-f-]{36}/);
     const manuscriptId = await page.locator('input[name="manuscriptId"]').first().inputValue();
     await page.getByLabel("Section title").fill("Discussion");
     await page.getByRole("button", { name: "Create section" }).click();

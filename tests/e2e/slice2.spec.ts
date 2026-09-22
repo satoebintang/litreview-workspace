@@ -9,6 +9,7 @@ test.describe("Slice 2 screening workflow", () => {
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectUrl = page.url();
     const projectId = projectUrl.match(/projects\/([0-9a-f-]+)$/)?.[1] as string;
+    await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Adversarial Machine Learning in IoT");
     await page.getByLabel("Authors").fill("Ada Researcher");
@@ -17,7 +18,7 @@ test.describe("Slice 2 screening workflow", () => {
     await page.getByRole("button", { name: "Add paper" }).click();
     await expect(page.getByText("Adversarial Machine Learning in IoT", { exact: true }).first()).toBeVisible();
 
-    await page.getByRole("link", { name: /Open screening dashboard/ }).click();
+    await page.getByRole("link", { name: /Review screening/ }).click();
     await page.getByLabel("Type").selectOption("inclusion");
     await page.getByLabel("Criterion").fill("Studies security attacks against ML systems");
     await page.getByRole("button", { name: "Add criterion" }).click();

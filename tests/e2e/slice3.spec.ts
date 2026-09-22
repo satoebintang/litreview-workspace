@@ -8,18 +8,21 @@ test.describe("Slice 3 structured extraction", () => {
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = page.url().match(/projects\/([0-9a-f-]+)$/)?.[1] as string;
+    await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Poisoning Attacks in Vision Models");
     await page.getByLabel("Authors").fill("Ada Researcher");
     await page.getByLabel("Abstract").fill("A study of data poisoning attacks.");
     await page.getByRole("button", { name: "Add paper" }).click();
+    await expect(page.getByText("Poisoning Attacks in Vision Models", { exact: true }).first()).toBeVisible();
 
-    await page.getByLabel("Paper").selectOption({ label: "Poisoning Attacks in Vision Models" });
+    await page.goto(`/projects/${projectId}/evidence`);
+    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Poisoning Attacks in Vision Models" });
     await page.getByLabel("Verbatim source passage").fill("We introduce poisoned samples into five percent of the training data.");
     await page.getByLabel("Page number").fill("7");
     await page.getByRole("button", { name: "Record evidence" }).click();
 
-    await page.getByRole("link", { name: /Open screening dashboard/ }).click();
+    await page.goto(`/projects/${projectId}/screening`);
     await page.getByRole("link", { name: "Start screening" }).click();
     await page.getByRole("button", { name: "Include", exact: true }).click();
     await expect(page.locator(".status.screening-included")).toBeVisible();

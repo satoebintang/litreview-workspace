@@ -105,10 +105,14 @@ test.describe.serial("Slice 22 Answer-centric manuscript workflow", () => {
 
     await page.goto("/");
     await page.getByLabel("Project title").fill(`Slice 22 E2E ${Date.now()}`);
-    await page.getByLabel("Research question").fill("Which supported finding answers the question?");
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/protocol`);
+    await page.getByLabel("Identifier").fill("RQ1");
+    await page.getByLabel("Question").fill("Which supported finding answers the question?");
+    await page.getByRole("button", { name: "Add research question" }).click();
+    await expect(page.getByText("Which supported finding answers the question?", { exact: true })).toBeVisible();
 
     const sql = await getTestDbClient();
     try {
@@ -139,6 +143,8 @@ test.describe.serial("Slice 22 Answer-centric manuscript workflow", () => {
       await expect(page.getByText("Researcher note: Context note must not become prose.", { exact: true })).toBeVisible();
 
       await page.goto(`/projects/${projectId}/manuscript`);
+      await page.getByRole("button", { name: "Start manuscript" }).click();
+      await expect(page.getByLabel("Section title")).toBeVisible();
       await page.getByLabel("Section title").fill("Answer Draft");
       await page.getByRole("button", { name: "Create section" }).click();
       await expect(page.getByRole("heading", { name: "Answer Draft" })).toBeVisible();

@@ -29,7 +29,26 @@ export function createManuscriptServices(db: Database) {
   async function requireManuscript(projectId: string, manuscriptId: string, executor: Executor = db) { await requireProject(projectId, executor); uuid(manuscriptId); const found = rows(await executor.execute(sql`select id, project_id, title, is_default, citation_style, created_at, updated_at from manuscripts where project_id=${projectId} and id=${manuscriptId} limit 1`))[0]; if (!found) throw new DomainError("CROSS_PROJECT_REFERENCE", "Manuscript does not belong to this project"); return found; }
   async function section(projectId: string, manuscriptId: string, sectionId: string, includeArchived = true) { await requireManuscript(projectId, manuscriptId); uuid(sectionId); const found = rows(await db.execute(sql`select id, project_id, manuscript_id, title, section_type, sort_order, created_at, updated_at, archived_at from manuscript_sections where project_id=${projectId} and manuscript_id=${manuscriptId} and id=${sectionId} ${includeArchived ? sql`` : sql`and archived_at is null`} limit 1`))[0]; if (!found) throw new DomainError("CROSS_PROJECT_REFERENCE", "Section does not belong to this Manuscript"); return found; }
 
-  async function getOrCreateDefaultManuscript(projectId: string) { await requireProject(projectId); const found = await db.transaction(async (tx) => { await tx.execute(sql`insert into manuscripts (project_id, title, is_default) values (${projectId}, 'Manuscript', true) on conflict (project_id) where is_default do nothing`); const row = rows(await tx.execute(sql`select id, project_id, title, is_default, citation_style, created_at, updated_at from manuscripts where project_id=${projectId} and is_default=true limit 1`))[0]; if (!row) throw new DomainError("DATABASE_CONSTRAINT", "Default Manuscript could not be created"); return row; }); return mapManuscript(found); }
+  async function getDefaultManuscript(projectId: string) {
+    await requireProject(projectId);
+    const found = rows(await db.execute(sql`select id, project_id, title, is_default, citation_style, created_at, updated_at from manuscripts where project_id=${projectId} and is_default=true limit 1`))[0];
+    return found ? mapManuscript(found) : null;
+  }
+
+  async function createDefaultManuscript(projectId: string) {
+    await requireProject(projectId);
+    const found = await db.transaction(async (tx) => {
+      await tx.execute(sql`insert into manuscripts (project_id, title, is_default) values (${projectId}, 'Manuscript', true) on conflict (project_id) where is_default do nothing`);
+      const row = rows(await tx.execute(sql`select id, project_id, title, is_default, citation_style, created_at, updated_at from manuscripts where project_id=${projectId} and is_default=true limit 1`))[0];
+      if (!row) throw new DomainError("DATABASE_CONSTRAINT", "Default Manuscript could not be created");
+      return row;
+    });
+    return mapManuscript(found);
+  }
+
+  // Kept for existing detail workflows; primary landing GETs must use the
+  // read-only query above and create explicitly through createDefaultManuscript.
+  const getOrCreateDefaultManuscript = createDefaultManuscript;
 
   async function setManuscriptCitationStyle(projectId: string, manuscriptId: string, style: string) {
     await requireManuscript(projectId, manuscriptId);
@@ -181,5 +200,5 @@ export function createManuscriptServices(db: Database) {
     return buildFormattedManuscript(view as unknown as ManuscriptFormattingSource);
   }
   async function listPlaceableClaimRevisions(projectId: string) { await requireProject(projectId); return rows(await db.execute(sql`select r.id, r.project_id, r.claim_id, r.sequence, r.state, r.claim_text, r.finalized_at, (select current_r.id from claim_revisions current_r where current_r.project_id=r.project_id and current_r.claim_id=r.claim_id and current_r.finalized_at is not null order by current_r.sequence desc limit 1) as latest_revision_id, (select current_r.state from claim_revisions current_r where current_r.project_id=r.project_id and current_r.claim_id=r.claim_id and current_r.finalized_at is not null order by current_r.sequence desc limit 1) as current_claim_state from claim_revisions r where r.project_id=${projectId} and r.finalized_at is not null and r.state='active' order by r.sequence desc, r.id`)).filter((r) => String(r.current_claim_state) === "active").map((r) => ({ id: String(r.id), claimId: String(r.claim_id), sequence: Number(r.sequence), claimText: String(r.claim_text), isCurrent: String(r.latest_revision_id) === String(r.id) })); }
-  return { getOrCreateDefaultManuscript, setManuscriptCitationStyle, getManuscript, loadManuscriptProjection: (executor: Executor, projectId: string, manuscriptId: string) => getManuscript(projectId, manuscriptId, executor), getFormattedManuscript, createSection, renameSection, reorderSections, archiveSection, placeClaimRevision, replacePlacedClaimRevision, removeClaimPlacement, createProseBlock, reviseProseBlock, updateProseBlock, removeProseBlock, reorderSectionItems, getManuscriptPlacementHistory, listPlaceableClaimRevisions };
+  return { getDefaultManuscript, createDefaultManuscript, getOrCreateDefaultManuscript, setManuscriptCitationStyle, getManuscript, loadManuscriptProjection: (executor: Executor, projectId: string, manuscriptId: string) => getManuscript(projectId, manuscriptId, executor), getFormattedManuscript, createSection, renameSection, reorderSections, archiveSection, placeClaimRevision, replacePlacedClaimRevision, removeClaimPlacement, createProseBlock, reviseProseBlock, updateProseBlock, removeProseBlock, reorderSectionItems, getManuscriptPlacementHistory, listPlaceableClaimRevisions };
 }

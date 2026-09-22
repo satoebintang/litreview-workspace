@@ -24,11 +24,8 @@ export default async function EvidenceSetsPage({
   const active = sets.filter((item) => !item.set.archivedAt);
   const archived = sets.filter((item) => item.set.archivedAt);
   const savedMessage = query.saved === "created" ? "Evidence Set created." : undefined;
-  return <main className="shell">
-    <header className="topbar"><Link className="brand" href="/"><span className="brand-mark">T</span> Tracework</Link><span className="top-note">Evidence-first literature reviews</span></header>
-    <div className="container workspace">
-      <Link className="back-link" href={`/projects/${projectId}`}>← Back to workspace</Link>
-      <div className="workspace-header"><div><p className="eyebrow">Evidence Sets</p><h1>{project.title}</h1><p>Organize exact Evidence passages into researcher-defined thematic collections.</p></div><span className="status supported">● Researcher-organized</span></div>
+  return <div className="project-page">
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Evidence Sets</p><h1>{project.title}</h1><p>Organize exact Evidence passages into researcher-defined thematic collections.</p></div><span className="status supported">● Researcher-organized</span></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{savedMessage && <div className="success-note" role="status">{savedMessage}</div>}
       <div className="workspace-grid">
         <section className="card section-card"><div className="section-heading"><h2>New Evidence Set</h2><span className="count">{active.length} active</span></div><form action={createEvidenceSetAction}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="set-name">Name</label><input id="set-name" name="name" required maxLength={100} placeholder="Primary outcome: symptom reduction" /></div><div className="field"><label htmlFor="set-description">Purpose or theme <span className="hint">optional</span></label><textarea id="set-description" name="description" maxLength={500} placeholder="Why these passages are being compared" /></div><button className="button" type="submit">Create Evidence Set</button></form></section>
@@ -37,5 +34,5 @@ export default async function EvidenceSetsPage({
       </div>
       <p className="footer-note">Evidence Sets organize research work; they never become source provenance or Synthesis support.</p>
     </div>
-  </main>;
+  </div>;
 }

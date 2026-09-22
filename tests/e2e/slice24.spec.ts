@@ -6,12 +6,13 @@ test.describe("Slice 24 Prose revision history", () => {
     page.setDefaultTimeout(30_000);
     await page.goto("/");
     await page.getByLabel("Project title").fill(`Slice 24 history ${Date.now()}`);
-    await page.getByLabel("Research question").fill("How does exact wording evolve?");
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = new URL(page.url()).pathname.split("/").pop()!;
 
     await page.goto(`/projects/${projectId}/manuscript`);
+    await page.getByRole("button", { name: "Start manuscript" }).click();
+    await expect(page.getByLabel("Section title")).toBeVisible();
     await page.getByLabel("Section title").fill("Discussion");
     await page.getByRole("button", { name: "Create section" }).click();
     await page.getByLabel("New prose for Discussion").fill("Baseline wording.");

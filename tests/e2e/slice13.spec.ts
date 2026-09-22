@@ -8,6 +8,7 @@ test.describe("Slice 13 full-text retrieval workflow", () => {
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Retrieval study");
     await page.getByLabel("Abstract").fill("Retrieval study abstract");

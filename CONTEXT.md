@@ -139,3 +139,13 @@ content history is the ProseBlock/ProseRevision stream. Editorial history is the
 ReviewThread/ReviewEvent stream. Snapshot history is the frozen composition and
 presentation artifact. None of these histories silently mutates another, and a
 snapshot is not a release, approval, rollback, or publication record.
+
+## Workspace navigation boundaries
+
+Project navigation, Overview recommendations, and Overview metrics are derived
+presentation. They do not represent a workflow stage, mutate provenance, or
+create canonical research state. The project shell reads only project identity;
+the Overview reads bounded current facts; primary landing GETs remain
+read-only. Manuscript creation requires an explicit researcher POST, and Paper,
+PDF, and bibliographic intake boundaries remain distinct from canonical Paper
+identity.

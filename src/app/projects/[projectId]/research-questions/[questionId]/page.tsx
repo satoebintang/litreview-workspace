@@ -108,20 +108,8 @@ export default async function ResearchQuestionDetailPage({
     flags.claims.length > 0;
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <Link className="brand" href="/">
-          <span className="brand-mark">T</span> Tracework
-        </Link>
-        <span className="top-note">Evidence-first literature reviews</span>
-      </header>
-
-      <div className="container workspace">
-        <Link className="back-link" href={`/projects/${projectId}/research-questions`}>
-          ← Back to research questions matrix
-        </Link>
-
-        <div className="workspace-header">
+    <div className="project-page">
+      <div className="container workspace"><div className="workspace-header">
           <div>
             <p className="eyebrow">Question Traceability Workspace</p>
             <h1>
@@ -675,6 +663,6 @@ export default async function ResearchQuestionDetailPage({
           Traceability is non-destructive planning state. Linked entities remain fully editable in their canonical workspaces.
         </p>
       </div>
-    </main>
+    </div>
   );
 }

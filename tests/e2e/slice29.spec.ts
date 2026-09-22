@@ -39,7 +39,7 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
     await page.getByRole("button", { name: "Add research question" }).click();
     await expect(page.getByText("What outcome does the evidence support?")).toBeVisible();
 
-    await page.goto(`/projects/${projectId}`);
+    await page.goto(`/projects/${projectId}/papers`);
     await page.getByLabel("Title", { exact: true }).fill("Study Alpha");
     await page.getByLabel("Authors").fill("Lead Researcher");
     await page.getByLabel("Publication year").fill("2024");
@@ -47,8 +47,8 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
     await page.getByRole("button", { name: "Add paper" }).click();
     await expect(page.locator(".item-title").filter({ hasText: "Study Alpha" }).first()).toBeVisible();
 
-    await page.reload();
-    await page.getByLabel("Paper").selectOption({ label: "Study Alpha" });
+    await page.goto(`/projects/${projectId}/evidence`);
+    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Study Alpha" });
     await page.getByLabel("Verbatim source passage").fill(maliciousSource);
     await page.getByLabel("Page number").fill("4");
     await page.getByRole("button", { name: "Record evidence" }).click();
@@ -114,7 +114,7 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
     await expect(page).toHaveURL(new RegExp(`/synthesis/preparations/${preparationId}\\?saved=ai-requested$`));
     const history = page.locator("section", { hasText: "AI suggestion history" });
     const firstRequest = history.locator(".item").first();
-    await firstRequest.getByRole("button", { name: "Execute provider call" }).click();
+    await firstRequest.getByRole("button", { name: "Generate suggestion" }).click();
     await expect(page.getByText("Deterministic AI synthesis suggestion", { exact: true })).toBeVisible();
     await expect(page.getByText("Frozen grounding locators", { exact: false })).toBeVisible();
     await expect(page.locator(".quote").filter({ hasText: maliciousSource }).first()).toBeVisible();
@@ -136,7 +136,7 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
       await page.getByRole("checkbox", { name: /selected values.*may be transmitted/i }).check();
       await page.getByRole("button", { name: "Suggest synthesis with AI" }).click();
       const secondRequest = history.locator(".item").first();
-      await secondRequest.getByRole("button", { name: "Execute provider call" }).click();
+      await secondRequest.getByRole("button", { name: "Generate suggestion" }).click();
       await expect(secondRequest.getByText("Deterministic AI synthesis suggestion", { exact: true })).toBeVisible();
       await secondRequest.locator('input[id^="ai-title-"]').fill("Researcher edited title");
       await secondRequest.locator('textarea[id^="ai-statement-"]').fill("Researcher edited statement from the frozen source.");

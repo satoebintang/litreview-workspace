@@ -5,10 +5,11 @@ test.describe("Slice 1 provenance workflow", () => {
     const unique = Date.now();
     await page.goto("/");
     await page.getByLabel("Project title").fill(`Sleep review ${unique}`);
-    await page.getByLabel("Research question").fill("How does sleep affect academic performance?");
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     await expect(page.getByRole("heading", { name: `Sleep review ${unique}` })).toBeVisible();
+    const projectId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Sleep duration and grades");
     await page.getByLabel("Authors").fill("Ada Researcher, Ben Scholar");
@@ -16,15 +17,17 @@ test.describe("Slice 1 provenance workflow", () => {
     await page.getByRole("button", { name: "Add paper" }).click();
     await expect(page.locator(".item-title").filter({ hasText: "Sleep duration and grades" })).toBeVisible();
 
-    await page.getByLabel("Paper").selectOption({ label: "Sleep duration and grades" });
+    await page.goto(`/projects/${projectId}/evidence`);
+    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Sleep duration and grades" });
     await page.getByLabel("Verbatim source passage").fill("Students who sleep longer show improved academic performance.");
     await page.getByLabel("Page number").fill("12");
     await page.getByRole("button", { name: "Record evidence" }).click();
     await expect(page.getByText("Evidence recorded with source provenance.")).toBeVisible();
 
-    await page.getByLabel("New claim").fill("Longer sleep is associated with improved academic performance.");
-    await page.getByRole("button", { name: "Create claim" }).click();
-    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+\/claims\/[0-9a-f-]+$/);
+    await page.goto(`/projects/${projectId}/claims`);
+    await page.getByLabel("Claim text").fill("Longer sleep is associated with improved academic performance.");
+    await page.getByRole("button", { name: "Create unsupported claim" }).click();
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+\/claims\/[0-9a-f-]+(?:\?.*)?$/);
     await expect(page.getByText("unsupported", { exact: true })).toBeVisible();
     await expect(page.getByText("This claim has no supporting evidence yet.")).toBeVisible();
 
@@ -49,12 +52,15 @@ test.describe("Slice 1 provenance workflow", () => {
     await page.getByLabel("Project title").fill(`Whitespace review ${unique}`);
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
+    const projectId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Sleep duration and grades");
     await page.getByRole("button", { name: "Add paper" }).click();
     await expect(page.locator(".item-title").filter({ hasText: "Sleep duration and grades" })).toBeVisible();
 
-    await page.getByLabel("Paper").selectOption({ label: "Sleep duration and grades" });
+    await page.goto(`/projects/${projectId}/evidence`);
+    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Sleep duration and grades" });
     await page.getByLabel("Verbatim source passage").fill(sourceText);
     await page.getByLabel("Page number").fill("12");
     await page.getByRole("button", { name: "Record evidence" }).click();

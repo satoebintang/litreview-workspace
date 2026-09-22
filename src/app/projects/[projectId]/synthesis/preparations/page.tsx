@@ -23,18 +23,8 @@ export default async function SynthesisPreparationsListPage({
   const preparations = await reviewServices.listSynthesisPreparations(projectId);
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <Link className="brand" href="/">
-          <span className="brand-mark">T</span> Tracework
-        </Link>
-        <span className="top-note">Evidence-first literature reviews</span>
-      </header>
-      <div className="container workspace">
-        <Link className="back-link" href={`/projects/${projectId}/synthesis`}>
-          ← Back to synthesis
-        </Link>
-        <div className="workspace-header">
+    <div className="project-page">
+      <div className="container workspace"><div className="workspace-header">
           <div>
             <p className="eyebrow">Synthesis preparation</p>
             <h1>{project.title}</h1>
@@ -123,6 +113,6 @@ export default async function SynthesisPreparationsListPage({
           Preparation workspaces are workflow context, not analytical provenance. Supports remain strictly attached to exact ExtractionRevisions upon finalization.
         </p>
       </div>
-    </main>
+    </div>
   );
 }

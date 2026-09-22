@@ -9,11 +9,12 @@ test.describe("Slice 14 full-text document workflow", () => {
     await page.getByRole("button", { name: /Create project/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
     const projectId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Document study");
     await page.getByLabel("Abstract").fill("Document study abstract");
     await page.getByRole("button", { name: "Add paper" }).click();
-    const documentsLink = page.getByRole("link", { name: "Documents" }).first();
+    const documentsLink = page.getByRole("link", { name: "Document study", exact: true });
     await expect(documentsLink).toBeVisible();
     await documentsLink.click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+\/papers\/[0-9a-f-]+\/documents$/);
@@ -38,9 +39,10 @@ test.describe("Slice 14 full-text document workflow", () => {
     await page.getByLabel("Verbatim source passage").fill("Historical passage from the first artifact");
     await page.getByLabel("Page number").fill("2");
     await page.getByRole("button", { name: "Record Evidence" }).click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?saved=evidence`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/evidence\\?saved=evidence`));
     await page.goto(documentsUrl);
     await page.getByRole("button", { name: "Archive artifact" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Archive artifact" }).click();
     await expect(page.getByRole("status")).toHaveText("Document archived; its historical Evidence remains available.");
     await page.locator("input[type=file]").setInputFiles(pdf);
     await page.getByRole("button", { name: "Upload document" }).click();
@@ -59,7 +61,7 @@ test.describe("Slice 14 full-text document workflow", () => {
     await page.getByLabel("Verbatim source passage").fill("A new passage from the reattached artifact");
     await page.getByLabel("Page number").fill("3");
     await page.getByRole("button", { name: "Record Evidence" }).click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?saved=evidence`));
-    await expect(page.getByText(/^Document artifact:/).first()).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/evidence\\?saved=evidence`));
+    await expect(page.getByRole("link", { name: "Document artifact", exact: true })).toBeVisible();
   });
 });

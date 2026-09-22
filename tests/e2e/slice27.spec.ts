@@ -67,8 +67,8 @@ test.describe("Slice 27 bibliographic intake", () => {
       await page.goto(`/projects/${projectId}/papers/imports`);
       await expect(page.getByText("refs.bib", { exact: true })).toBeVisible();
       await expect(page.getByText(/2 resolved/)).toBeVisible();
-      await page.goto(`/projects/${projectId}`);
-      const paperCollection = page.locator("section").filter({ has: page.getByRole("heading", { name: "Paper collection" }) });
+      await page.goto(`/projects/${projectId}/papers`);
+      const paperCollection = page.locator("section").filter({ has: page.getByRole("heading", { name: "Your Papers" }) });
       await expect(paperCollection.getByText("Existing work", { exact: true })).toBeVisible();
       await expect(paperCollection.getByText("Alternate work", { exact: true })).toBeVisible();
     } finally {
