@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { addPaperAction } from "@/app/actions";
+import { ManualPaperForm } from "./ManualPaperForm";
 import { reviewServices } from "@/app/server";
 import { Alert, EmptyState, PageHeader, StatusBadge } from "@/components";
 import { DomainError } from "@/domain/errors";
@@ -8,13 +8,6 @@ import { DomainError } from "@/domain/errors";
 type PapersSearchParams = {
   error?: string;
   saved?: string;
-  manualReview?: string;
-  reviewTitle?: string;
-  reviewAuthors?: string;
-  reviewYear?: string;
-  reviewVenue?: string;
-  reviewDoi?: string;
-  reviewAbstract?: string;
 };
 
 export default async function PapersPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams?: Promise<PapersSearchParams> }) {
@@ -29,22 +22,6 @@ export default async function PapersPage({ params, searchParams }: { params: Pro
     throw error;
   }
 
-  const reviewTitle = query.reviewTitle ?? "";
-  const reviewAuthors = query.reviewAuthors ?? "";
-  const reviewYear = query.reviewYear ?? "";
-  const reviewVenue = query.reviewVenue ?? "";
-  const reviewDoi = query.reviewDoi ?? "";
-  const reviewAbstract = query.reviewAbstract ?? "";
-  const manualCandidates = query.manualReview === "1" && reviewTitle
-    ? await reviewServices.findManualPaperCandidates(projectId, {
-      title: reviewTitle,
-      authors: reviewAuthors ? reviewAuthors.split(",").map((author) => author.trim()).filter(Boolean) : [],
-      publicationYear: reviewYear ? Number(reviewYear) : null,
-      venue: reviewVenue || null,
-      doi: reviewDoi || null,
-      abstract: reviewAbstract || null,
-    })
-    : [];
   const screeningByPaperId = new Map(screeningPapers.map((paper) => [paper.id, paper]));
 
   return (
@@ -72,32 +49,8 @@ export default async function PapersPage({ params, searchParams }: { params: Pro
 
       <section className="card section-card" id="manual-paper" aria-labelledby="manual-paper-heading">
         <div className="section-heading"><div><p className="eyebrow">Canonical Paper</p><h2 id="manual-paper-heading">Add a Paper manually</h2></div></div>
-        <p className="hint">This writes a canonical Paper only after the form is submitted. DOI, title/year, and source-record matches may require an explicit duplicate acknowledgement.</p>
-        {manualCandidates.length > 0 && (
-          <div className="duplicate-review" role="region" aria-labelledby="duplicate-heading">
-            <h3 id="duplicate-heading">Review possible duplicate Papers</h3>
-            <p className="hint">Review these existing canonical records before confirming that this is a distinct work.</p>
-            <div className="item-list">{manualCandidates.map((candidate) => <div className="item" key={candidate.id}><div className="item-title">{candidate.title}</div><div className="item-meta">{candidate.authors?.join(", ") || "Authors absent"}{candidate.publicationYear ? ` · ${candidate.publicationYear}` : ""}{candidate.venue ? ` · ${candidate.venue}` : ""}</div>{candidate.doi && <div className="item-meta">DOI: {candidate.doi}</div>}<div className="item-meta">Match signal: {candidate.candidateReason}</div></div>)}</div>
-            <form action={addPaperAction} className="confirmation-form">
-              <input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="title" value={reviewTitle} /><input type="hidden" name="authors" value={reviewAuthors} /><input type="hidden" name="publicationYear" value={reviewYear} /><input type="hidden" name="venue" value={reviewVenue} /><input type="hidden" name="doi" value={reviewDoi} /><input type="hidden" name="abstract" value={reviewAbstract} />
-              {manualCandidates.map((candidate) => <input key={candidate.id} type="hidden" name="candidatePaperIds" value={candidate.id} />)}
-              <label className="checkbox"><input type="checkbox" name="distinctPaperAcknowledged" required /> I reviewed these candidate Papers and confirm this is a distinct work.</label>
-              <button className="button" type="submit">Create distinct Paper</button>
-            </form>
-          </div>
-        )}
-        <form action={addPaperAction}>
-          <input type="hidden" name="projectId" value={projectId} />
-          <div className="form-grid form-grid--two">
-            <div className="field"><label htmlFor="paper-title">Title</label><input id="paper-title" name="title" required defaultValue={manualCandidates.length ? reviewTitle : undefined} placeholder="Paper title" /></div>
-            <div className="field"><label htmlFor="paper-authors">Authors <span className="hint">comma-separated, in order</span></label><input id="paper-authors" name="authors" defaultValue={manualCandidates.length ? reviewAuthors : undefined} placeholder="First Author, Second Author" /></div>
-            <div className="field"><label htmlFor="paper-year">Publication year <span className="hint">optional</span></label><input id="paper-year" name="publicationYear" type="number" min="1000" max="3000" defaultValue={manualCandidates.length ? reviewYear : undefined} placeholder="2024" /></div>
-            <div className="field"><label htmlFor="paper-venue">Venue <span className="hint">optional</span></label><input id="paper-venue" name="venue" defaultValue={manualCandidates.length ? reviewVenue : undefined} placeholder="Journal or conference" /></div>
-            <div className="field"><label htmlFor="paper-doi">DOI <span className="hint">optional</span></label><input id="paper-doi" name="doi" defaultValue={manualCandidates.length ? reviewDoi : undefined} placeholder="10.1234/example" /></div>
-            <div className="field form-field--wide"><label htmlFor="paper-abstract">Abstract <span className="hint">optional · used for screening</span></label><textarea id="paper-abstract" name="abstract" defaultValue={manualCandidates.length ? reviewAbstract : undefined} placeholder="Paste the title/abstract text for screening" /></div>
-          </div>
-          <button className="button" type="submit">Add Paper</button>
-        </form>
+        <p className="hint">Review possible duplicates before adding a canonical Paper. If candidates are found, acknowledge that you reviewed them and that this is a distinct work.</p>
+        <ManualPaperForm projectId={projectId} />
       </section>
 
       <section className="card section-card" aria-labelledby="collection-heading">

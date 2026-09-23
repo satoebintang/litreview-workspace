@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 1 provenance workflow", () => {
   test("creates a project, captures evidence, and audits a claim", async ({ page }) => {
@@ -14,7 +15,7 @@ test.describe("Slice 1 provenance workflow", () => {
     await page.getByLabel("Title", { exact: true }).fill("Sleep duration and grades");
     await page.getByLabel("Authors").fill("Ada Researcher, Ben Scholar");
     await page.getByLabel("Publication year").fill("2024");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     await expect(page.locator(".item-title").filter({ hasText: "Sleep duration and grades" })).toBeVisible();
 
     await page.goto(`/projects/${projectId}/evidence`);
@@ -56,7 +57,7 @@ test.describe("Slice 1 provenance workflow", () => {
     await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Sleep duration and grades");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     await expect(page.locator(".item-title").filter({ hasText: "Sleep duration and grades" })).toBeVisible();
 
     await page.goto(`/projects/${projectId}/evidence`);

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { lstat, mkdir, open, readdir, realpath, rename, rm, stat } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, realpath, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { isDocumentStorageKey, isPdfSignature } from "@/domain/full-text-documents";
@@ -138,6 +138,83 @@ export class LocalStorageFilesystem {
     return actual;
   }
 
+  /**
+   * Check a storage key without following any path entry. Missing valid paths
+   * return false; malformed paths and filesystem integrity failures throw.
+   */
+  async verifyExistingFile(key: string) {
+    let resolved: string;
+    let root: string;
+    try {
+      resolved = await this.resolveKey(key);
+      root = await this.rootPath();
+    } catch (error) {
+      if (error instanceof DocumentStorageError) throw error;
+      throw new DocumentStorageError("STORAGE_INTEGRITY", "Unable to resolve storage path");
+    }
+    this.assertUnderRoot(root, resolved, "Storage path escapes the configured root");
+
+    const inspect = async (candidate: string) => {
+      try { return await lstat(candidate); }
+      catch (error) {
+        if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT") return null;
+        throw new DocumentStorageError("STORAGE_INTEGRITY", "Unable to inspect stored document path");
+      }
+    };
+
+    const rootEntry = await inspect(root);
+    if (!rootEntry) throw new DocumentStorageError("STORAGE_INTEGRITY", "Configured storage root is missing");
+    if (rootEntry.isSymbolicLink() || !rootEntry.isDirectory()) {
+      throw new DocumentStorageError("STORAGE_INTEGRITY", "Storage root is not a real directory");
+    }
+
+    const relative = path.relative(root, resolved);
+    const components = relative.split(path.sep);
+    let current = root;
+    for (let index = 0; index < components.length; index += 1) {
+      current = path.join(current, components[index]!);
+      const entry = await inspect(current);
+      if (!entry) return false;
+      if (entry.isSymbolicLink()) {
+        throw new DocumentStorageError("STORAGE_INTEGRITY", "Storage path contains a symbolic link");
+      }
+      if (index < components.length - 1 && !entry.isDirectory()) {
+        throw new DocumentStorageError("STORAGE_INTEGRITY", "Storage ancestor is not a real directory");
+      }
+      if (index === components.length - 1 && !entry.isFile()) {
+        throw new DocumentStorageError("STORAGE_INTEGRITY", "Storage final path is not a regular file");
+      }
+    }
+
+    try {
+      const actualParent = await realpath(path.dirname(resolved));
+      this.assertUnderRoot(root, actualParent, "Storage path escapes the configured root");
+      const actualFile = await realpath(resolved);
+      this.assertUnderRoot(root, actualFile, "Storage path escapes the configured root");
+
+      // Recheck the final entry after realpath so a concurrent replacement by
+      // a symlink or non-file cannot be accepted as an ordinary file.
+      const finalEntry = await inspect(resolved);
+      if (!finalEntry) return false;
+      if (finalEntry.isSymbolicLink() || !finalEntry.isFile()) {
+        throw new DocumentStorageError("STORAGE_INTEGRITY", "Storage final path is not a regular file");
+      }
+      return true;
+    } catch (error) {
+      if (error instanceof DocumentStorageError) throw error;
+      if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT") return false;
+      throw new DocumentStorageError("STORAGE_INTEGRITY", "Unable to verify stored document path");
+    }
+  }
+
+  async requireExistingFile(key: string) {
+    const resolved = await this.resolveKey(key);
+    if (!(await this.verifyExistingFile(key))) {
+      throw new DocumentStorageError("STORAGE_INTEGRITY", "Stored document file is missing");
+    }
+    return resolved;
+  }
+
   async listKeys() {
     const root = await this.rootPath();
     const result: string[] = [];
@@ -174,8 +251,7 @@ export class LocalDocumentStorage implements DocumentStorage {
 
   async open(storageKey: string) {
     if (!isDocumentStorageKey(storageKey)) throw new DocumentStorageError("STORAGE_INTEGRITY", "Invalid final document storage key");
-    const actual = await this.filesystem.verifyExistingPath(storageKey);
-    return createReadStream(actual);
+    return createReadStream(await this.filesystem.requireExistingFile(storageKey));
   }
 
   async remove(key: string) {
@@ -189,11 +265,9 @@ export class LocalDocumentStorage implements DocumentStorage {
   }
 
   async exists(key: string) {
-    try { await this.filesystem.verifyExistingPath(key); return true; }
-    catch (error) {
-      if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT") return false;
-      try { await stat(await this.filesystem.resolveKey(key)); return true; } catch { return false; }
-    }
+    const validated = key.startsWith(".tmp/") ? key : isDocumentStorageKey(key) ? key : null;
+    if (!validated) throw new DocumentStorageError("STORAGE_INTEGRITY", "Invalid document storage key");
+    return this.filesystem.verifyExistingFile(validated);
   }
 
   async listKeys() {
@@ -259,7 +333,7 @@ export class LocalPdfIntakeStorage implements PdfIntakeStorage {
   }
 
   async open(storageKey: string) {
-    return createReadStream(await this.filesystem.verifyExistingPath(this.assertFinal(storageKey)));
+    return createReadStream(await this.filesystem.requireExistingFile(this.assertFinal(storageKey)));
   }
 
   async remove(key: string) {
@@ -274,11 +348,7 @@ export class LocalPdfIntakeStorage implements PdfIntakeStorage {
 
   async exists(key: string) {
     const validated = key.startsWith(`${this.namespace}/.tmp/`) ? this.assertTemporary(key) : this.assertFinal(key);
-    try { await this.filesystem.verifyExistingPath(validated); return true; }
-    catch (error) {
-      if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT") return false;
-      try { await stat(await this.filesystem.resolveKey(validated)); return true; } catch { return false; }
-    }
+    return this.filesystem.verifyExistingFile(validated);
   }
 
   async listKeys() {
@@ -298,6 +368,8 @@ async function stagePdfBytes(
   options: { maxBytes?: number; signal?: AbortSignal },
 ): Promise<StagedDocument> {
   const maxBytes = options.maxBytes ?? 50 * 1024 * 1024;
+  const mebibyte = 1024 * 1024;
+  const limitDescription = maxBytes % mebibyte === 0 ? `${maxBytes / mebibyte} MiB` : `${maxBytes} bytes`;
   const temporaryKey = `${temporaryNamespace}/${randomUUID()}.upload`;
   const temporaryPath = await filesystem.prepareWritePath(temporaryKey);
   const output = createWriteStream(temporaryPath, { flags: "wx" });
@@ -315,7 +387,7 @@ async function stagePdfBytes(
     for await (const chunk of source) {
       if (options.signal?.aborted) throw new DocumentStorageError("UPLOAD_INTERRUPTED", "Document upload was cancelled");
       const bytes = asBuffer(chunk);
-      if (byteSize + bytes.byteLength > maxBytes) throw new DocumentStorageError("UPLOAD_TOO_LARGE", "Document exceeds the 50 MiB upload limit");
+      if (byteSize + bytes.byteLength > maxBytes) throw new DocumentStorageError("UPLOAD_TOO_LARGE", `Document exceeds the upload limit of ${limitDescription}`);
       if (signatureBytes < signature.byteLength) {
         const copyLength = Math.min(signature.byteLength - signatureBytes, bytes.byteLength);
         bytes.copy(signature, signatureBytes, 0, copyLength);

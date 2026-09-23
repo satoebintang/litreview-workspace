@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { unresolvedDuplicatePairCtes } from "./unresolved-duplicate-pair-query";
 import type { Database } from "@/db/client";
 import { DomainError } from "@/domain/errors";
 
@@ -288,20 +289,7 @@ export function createProjectWorkspaceReadServices(db: Database) {
         select distinct on (project_id, paper_id) project_id, paper_id, outcome
         from full_text_retrieval_attempts where project_id=${projectId}
         order by project_id, paper_id, sequence desc
-      ), current_decisions as (
-        select distinct on (project_id, left_retrieved_record_id, right_retrieved_record_id) project_id, left_retrieved_record_id, right_retrieved_record_id, decision
-        from retrieved_record_deduplication_decisions where project_id=${projectId}
-        order by project_id, left_retrieved_record_id, right_retrieved_record_id, sequence desc
-      ), candidate_pairs as (
-        select a.id, b.id
-        from retrieved_records a join retrieved_records b on b.project_id=a.project_id and a.id < b.id
-        left join current_decisions d on d.project_id=a.project_id and d.left_retrieved_record_id=a.id and d.right_retrieved_record_id=b.id
-        where a.project_id=${projectId} and d.decision is null and (
-          (a.doi is not null and b.doi is not null and btrim(a.doi)<>'' and btrim(b.doi)<>'' and btrim(lower(regexp_replace(regexp_replace(btrim(a.doi), '^https?://(dx\\.)?doi\\.org/', '', 'i'), '^doi:[[:space:]]*', '', 'i')))=btrim(lower(regexp_replace(regexp_replace(btrim(b.doi), '^https?://(dx\\.)?doi\\.org/', '', 'i'), '^doi:[[:space:]]*', '', 'i'))))
-          or (a.source_record_id is not null and b.source_record_id is not null and btrim(a.source_record_id)<>'' and btrim(b.source_record_id)<>'' and a.search_source_id=b.search_source_id and a.source_record_id=b.source_record_id)
-          or (a.publication_year is not null and a.publication_year=b.publication_year and lower(regexp_replace(btrim(a.title), '[[:space:]]+', ' ', 'g'))=lower(regexp_replace(btrim(b.title), '[[:space:]]+', ' ', 'g')))
-        )
-      )
+        ), ${unresolvedDuplicatePairCtes(projectId)}
       select p.id, p.title, p.description,
         (select count(*)::int from research_questions rq where rq.project_id=p.id and rq.archived_at is null) as research_question_count,
         (select count(*)::int from search_strategies ss where ss.project_id=p.id and ss.archived_at is null) as search_strategy_count,
@@ -309,7 +297,7 @@ export function createProjectWorkspaceReadServices(db: Database) {
         (select count(*)::int from papers paper where paper.project_id=p.id) as paper_count,
         (select count(*)::int from papers paper where paper.project_id=p.id and not exists (select 1 from current_screening s where s.project_id=paper.project_id and s.paper_id=paper.id)) as unscreened_paper_count,
         (select count(*)::int from current_screening s where s.project_id=p.id and s.decision='maybe') as maybe_paper_count,
-        (select count(*)::int from candidate_pairs) as unresolved_duplicate_pair_count,
+        (select count(*)::int from unresolved_candidate_pairs) as unresolved_duplicate_pair_count,
         (select count(*)::int from current_screening s where s.project_id=p.id and s.decision='include' and not exists (select 1 from current_full_text f where f.project_id=s.project_id and f.paper_id=s.paper_id)) as awaiting_full_text_count,
         (select count(*)::int from current_screening s join current_full_text f on f.project_id=s.project_id and f.paper_id=s.paper_id where s.project_id=p.id and s.decision='include' and f.decision='maybe') as full_text_maybe_count,
         (select count(*)::int from current_full_text f left join current_screening s on s.project_id=f.project_id and s.paper_id=f.paper_id where f.project_id=p.id and coalesce(s.decision,'') <> 'include') as full_text_conflict_count,

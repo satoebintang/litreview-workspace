@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 7 manuscript workspace", () => {
   test("composes mixed prose and exact ClaimRevisions with unified citation order", async ({ page }) => {
@@ -13,7 +14,7 @@ test.describe("Slice 7 manuscript workspace", () => {
     for (const [title, passage] of [["First study", "First study supports the claim."], ["Second study", "Second study supports the claim."]] as const) {
       await page.goto(`/projects/${projectId}/papers`);
       await page.getByLabel("Title", { exact: true }).fill(title);
-      await page.getByRole("button", { name: "Add paper" }).click();
+      await addManualPaper(page);
       await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
       await page.goto(`/projects/${projectId}/evidence`);
       await expect(page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").locator("option", { hasText: title })).toHaveCount(1);

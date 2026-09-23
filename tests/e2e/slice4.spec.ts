@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 4 evidence synthesis", () => {
   test("compares observations and retains exact historical support through revision, exclusion, and withdrawal", async ({ page }) => {
@@ -16,7 +17,7 @@ test.describe("Slice 4 evidence synthesis", () => {
       await page.getByLabel("Title", { exact: true }).fill(title);
       await page.getByLabel("Authors").fill("Researcher");
       await page.getByLabel("Abstract").fill(`${title} abstract`);
-      await page.getByRole("button", { name: "Add paper" }).click();
+      await addManualPaper(page);
       await expect(page.locator(".paper-chip, .item-title").filter({ hasText: title }).first()).toBeVisible({ timeout: 30_000 });
     }
     await addPaper("Study A");

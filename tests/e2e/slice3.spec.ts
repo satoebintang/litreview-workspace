@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 3 structured extraction", () => {
   test("configures a field, records revision-specific provenance, and derives progress", async ({ page }) => {
@@ -13,7 +14,7 @@ test.describe("Slice 3 structured extraction", () => {
     await page.getByLabel("Title", { exact: true }).fill("Poisoning Attacks in Vision Models");
     await page.getByLabel("Authors").fill("Ada Researcher");
     await page.getByLabel("Abstract").fill("A study of data poisoning attacks.");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     await expect(page.getByText("Poisoning Attacks in Vision Models", { exact: true }).first()).toBeVisible();
 
     await page.goto(`/projects/${projectId}/evidence`);

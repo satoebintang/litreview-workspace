@@ -1,24 +1,10 @@
-import fs from "node:fs";
-import path from "node:path";
 import { test, expect } from "@playwright/test";
-import postgres from "postgres";
+import { addManualPaper } from "./manual-paper";
+import { createPlaywrightTestDatabaseClient } from "./playwright-database";
 
-const DEFAULT_DATABASE_URL = "postgres://litreview:litreview@127.0.0.1:5432/litreview";
 
 async function getTestDbClient() {
-  const databaseMarkerPath = path.resolve(process.cwd(), ".ai", "playwright-db.json");
-  if (fs.existsSync(databaseMarkerPath)) {
-    try {
-      const marker = JSON.parse(fs.readFileSync(databaseMarkerPath, "utf8"));
-      if (marker.adminUrl && marker.databaseName) {
-        const base = marker.adminUrl.replace(/\/[^/]+$/, "");
-        return postgres(`${base}/${marker.databaseName}`, { max: 1 });
-      }
-    } catch {
-      // fallback
-    }
-  }
-  return postgres(process.env.DATABASE_URL || DEFAULT_DATABASE_URL, { max: 1 });
+  return createPlaywrightTestDatabaseClient();
 }
 
 test.describe("Slice 20 Research Questions Traceability", () => {
@@ -79,7 +65,7 @@ test.describe("Slice 20 Research Questions Traceability", () => {
     await page.getByLabel("Title", { exact: true }).fill("Study Alpha");
     await page.getByLabel("Authors").fill("Dr. Alice, Dr. Bob");
     await page.getByLabel("Abstract").fill("Empirical study on cyber defense effectiveness.");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     await expect(page.locator(".item-title").filter({ hasText: "Study Alpha" })).toBeVisible({ timeout: 30_000 });
 
     // Record Evidence

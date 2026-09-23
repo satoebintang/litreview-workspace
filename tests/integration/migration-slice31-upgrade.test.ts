@@ -112,8 +112,8 @@ describe("Slice 33 critical appraisal migration boundary", () => {
     try {
       await migrate(db.db, { migrationsFolder: migrationFolder });
       const [latest] = await db.client`select id, hash from drizzle.__drizzle_migrations order by id desc limit 1`;
-      expect(Number(latest.id)).toBe(32);
-      expect(latest.hash).toBe(createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0031_critical_appraisal.sql")).subarray()).digest("hex"));
+      expect(Number(latest.id)).toBe(33);
+      expect(latest.hash).toBe(createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0032_hot_path_hardening.sql")).subarray()).digest("hex"));
       const tables = await db.client`select table_name from information_schema.tables where table_schema = 'public' and table_name in ('appraisal_frameworks', 'appraisal_framework_versions', 'appraisal_framework_sections', 'appraisal_framework_items', 'appraisal_framework_response_options', 'appraisal_framework_overall_judgement_options', 'appraisals', 'appraisal_revisions', 'appraisal_revision_responses', 'appraisal_revision_response_evidence') order by table_name`;
       expect(tables.map((row) => row.table_name)).toEqual([
         "appraisal_framework_items",

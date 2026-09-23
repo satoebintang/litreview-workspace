@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { AppraisalWorksheetActionState } from "@/app/appraisal-form-state";
 import { DomainError } from "@/domain/errors";
+import { parseAiReasoningEffort } from "@/application/ai/reasoning-effort";
+import type { ManualPaperActionState, ManualPaperDraft, ManualPaperReviewCandidate } from "@/app/manual-paper-form-state";
 import type { FullTextRetrievalMethod, ConvergenceState, LimitationCategory } from "@/domain/types";
 import { aiExtractionBatchServices, aiExtractionServices, aiSynthesisServices, doiLookupServices, doiResolutionServices, reviewServices } from "./server";
 
@@ -151,7 +153,7 @@ export async function beginAiExtractionSuggestionAction(form: FormData) {
       pageNumbers: form.getAll("pageNumbers").map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0),
       idempotencyKey: text(form, "idempotencyKey") || randomUUID(),
       model: optional(form, "model"),
-      reasoningEffort: (optional(form, "reasoningEffort") ?? "low") as "none" | "minimal" | "low" | "medium" | "high" | "xhigh",
+      reasoningEffort: parseAiReasoningEffort(optional(form, "reasoningEffort")),
       externalTransmissionAcknowledged: form.get("externalTransmissionAcknowledged") === "on",
       disclosureVersion: text(form, "disclosureVersion") || "openai-extraction-transmission-v1",
     }) as { requestId: string };
@@ -310,7 +312,7 @@ export async function beginAiSynthesisSuggestionAction(form: FormData) {
       preparationId,
       idempotencyKey: text(form, "idempotencyKey") || randomUUID(),
       model: optional(form, "model"),
-      reasoningEffort: (optional(form, "reasoningEffort") ?? "low") as "none" | "minimal" | "low" | "medium" | "high" | "xhigh",
+      reasoningEffort: parseAiReasoningEffort(optional(form, "reasoningEffort")),
       externalTransmissionAcknowledged: form.get("externalTransmissionAcknowledged") === "on",
       disclosureVersion: text(form, "disclosureVersion") || "openai-synthesis-transmission-v1",
     });
@@ -380,37 +382,89 @@ export async function createProjectAction(form: FormData) {
   redirect(`/projects/${project.id}`);
 }
 
-export async function addPaperAction(form: FormData) {
+function manualPaperDraftFrom(form: FormData): ManualPaperDraft {
+  return {
+    title: verbatimText(form, "title"),
+    authors: verbatimText(form, "authors"),
+    publicationYear: verbatimText(form, "publicationYear"),
+    venue: verbatimText(form, "venue"),
+    doi: verbatimText(form, "doi"),
+    abstract: verbatimText(form, "abstract"),
+    bibliographicNote: verbatimText(form, "bibliographicNote"),
+  };
+}
+
+function manualPaperInputFrom(draft: ManualPaperDraft) {
+  const publicationYear = draft.publicationYear.trim();
+  const authors = draft.authors.split(",").map((author) => author.trim()).filter(Boolean);
+  return {
+    title: draft.title,
+    authors,
+    publicationYear: publicationYear ? Number(publicationYear) : undefined,
+    venue: draft.venue.trim() || undefined,
+    doi: draft.doi.trim() || undefined,
+    abstract: draft.abstract.trim() ? draft.abstract : undefined,
+    bibliographicNote: draft.bibliographicNote.trim() ? draft.bibliographicNote : undefined,
+  };
+}
+
+function manualPaperCandidateSummaries(candidates: Awaited<ReturnType<typeof reviewServices.findManualPaperCandidates>>): ManualPaperReviewCandidate[] {
+  return candidates.map((candidate) => ({
+    id: candidate.id,
+    title: candidate.title,
+    authors: candidate.authors,
+    publicationYear: candidate.publicationYear,
+    venue: candidate.venue,
+    doi: candidate.doi,
+    candidateReason: candidate.candidateReason,
+  }));
+}
+
+function manualPaperActionResult(
+  status: ManualPaperActionState["status"],
+  draft: ManualPaperDraft,
+  candidates: ManualPaperReviewCandidate[] = [],
+  error: string | null = null,
+): ManualPaperActionState {
+  return { version: randomUUID(), status, draft, candidates, error };
+}
+
+export async function addPaperAction(_previousState: ManualPaperActionState, form: FormData): Promise<ManualPaperActionState> {
   const projectId = text(form, "projectId");
+  const draft = manualPaperDraftFrom(form);
+  const intent = text(form, "manualPaperIntent");
+  if (!projectId) return manualPaperActionResult("error", draft, [], "Select a project before adding a Paper.");
+  if (intent !== "review" && intent !== "confirm") return manualPaperActionResult("error", draft, [], "Review possible duplicates before adding a Paper.");
+
+  if (intent === "review") {
+    try {
+      const candidates = await reviewServices.findManualPaperCandidates(projectId, manualPaperInputFrom(draft));
+      return manualPaperActionResult("reviewed", draft, manualPaperCandidateSummaries(candidates));
+    } catch (error) {
+      return manualPaperActionResult("error", draft, [], errorMessage(error));
+    }
+  }
+
   try {
-    const authorText = text(form, "authors");
-    await (reviewServices as typeof reviewServices & { addPaper: (projectId: string, input: Record<string, unknown>) => Promise<unknown> }).addPaper(projectId, {
-      title: text(form, "title"),
-      authors: authorText ? authorText.split(",").map((author) => author.trim()).filter(Boolean) : [],
-      publicationYear: text(form, "publicationYear") ? Number(text(form, "publicationYear")) : undefined,
-      venue: optional(form, "venue"),
-      doi: optional(form, "doi"),
-      abstract: optional(form, "abstract"),
-      bibliographicNote: optional(form, "bibliographicNote"),
+    const candidatePaperIds = form.getAll("candidatePaperIds").filter((value): value is string => typeof value === "string" && value.length > 0);
+    await reviewServices.addPaper(projectId, {
+      ...manualPaperInputFrom(draft),
       distinctPaperAcknowledged: form.get("distinctPaperAcknowledged") === "on",
-      candidatePaperIds: form.getAll("candidatePaperIds").map(String).filter(Boolean),
+      candidatePaperIds,
     });
   } catch (error) {
     if (error instanceof DomainError && error.code === "DUPLICATE_REVIEW_REQUIRED") {
-      const params = new URLSearchParams({
-        manualReview: "1",
-        reviewTitle: text(form, "title"),
-        reviewAuthors: text(form, "authors"),
-        reviewYear: text(form, "publicationYear"),
-        reviewVenue: text(form, "venue"),
-        reviewDoi: text(form, "doi"),
-        reviewAbstract: verbatimText(form, "abstract"),
-      });
-      redirect(`/projects/${projectId}/papers?${params.toString()}`);
+      try {
+        const candidates = await reviewServices.findManualPaperCandidates(projectId, manualPaperInputFrom(draft));
+        return manualPaperActionResult("reviewed", draft, manualPaperCandidateSummaries(candidates), "The candidate list changed or still needs your acknowledgement. Review the current candidates before confirming.");
+      } catch (reviewError) {
+        return manualPaperActionResult("error", draft, [], errorMessage(reviewError));
+      }
     }
-    fail(`/projects/${projectId}/papers`, error);
+    return manualPaperActionResult("error", draft, [], errorMessage(error));
   }
-  redirect(`/projects/${projectId}/papers?saved=paper`);
+
+  redirect(`/projects/${projectId}/papers`);
 }
 
 export async function inspectPdfIntakeAction(form: FormData) {

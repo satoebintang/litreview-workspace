@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 16 Evidence curation", () => {
   test("curates an Evidence record, blocks rejected direct use, and restores it on re-acceptance", async ({ page }) => {
@@ -11,7 +12,7 @@ test.describe("Slice 16 Evidence curation", () => {
     await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Curation study");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     await expect(page.getByText("Curation study", { exact: true }).first()).toBeVisible();
 
     await page.goto(`/projects/${projectId}/evidence`);

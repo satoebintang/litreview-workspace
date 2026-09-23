@@ -1,25 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import postgres from "postgres";
+import { createPlaywrightTestDatabaseClient } from "./playwright-database";
 import { expect, test } from "@playwright/test";
 
-const DEFAULT_DATABASE_URL = "postgres://litreview:litreview@127.0.0.1:5432/litreview";
 
 async function getTestDbClient() {
-  const databaseMarkerPath = path.resolve(process.cwd(), ".ai", "playwright-db.json");
-  if (fs.existsSync(databaseMarkerPath)) {
-    try {
-      const marker = JSON.parse(fs.readFileSync(databaseMarkerPath, "utf8"));
-      if (marker.adminUrl && marker.databaseName) {
-        const base = marker.adminUrl.replace(/\/[^/]+$/, "");
-        return postgres(`${base}/${marker.databaseName}`, { max: 1, prepare: false });
-      }
-    } catch {
-      // fall back to the configured test database
-    }
-  }
-  return postgres(process.env.DATABASE_URL || DEFAULT_DATABASE_URL, { max: 1, prepare: false });
+  return createPlaywrightTestDatabaseClient({ prepare: false });
 }
 
 test.describe("Slice 26 AI extraction proposal boundary", () => {

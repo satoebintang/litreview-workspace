@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 13 full-text retrieval workflow", () => {
   test("keeps current retrieval state distinct from historical retrieval success", async ({ page }) => {
@@ -12,7 +13,7 @@ test.describe("Slice 13 full-text retrieval workflow", () => {
 
     await page.getByLabel("Title", { exact: true }).fill("Retrieval study");
     await page.getByLabel("Abstract").fill("Retrieval study abstract");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     await expect(page.getByText("Retrieval study", { exact: true }).first()).toBeVisible();
 
     await page.goto(`/projects/${projectId}/screening`);

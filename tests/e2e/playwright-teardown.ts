@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import postgres from "postgres";
+import { resolveDatabaseUrl } from "../../src/db/config";
 
 const databaseMarkerPath = path.resolve(process.cwd(), ".ai", "playwright-db.json");
 
@@ -12,9 +13,10 @@ function quoteIdentifier(value: string) {
 
 export default async function teardown() {
   if (!fs.existsSync(databaseMarkerPath)) return;
-  const marker = JSON.parse(fs.readFileSync(databaseMarkerPath, "utf8")) as { adminUrl: string; databaseName: string; storageRoot?: string };
+  const marker = JSON.parse(fs.readFileSync(databaseMarkerPath, "utf8")) as { databaseName: string; storageRoot?: string };
   if (!/^litreview_playwright_[A-Za-z0-9_]+$/.test(marker.databaseName)) throw new Error(`Refusing to clean unexpected Playwright database name: ${marker.databaseName}`);
-  const admin = postgres(marker.adminUrl, { max: 1 });
+  const adminUrl = resolveDatabaseUrl(process.env.PLAYWRIGHT_ADMIN_DATABASE_URL, process.env.DATABASE_URL);
+  const admin = postgres(adminUrl, { max: 1 });
   try {
     await admin.unsafe(`drop database if exists ${quoteIdentifier(marker.databaseName)} with (force)`);
     if (marker.storageRoot) {

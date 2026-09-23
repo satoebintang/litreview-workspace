@@ -1,21 +1,9 @@
 import { test, expect } from "@playwright/test";
-import fs from "node:fs";
-import path from "node:path";
-import postgres from "postgres";
+import { createPlaywrightTestDatabaseClient } from "./playwright-database";
 
-const DEFAULT_DATABASE_URL = "postgres://litreview:litreview@127.0.0.1:5432/litreview";
 
 async function getTestDbClient() {
-  const markerPath = path.resolve(process.cwd(), ".ai", "playwright-db.json");
-  if (fs.existsSync(markerPath)) {
-    try {
-      const marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
-      if (marker.adminUrl && marker.databaseName) return postgres(`${marker.adminUrl.replace(/\/[^/]+$/, "")}/${marker.databaseName}`, { max: 1 });
-    } catch {
-      // Fall through to the configured test database.
-    }
-  }
-  return postgres(process.env.DATABASE_URL || DEFAULT_DATABASE_URL, { max: 1 });
+  return createPlaywrightTestDatabaseClient();
 }
 
 test.describe("Slice 30 DOI metadata lookup", () => {

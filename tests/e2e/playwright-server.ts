@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -7,8 +7,19 @@ import path from "node:path";
 import postgres from "postgres";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { createDb } from "../../src/db/client";
+import { resolveDatabaseUrl } from "../../src/db/config";
+import {
+  buildMigrationManifest,
+  comparePublicSchema,
+  derivePublicSchema,
+  formatPublicSchemaDiff,
+  getLatestSnapshotPath,
+  getMigrationRowMismatches,
+  type DrizzleSnapshot,
+  type MigrationJournal,
+  type MigrationRow,
+} from "./playwright-schema-contract";
 
-const DEFAULT_DATABASE_URL = "postgres://litreview:litreview@127.0.0.1:5432/litreview";
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
 const databaseMarkerPath = path.resolve(process.cwd(), ".ai", "playwright-db.json");
 const nextBin = path.resolve(process.cwd(), "node_modules", "next", "dist", "bin", "next");
@@ -16,101 +27,13 @@ const serverHost = "127.0.0.1";
 const serverPort = 3000;
 const readinessUrl = `http://${serverHost}:${serverPort}/`;
 const readinessTimeoutMs = 300_000;
-const requiredSchema = {
-  research_questions: ["id", "project_id", "identifier", "label", "sort_order", "created_at", "updated_at", "archived_at"],
-  search_sources: ["id", "project_id", "source_key", "display_name", "created_at", "updated_at", "archived_at"],
-  search_strategies: ["id", "project_id", "search_source_id", "name", "query_text", "created_at", "updated_at", "archived_at"],
-  search_runs: ["id", "sequence", "project_id", "search_source_id", "strategy_id", "query_text", "reported_result_count", "executed_at", "created_at"],
-  retrieved_records: ["id", "project_id", "search_run_id", "search_source_id", "source_record_id", "title", "doi", "retrieved_at", "created_at"],
-  retrieved_record_matches: ["id", "sequence", "project_id", "retrieved_record_id", "paper_id", "action", "created_at"],
-  retrieved_record_deduplication_decisions: ["id", "sequence", "project_id", "left_retrieved_record_id", "right_retrieved_record_id", "decision", "created_at"],
-  full_text_screening_criteria: ["id", "project_id", "text", "sort_order", "created_at", "archived_at"],
-  full_text_screening_decisions: ["id", "sequence", "project_id", "paper_id", "decision", "exclusion_criterion_id", "note", "created_at"],
-  full_text_retrieval_attempts: ["id", "sequence", "project_id", "paper_id", "outcome", "method", "source_reference", "note", "attempted_at", "created_at"],
-  full_text_documents: ["id", "project_id", "paper_id", "storage_key", "original_filename", "media_type", "byte_size", "sha256", "note", "created_at", "archived_at"],
-  paper_full_text_preferences: ["project_id", "paper_id", "full_text_document_id", "updated_at"],
-  document_text_extractions: ["id", "sequence", "project_id", "paper_id", "full_text_document_id", "extractor_key", "extractor_version", "algorithm_version", "status", "page_count", "character_count", "error_code", "error_message", "started_at", "completed_at", "created_at"],
-  document_text_extraction_pages: ["id", "project_id", "paper_id", "document_text_extraction_id", "page_number", "status", "text", "character_count", "error_code", "error_message", "created_at"],
-  evidence: ["id", "project_id", "paper_id", "full_text_document_id", "document_text_extraction_id", "source_text", "page_number", "extraction_start_offset", "extraction_end_offset", "note", "created_at", "updated_at"],
-  evidence_review_decisions: ["id", "sequence", "project_id", "evidence_id", "decision", "note", "created_at"],
-  appraisal_frameworks: ["id", "project_id", "name", "created_at", "archived_at"],
-  appraisal_framework_versions: ["id", "project_id", "framework_id", "version_number", "version_label", "description", "citation", "external_reference_url", "rights_note", "instructions", "intended_study_design", "applicability_note", "overall_judgement_required", "draft_revision", "created_at", "finalized_at"],
-  appraisal_framework_sections: ["id", "project_id", "framework_version_id", "label", "description", "sort_order", "created_at"],
-  appraisal_framework_items: ["id", "project_id", "framework_version_id", "section_id", "prompt", "guidance", "required", "sort_order", "created_at"],
-  appraisal_framework_response_options: ["id", "project_id", "framework_version_id", "item_id", "option_key", "label", "sort_order", "created_at"],
-  appraisal_framework_overall_judgement_options: ["id", "project_id", "framework_version_id", "option_key", "label", "sort_order", "created_at"],
-  appraisals: ["id", "project_id", "paper_id", "framework_id", "created_at"],
-  appraisal_revisions: ["id", "sequence", "revision_number", "project_id", "paper_id", "framework_id", "appraisal_id", "framework_version_id", "title_abstract_decision_id", "full_text_decision_id", "overall_judgement_option_id", "overall_rationale", "created_at", "finalized_at"],
-  appraisal_revision_responses: ["id", "project_id", "revision_id", "framework_version_id", "framework_item_id", "selected_option_id", "rationale", "created_at"],
-  appraisal_revision_response_evidence: ["id", "project_id", "paper_id", "framework_id", "appraisal_id", "revision_id", "framework_version_id", "framework_item_id", "response_id", "evidence_id", "evidence_review_decision_id_at_save", "evidence_review_state_at_save", "created_at"],
-  evidence_annotations: ["id", "sequence", "project_id", "evidence_id", "body", "created_at"],
-  evidence_labels: ["id", "project_id", "name", "description", "created_at", "archived_at"],
-  evidence_label_events: ["id", "sequence", "project_id", "evidence_id", "label_id", "event", "created_at"],
-  evidence_sets: ["id", "project_id", "name", "description", "created_at", "updated_at", "archived_at"],
-  evidence_set_memberships: ["id", "project_id", "evidence_set_id", "evidence_id", "created_at"],
-  evidence_set_composition_revisions: ["id", "sequence", "project_id", "evidence_set_id", "operation_kind", "created_at"],
-  evidence_set_composition_members: ["project_id", "evidence_set_id", "composition_revision_id", "membership_id", "sort_order"],
-  evidence_set_annotations: ["id", "sequence", "project_id", "evidence_set_id", "body", "created_at"],
-  synthesis_preparations: ["id", "project_id", "evidence_set_id", "evidence_set_composition_revision_id", "extraction_field_id", "working_title", "working_note", "target_synthesis_statement_id", "status", "finalized_synthesis_revision_id", "created_at", "updated_at", "finalized_at", "abandoned_at"],
-  synthesis_preparation_selections: ["project_id", "preparation_id", "extraction_revision_id", "created_at"],
-  synthesis_interpretations: ["id", "sequence", "project_id", "synthesis_statement_id", "synthesis_revision_id", "convergence_state", "summary", "researcher_note", "created_at", "finalized_at"],
-  synthesis_interpretation_limitations: ["id", "project_id", "interpretation_id", "sort_order", "category", "body", "created_at"],
-  synthesis_interpretation_questions: ["id", "project_id", "interpretation_id", "sort_order", "body", "created_at"],
-  synthesis_interpretation_contradictions: ["id", "project_id", "interpretation_id", "synthesis_revision_id", "sort_order", "left_extraction_revision_id", "right_extraction_revision_id", "note", "created_at"],
-  research_question_extraction_field_events: ["id", "sequence", "project_id", "research_question_id", "extraction_field_id", "action", "note", "created_at"],
-  research_question_evidence_set_events: ["id", "sequence", "project_id", "research_question_id", "evidence_set_id", "action", "note", "created_at"],
-  research_question_synthesis_statement_events: ["id", "sequence", "project_id", "research_question_id", "synthesis_statement_id", "action", "note", "created_at"],
-  research_question_claim_events: ["id", "sequence", "project_id", "research_question_id", "claim_id", "action", "note", "created_at"],
-  research_question_answers: ["id", "sequence", "project_id", "research_question_id", "answer_text", "researcher_note", "created_at", "finalized_at"],
-  research_question_answer_claim_contexts: ["project_id", "research_question_id", "answer_id", "claim_id", "claim_revision_id", "sort_order", "created_at"],
-  research_question_answer_synthesis_contexts: ["project_id", "research_question_id", "answer_id", "synthesis_statement_id", "synthesis_revision_id", "sort_order", "created_at"],
-  manuscript_review_threads: ["id", "project_id", "manuscript_id", "section_id", "section_item_id", "target_item_type", "title", "opening_prose_text", "opening_prose_revision_id", "opening_claim_id", "opening_claim_revision_id", "created_at"],
-  manuscript_prose_revisions: ["id", "sequence", "project_id", "prose_block_id", "prose_text", "created_at"],
-  manuscript_review_events: ["id", "sequence", "project_id", "thread_id", "event_type", "body", "occurred_at"],
-  manuscript_snapshots: ["id", "sequence", "project_id", "manuscript_id", "title", "citation_style", "schema_version", "renderer_version", "captured_at", "rendered_markdown", "rendered_markdown_sha256", "expected_section_count", "expected_item_count", "expected_bibliography_count", "expected_warning_count", "finalized_at", "created_at"],
-  manuscript_snapshot_sections: ["id", "project_id", "manuscript_id", "snapshot_id", "source_section_id", "title", "section_type", "section_position", "source_sort_order"],
-  manuscript_snapshot_items: ["id", "project_id", "manuscript_id", "snapshot_id", "snapshot_section_id", "source_section_id", "source_section_item_id", "item_type", "item_position", "source_sort_order"],
-  manuscript_snapshot_prose_items: ["project_id", "manuscript_id", "snapshot_item_id", "snapshot_id", "source_prose_block_id", "prose_revision_id", "prose_text", "source_section_id", "source_section_item_id"],
-  manuscript_snapshot_claim_items: ["project_id", "manuscript_id", "snapshot_item_id", "snapshot_id", "placement_id", "claim_id", "claim_revision_id", "source_section_id", "source_section_item_id", "claim_text", "rendered_citation_marker", "capture_support_status", "capture_is_current_claim_revision", "capture_is_superseded", "capture_claim_lifecycle"],
-  manuscript_snapshot_bibliography_entries: ["id", "project_id", "snapshot_id", "paper_id", "title", "authors", "publication_year", "venue", "doi", "citation_number", "bibliography_position", "rendered_reference"],
-  manuscript_snapshot_claim_bibliography_members: ["project_id", "snapshot_id", "snapshot_claim_item_id", "bibliography_entry_id", "marker_position"],
-  manuscript_snapshot_warnings: ["id", "project_id", "snapshot_id", "warning_position", "section_id", "section_item_id", "placement_id", "claim_revision_id", "paper_id", "code", "message", "metadata_field"],
-  ai_extraction_requests: ["id", "project_id", "paper_id", "extraction_field_id", "full_text_document_id", "document_text_extraction_id", "baseline_extraction_revision_id", "idempotency_key", "intent_hash", "field_name_snapshot", "field_description_snapshot", "field_type", "option_snapshot", "provider", "configured_model", "configured_reasoning_effort", "prompt_version", "response_schema_version", "grounding_resolver_version", "context_selection_version", "source_character_count", "source_byte_size", "page_manifest_hash", "external_transmission_acknowledged", "disclosure_version", "created_at", "finalized_at"],
-  ai_extraction_request_pages: ["id", "project_id", "request_id", "page_id", "paper_id", "full_text_document_id", "document_text_extraction_id", "page_number", "page_ordinal", "text_sha256", "character_count", "byte_size", "created_at"],
-  ai_extraction_dispatches: ["id", "project_id", "request_id", "started_at", "deadline_at", "created_at"],
-  ai_extraction_results: ["id", "project_id", "request_id", "outcome", "provider_diagnostic", "error_code", "candidate_state", "text_value", "number_value", "boolean_value", "option_id", "explanation", "provider_request_id", "configured_model", "returned_model", "input_tokens", "output_tokens", "duration_ms", "created_at", "finalized_at"],
-  ai_extraction_result_groundings: ["id", "project_id", "request_id", "result_id", "page_id", "page_number", "start_offset", "end_offset", "locator_quote", "locator_prefix", "locator_suffix", "source_text", "created_at"],
-  ai_extraction_decisions: ["id", "project_id", "request_id", "decision", "acceptance_mode", "expected_current_extraction_revision_id", "preceding_extraction_revision_id", "resulting_extraction_revision_id", "value_state", "text_value", "number_value", "boolean_value", "option_id", "researcher_note", "created_at"],
-  ai_extraction_decision_evidence: ["project_id", "decision_id", "grounding_id", "evidence_id", "evidence_mode", "created_at"],
-  ai_extraction_batches: ["id", "project_id", "provider", "configured_model", "configured_reasoning_effort", "selection_policy_version", "batch_disclosure_version", "request_disclosure_version", "external_transmission_acknowledged", "paper_count", "field_count", "cell_count", "executable_count", "manifest_algorithm_version", "manifest_sha256", "created_at", "cancelled_at"],
-  ai_extraction_batch_items: ["id", "project_id", "batch_id", "item_ordinal", "paper_id", "extraction_field_id", "expected_current_extraction_revision_id", "title_abstract_decision_id", "full_text_decision_id", "full_text_document_id", "document_text_extraction_id", "initial_disposition", "initial_reason_code", "idempotency_key", "expected_request_intent_hash", "field_definition_hash", "option_snapshot_hash", "paper_title_snapshot", "paper_abstract_snapshot", "field_name_snapshot", "field_description_snapshot", "field_type_snapshot", "field_required_snapshot", "field_option_snapshot", "document_filename_snapshot", "extraction_sequence_snapshot", "extraction_status_snapshot", "page_manifest", "page_manifest_hash", "page_count", "source_character_count", "source_byte_size", "item_manifest_hash", "ai_extraction_request_id", "request_relationship", "orchestration_terminal_code", "orchestration_terminal_detail", "orchestration_finalized_at", "created_at"],
-  ai_synthesis_requests: ["id", "project_id", "project_title_snapshot", "preparation_id", "evidence_set_id", "evidence_set_composition_revision_id", "extraction_field_id", "target_synthesis_statement_id", "target_baseline_synthesis_revision_id", "target_title_snapshot", "target_statement_text_snapshot", "idempotency_key", "source_state_hash", "intent_hash", "field_name_snapshot", "field_description_snapshot", "field_type", "provider", "configured_model", "configured_reasoning_effort", "prompt_version", "response_schema_version", "grounding_resolver_version", "context_selection_version", "source_coverage_state", "support_count", "source_count", "source_character_count", "source_byte_size", "source_manifest_hash", "external_transmission_acknowledged", "disclosure_version", "created_at", "undispatched_expires_at"],
-  ai_synthesis_request_supports: ["project_id", "request_id", "extraction_revision_id", "support_ordinal", "paper_id", "extraction_field_id", "extraction_value_id", "field_type", "value_state", "text_value", "number_value", "boolean_value", "option_id", "option_label_snapshot", "researcher_note", "paper_title_snapshot", "paper_publication_year_snapshot", "created_at"],
-  ai_synthesis_request_sources: ["id", "project_id", "request_id", "extraction_revision_id", "evidence_id", "paper_id", "source_ordinal", "membership_id", "membership_sort_order", "page_number", "source_text", "source_text_sha256", "source_character_count", "source_byte_size", "evidence_review_state", "evidence_note_snapshot", "created_at"],
-  ai_synthesis_dispatches: ["id", "project_id", "request_id", "started_at", "deadline_at", "created_at"],
-  ai_synthesis_results: ["id", "project_id", "request_id", "outcome", "provider_diagnostic", "error_code", "candidate_state", "proposed_title", "proposed_statement_text", "explanation", "source_coverage_state", "covered_support_count", "grounding_count", "provider_request_id", "configured_model", "returned_model", "input_tokens", "output_tokens", "duration_ms", "created_at", "finalized_at"],
-  ai_synthesis_result_groundings: ["id", "project_id", "request_id", "result_id", "extraction_revision_id", "evidence_id", "page_number", "start_offset", "end_offset", "locator_quote", "locator_prefix", "locator_suffix", "source_text", "created_at"],
-  ai_synthesis_decisions: ["id", "project_id", "request_id", "decision", "acceptance_mode", "expected_current_target_revision_id", "resulting_synthesis_revision_id", "title", "statement_text", "researcher_note", "created_at"],
-  bibliographic_imports: ["id", "project_id", "format", "filename", "source_bytes", "source_sha256", "source_byte_size", "parser_version", "adapter_version", "mapping_version", "status", "expected_record_count", "diagnostics", "error_code", "error_message", "created_at", "finalized_at"],
-  bibliographic_import_records: ["id", "project_id", "import_id", "ordinal", "source_key", "source_type", "title", "authors", "abstract", "doi", "url", "publication_year", "venue", "start_byte", "end_byte", "parse_outcome", "field_states", "diagnostics", "created_at", "finalized_at"],
-  bibliographic_import_resolutions: ["id", "sequence", "project_id", "import_id", "record_id", "event_type", "paper_id", "expected_previous_resolution_id", "creation_payload", "candidate_paper_id", "candidate_rank", "candidate_reason", "candidate_doi", "candidate_title", "candidate_publication_year", "candidate_venue", "candidate_context", "note", "created_at"],
-  doi_lookup_requests: ["id", "project_id", "submitted_doi", "normalized_doi", "provider", "provider_contract_version", "provider_mapping_version", "idempotency_key", "created_at"],
-  bibliographic_metadata_fetches: ["id", "provider", "normalized_doi", "provider_contract_version", "provider_mapping_version", "cache_key", "started_at", "deadline_at", "execution_identity", "rate_limit_per_second", "concurrency_limit", "created_at"],
-  doi_lookup_dispatches: ["id", "sequence", "project_id", "request_id", "fetch_id", "dispatch_kind", "created_at"],
-  bibliographic_metadata_fetch_results: ["id", "fetch_id", "outcome", "http_attempt_count", "last_http_status", "response_content_type", "response_byte_size", "response_sha256", "source_snapshot", "provider_doi", "proposed_title", "proposed_publication_year", "proposed_venue", "provider_type", "provider_publisher", "provider_url", "authors_state", "reported_author_count", "mapping_warnings", "diagnostic_code", "diagnostic_message", "provider_request_id", "observed_rate_limit_per_second", "observed_concurrency_limit", "duration_ms", "created_at", "finalized_at"],
-  bibliographic_metadata_result_authors: ["id", "result_id", "ordinal", "given_name", "family_name", "literal_name", "suffix", "orcid", "display_name", "provider_sequence", "created_at"],
-  bibliographic_metadata_http_attempts: ["id", "fetch_id", "attempt_ordinal", "request_url", "started_at", "completed_at", "status", "http_status", "outcome_code", "created_at"],
-  doi_lookup_resolutions: ["id", "sequence", "project_id", "request_id", "result_id", "resolution_kind", "paper_id", "expected_previous_resolution_id", "creation_payload", "candidate_context", "preview_fingerprint", "note", "created_at"],
-  pdf_intakes: ["id", "project_id", "storage_key", "original_filename", "media_type", "byte_size", "sha256", "created_at"],
-  pdf_intake_metadata_results: ["id", "sequence_no", "project_id", "intake_id", "status", "extractor_key", "extractor_version", "pdfjs_version", "mapping_version", "text_scan_version", "doi_algorithm_version", "page_count", "attempted_page_count", "succeeded_page_count", "scanned_code_points", "diagnostics", "error_code", "error_message", "completed_at", "created_at"],
-  pdf_intake_metadata_fields: ["id", "project_id", "intake_id", "result_id", "paper_field", "candidate_ordinal", "value_jsonb", "source_kind", "source_locator", "classification", "diagnostic", "normalized_value", "page_number", "start_offset", "end_offset", "exact_match", "page_text_sha256", "created_at"],
-  pdf_intake_resolutions: ["id", "sequence_no", "project_id", "intake_id", "metadata_result_id", "resolution_kind", "paper_id", "full_text_document_id", "materialization_kind", "creation_payload", "candidate_context", "preview_fingerprint", "request_fingerprint", "created_at"],
-} as const;
 
-type MigrationEntry = { idx: number; tag: string; when: number };
-type MigrationJournal = { entries: MigrationEntry[] };
-type MigrationRow = { id: number; hash: string; created_at: number | string };
 type SchemaRow = { table_name: string; column_name: string };
+
+function formatError(error: unknown) {
+  const message = error instanceof Error ? error.name + ": " + error.message : String(error);
+  return message.replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted database URL]");
+}
 
 function quoteIdentifier(value: string) {
   return `"${value.replaceAll('"', '""')}"`;
@@ -118,12 +41,14 @@ function quoteIdentifier(value: string) {
 
 function readExpectedMigrations() {
   const journal = JSON.parse(fs.readFileSync(path.join(migrationFolder, "meta", "_journal.json"), "utf8")) as MigrationJournal;
+  const migrations = buildMigrationManifest(journal, (tag) => fs.readFileSync(path.join(migrationFolder, `${tag}.sql`)));
+  const snapshotPath = getLatestSnapshotPath(migrationFolder, migrations);
+  const snapshot = JSON.parse(fs.readFileSync(snapshotPath, "utf8")) as DrizzleSnapshot;
   return {
     journal,
-    migrations: journal.entries.map((entry) => {
-      const sql = fs.readFileSync(path.join(migrationFolder, `${entry.tag}.sql`));
-      return { ...entry, hash: createHash("sha256").update(sql).digest("hex") };
-    }),
+    migrations,
+    snapshotPath,
+    expectedSchema: derivePublicSchema(snapshot),
   };
 }
 
@@ -198,46 +123,39 @@ async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
 }
 
 async function assertSchema(client: postgres.Sql, databaseName: string) {
-  const { migrations } = readExpectedMigrations();
+  const { migrations, snapshotPath, expectedSchema } = readExpectedMigrations();
   const expectedLatest = migrations.at(-1);
-  if (!expectedLatest || expectedLatest.tag !== "0031_critical_appraisal") {
-    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0031_critical_appraisal, found ${expectedLatest?.tag ?? "none"}`);
+  if (!expectedLatest) {
+    throw new Error("Playwright schema assertion cannot run: migration journal has no tail entry");
   }
 
   const migrationRows = await client.unsafe("select id, hash, created_at from drizzle.__drizzle_migrations order by id") as unknown as MigrationRow[];
-  const migrationMismatches = migrations.flatMap((expected, index) => {
-    const actual = migrationRows[index];
-    if (!actual || Number(actual.id) !== index + 1 || actual.hash !== expected.hash || Number(actual.created_at) !== expected.when) {
-      return [`${expected.tag} (expected id/hash/timestamp, got ${actual ? `${actual.id}/${actual.hash}/${actual.created_at}` : "missing"})`];
-    }
-    return [];
-  });
+  const migrationMismatches = getMigrationRowMismatches(migrations, migrationRows);
   if (migrationRows.length !== migrations.length || migrationMismatches.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0031_critical_appraisal; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through ${expectedLatest.tag}; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
   }
 
-  const tableNames = Object.keys(requiredSchema);
-  const quotedTableNames = tableNames.map((tableName) => `'${tableName}'`).join(", ");
-  const schemaRows = await client.unsafe(`select table_name, column_name from information_schema.columns where table_schema = 'public' and table_name in (${quotedTableNames})`) as unknown as SchemaRow[];
-  const actualColumns = new Map<string, Set<string>>();
-  for (const row of schemaRows) {
-    const columns = actualColumns.get(row.table_name) ?? new Set<string>();
-    columns.add(row.column_name);
-    actualColumns.set(row.table_name, columns);
-  }
-  const missingTables = tableNames.filter((tableName) => !actualColumns.has(tableName));
-  const missingColumns = Object.entries(requiredSchema).flatMap(([tableName, columns]) => columns.filter((columnName) => !actualColumns.get(tableName)?.has(columnName)).map((columnName) => `${tableName}.${columnName}`));
+  const schemaRows = await client.unsafe("select columns.table_name, columns.column_name from information_schema.columns columns join information_schema.tables catalog_tables on catalog_tables.table_schema = columns.table_schema and catalog_tables.table_name = columns.table_name where columns.table_schema = 'public' and catalog_tables.table_type = 'BASE TABLE' order by columns.table_name, columns.ordinal_position") as unknown as SchemaRow[];
+  const schemaMismatches = formatPublicSchemaDiff(comparePublicSchema(expectedSchema, schemaRows));
   const legacyColumns = await client.unsafe("select table_name, column_name from information_schema.columns where table_schema = 'public' and ((table_name = 'projects' and column_name = 'research_question') or (table_name = 'manuscript_prose_blocks' and column_name in ('text', 'updated_at')))") as unknown as Array<{ table_name: string; column_name: string }>;
-  if (missingTables.length > 0 || missingColumns.length > 0 || legacyColumns.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0031_critical_appraisal; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `${row.table_name}.${row.column_name}`).join(", ") || "none"}`);
+  if (schemaMismatches.length > 0 || legacyColumns.length > 0) {
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected public tables and columns from ${path.basename(snapshotPath)} through ${expectedLatest.tag}; schema differences=${schemaMismatches.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `${row.table_name}.${row.column_name}`).join(", ") || "none"}`);
   }
 }
 
 async function main() {
-  const adminUrl = process.env.PLAYWRIGHT_ADMIN_DATABASE_URL ?? process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
+  let adminUrl: string;
+  let databaseUrl: URL;
+  try {
+    adminUrl = resolveDatabaseUrl(process.env.PLAYWRIGHT_ADMIN_DATABASE_URL, process.env.DATABASE_URL);
+    databaseUrl = new URL(adminUrl);
+  } catch (error) {
+    console.error(formatError(error));
+    process.exitCode = 1;
+    return;
+  }
   const databaseName = createDatabaseName();
   const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "litreview_playwright_storage_"));
-  const databaseUrl = new URL(adminUrl);
   databaseUrl.pathname = `/${databaseName}`;
   const testDatabaseUrl = databaseUrl.toString();
   const nextEnv: NodeJS.ProcessEnv = {
@@ -284,7 +202,7 @@ async function main() {
   try {
     await admin.unsafe(`create database ${quoteIdentifier(databaseName)}`);
     fs.mkdirSync(path.dirname(databaseMarkerPath), { recursive: true });
-    fs.writeFileSync(databaseMarkerPath, JSON.stringify({ adminUrl, databaseName, storageRoot }), "utf8");
+    fs.writeFileSync(databaseMarkerPath, JSON.stringify({ databaseName, storageRoot }), "utf8");
     const database = createDb(testDatabaseUrl);
     try {
       await migrate(database.db, { migrationsFolder: migrationFolder });
@@ -292,7 +210,7 @@ async function main() {
     } finally {
       await database.client.end();
     }
-  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0031_critical_appraisal verified; storage=${storageRoot}`);
+  console.error(`[playwright-db] ready: ${databaseName}; migration and public schema tail verified; storage=${storageRoot}`);
 
     child = spawnNext("next-build", [nextBin, "build"], nextEnv);
     const buildExitCode = await waitForProcess(child, "next-build");
@@ -311,7 +229,7 @@ async function main() {
     await cleanup();
     process.exitCode = requestedExitCode ?? childExitCode;
   } catch (error) {
-    console.error(error);
+    console.error(formatError(error));
     try {
       await cleanup();
     } catch (cleanupError) {
@@ -321,4 +239,7 @@ async function main() {
   }
 }
 
-void main();
+void main().catch((error) => {
+  console.error(formatError(error));
+  process.exitCode = 1;
+});

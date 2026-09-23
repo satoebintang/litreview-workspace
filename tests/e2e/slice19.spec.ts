@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 19 Synthesis Interpretation Context", () => {
   test("authors interpretation snapshots over exact finalized SynthesisRevision, records limitations, questions, and contradiction pairs, and drafts manuscript Claim with exact synthesis support", async ({ page }) => {
@@ -18,13 +19,13 @@ test.describe("Slice 19 Synthesis Interpretation Context", () => {
     await page.getByLabel("Title", { exact: true }).fill("Study Alpha");
     await page.getByLabel("Authors").fill("Lead Researcher Alpha");
     await page.getByLabel("Abstract").fill("Study Alpha abstract on outcomes");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     await expect(page.locator(".paper-chip, .item-title").filter({ hasText: "Study Alpha" }).first()).toBeVisible({ timeout: 30_000 });
 
     await page.getByLabel("Title", { exact: true }).fill("Study Beta");
     await page.getByLabel("Authors").fill("Lead Researcher Beta");
     await page.getByLabel("Abstract").fill("Study Beta abstract on outcomes");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     await expect(page.locator(".paper-chip, .item-title").filter({ hasText: "Study Beta" }).first()).toBeVisible({ timeout: 30_000 });
 
     // 3. Record Evidence for both papers

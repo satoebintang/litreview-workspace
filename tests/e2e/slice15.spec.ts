@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 const fixture = readFileSync(path.join(process.cwd(), "tests", "fixtures", "slice15", "native-text-unicode-2page.pdf"));
 
@@ -16,7 +17,7 @@ test.describe("Slice 15 immutable PDF text extraction", () => {
 
     await page.getByLabel("Title", { exact: true }).fill("Native text study");
     await page.getByLabel("Abstract").fill("Deterministic parser fixture");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     const documentsLink = page.getByRole("link", { name: "Native text study", exact: true });
     await documentsLink.click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+\/papers\/[0-9a-f-]+\/documents$/);

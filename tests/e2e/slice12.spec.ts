@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 12 full-text eligibility screening", () => {
   test("keeps title/abstract and full-text stages separate and derives final inclusion", async ({ page }) => {
@@ -13,7 +14,7 @@ test.describe("Slice 12 full-text eligibility screening", () => {
     for (const title of ["Eligible study", "Excluded study"]) {
       await page.getByLabel("Title", { exact: true }).fill(title);
       await page.getByLabel("Abstract").fill(`${title} abstract`);
-      await page.getByRole("button", { name: "Add paper" }).click();
+      await addManualPaper(page);
       await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
     }
 
