@@ -119,6 +119,7 @@ import {
 import { findPaperCandidates, writePaper } from "./paper-writer";
 import { createBibliographicImportServices, type BibliographicParser, type BibliographicImportServices } from "./bibliographic-import-services";
 import { createPdfIntakeServices, type PdfIntakeStorage, type PdfMetadataInspector } from "./pdf-intake-services";
+import { createCriticalAppraisalServices } from "./critical-appraisal-services";
 
 function validate<T>(schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: unknown[] } } }, input: unknown): T {
   const result = schema.safeParse(input);
@@ -1464,6 +1465,7 @@ export function createReviewServices(db: Database, options: {
   });
   const reportingServices = createReviewReportingServices(db, deduplicationServices);
   const curationServices = createEvidenceCurationServices(db, { requireProject, requireEvidence });
+  const criticalAppraisalServices = createCriticalAppraisalServices(db, { requireProject, requirePaper, requireEvidence });
   const evidenceSetServices = createEvidenceSetServices(db, { requireProject, requireEvidence });
   const synthesisPreparationServices = createSynthesisPreparationServices(db, {
     requireProject,
@@ -1574,6 +1576,7 @@ export function createReviewServices(db: Database, options: {
     pdfIntakeServices,
     reportingServices,
     curationServices,
+    criticalAppraisalServices,
     evidenceSetServices,
     synthesisPreparationServices,
     synthesisInterpretationServices,
@@ -1589,6 +1592,7 @@ export function createReviewServices(db: Database, options: {
     DocumentTextExtractionServices &
     typeof pdfIntakeServices &
     typeof curationServices &
+    typeof criticalAppraisalServices &
     typeof evidenceSetServices &
     typeof synthesisPreparationServices &
     typeof synthesisInterpretationServices &

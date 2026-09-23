@@ -218,6 +218,13 @@
       "when": 1789897392033,
       "tag": "0030_ai_extraction_batches",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790079277226,
+      "tag": "0031_critical_appraisal",
+      "breakpoints": true
     }
   ]
 }

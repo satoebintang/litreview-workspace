@@ -105,17 +105,28 @@ function validBatch(projectId: string, itemManifestHash: string, id = randomUUID
   } as const;
 }
 
-describe("Slice 31 batch extraction migration boundary", () => {
-  it("applies 0030 and exposes both orchestration tables", async () => {
+describe("Slice 33 critical appraisal migration boundary", () => {
+  it("applies 0031 and exposes the ten appraisal tables", async () => {
     const created = await freshDatabase("slice31_fresh");
     const db = createDb(created.url);
     try {
       await migrate(db.db, { migrationsFolder: migrationFolder });
       const [latest] = await db.client`select id, hash from drizzle.__drizzle_migrations order by id desc limit 1`;
-      expect(Number(latest.id)).toBe(31);
-      expect(latest.hash).toBe(createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0030_ai_extraction_batches.sql")).subarray()).digest("hex"));
-      const tables = await db.client`select table_name from information_schema.tables where table_schema = 'public' and table_name in ('ai_extraction_batches', 'ai_extraction_batch_items') order by table_name`;
-      expect(tables.map((row) => row.table_name)).toEqual(["ai_extraction_batch_items", "ai_extraction_batches"]);
+      expect(Number(latest.id)).toBe(32);
+      expect(latest.hash).toBe(createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0031_critical_appraisal.sql")).subarray()).digest("hex"));
+      const tables = await db.client`select table_name from information_schema.tables where table_schema = 'public' and table_name in ('appraisal_frameworks', 'appraisal_framework_versions', 'appraisal_framework_sections', 'appraisal_framework_items', 'appraisal_framework_response_options', 'appraisal_framework_overall_judgement_options', 'appraisals', 'appraisal_revisions', 'appraisal_revision_responses', 'appraisal_revision_response_evidence') order by table_name`;
+      expect(tables.map((row) => row.table_name)).toEqual([
+        "appraisal_framework_items",
+        "appraisal_framework_overall_judgement_options",
+        "appraisal_framework_response_options",
+        "appraisal_framework_sections",
+        "appraisal_framework_versions",
+        "appraisal_frameworks",
+        "appraisal_revision_response_evidence",
+        "appraisal_revision_responses",
+        "appraisal_revisions",
+        "appraisals",
+      ]);
     } finally {
       await db.client.end();
       await created.admin.unsafe(`drop database if exists "${created.name}"`);

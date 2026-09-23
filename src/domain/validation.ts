@@ -884,3 +884,125 @@ export type AiExtractionRequestInput = z.input<typeof aiExtractionRequestSchema>
 export type AiExtractionResultInput = z.input<typeof aiExtractionResultSchema>;
 export type AiExtractionGroundingInput = z.input<typeof aiExtractionGroundingSchema>;
 export type AiExtractionDecisionInput = z.input<typeof aiExtractionDecisionSchema>;
+
+// Slice 33 custom appraisal inputs. These schemas describe researcher-authored
+// framework content only; they intentionally contain no official instrument
+// vocabulary, score, algorithm, or automated judgement.
+const appraisalOptionalText = z.string().max(20000).nullable().optional();
+
+export const createAppraisalFrameworkSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+}).strict();
+
+export const updateFrameworkDraftMetadataSchema = z.object({
+  versionId: idSchema,
+  expectedDraftRevision: z.number().int().nonnegative(),
+  versionLabel: z.string().trim().min(1).max(100).optional(),
+  description: appraisalOptionalText,
+  citation: appraisalOptionalText,
+  externalReferenceUrl: z.string().trim().url().max(2048).refine((value) => /^https?:\/\//i.test(value), "External reference URL must use http or https").nullable().optional(),
+  rightsNote: appraisalOptionalText,
+  instructions: z.string().max(20000).nullable().optional(),
+  intendedStudyDesign: z.string().max(1000).nullable().optional(),
+  applicabilityNote: appraisalOptionalText,
+  overallJudgementRequired: z.boolean().optional(),
+}).strict();
+
+export const appraisalSectionInputSchema = z.object({
+  versionId: idSchema,
+  expectedDraftRevision: z.number().int().nonnegative(),
+  label: z.string().trim().min(1).max(200),
+  description: z.string().max(5000).nullable().optional(),
+}).strict();
+
+export const appraisalSectionUpdateSchema = appraisalSectionInputSchema.extend({
+  sectionId: idSchema,
+}).strict();
+
+export const appraisalItemInputSchema = z.object({
+  versionId: idSchema,
+  expectedDraftRevision: z.number().int().nonnegative(),
+  sectionId: idSchema,
+  prompt: z.string().trim().min(1).max(2000),
+  guidance: z.string().max(10000).nullable().optional(),
+  required: z.boolean().default(false),
+}).strict();
+
+export const appraisalItemUpdateSchema = appraisalItemInputSchema.extend({
+  itemId: idSchema,
+}).strict();
+
+export const appraisalResponseOptionInputSchema = z.object({
+  itemId: idSchema,
+  expectedDraftRevision: z.number().int().nonnegative(),
+  optionKey: z.string().trim().min(1).max(100),
+  label: z.string().trim().min(1).max(500),
+}).strict();
+
+export const appraisalResponseOptionUpdateSchema = appraisalResponseOptionInputSchema.extend({
+  optionId: idSchema,
+}).strict();
+
+export const appraisalOverallOptionInputSchema = z.object({
+  optionKey: z.string().trim().min(1).max(100),
+  label: z.string().trim().min(1).max(500),
+}).strict();
+
+export const appraisalOverallOptionsSchema = z.object({
+  versionId: idSchema,
+  expectedDraftRevision: z.number().int().nonnegative(),
+  options: z.array(appraisalOverallOptionInputSchema).max(20),
+  required: z.boolean(),
+}).strict();
+
+export const appraisalReorderSchema = z.object({
+  versionId: idSchema,
+  expectedDraftRevision: z.number().int().nonnegative(),
+  ids: z.array(idSchema).min(1),
+}).strict();
+
+export const appraisalSectionRemovalSchema = z.object({
+  versionId: idSchema,
+  sectionId: idSchema,
+  expectedDraftRevision: z.number().int().nonnegative(),
+}).strict();
+
+export const appraisalItemRemovalSchema = z.object({
+  versionId: idSchema,
+  itemId: idSchema,
+  expectedDraftRevision: z.number().int().nonnegative(),
+}).strict();
+
+export const appraisalResponseOptionRemovalSchema = z.object({
+  versionId: idSchema,
+  itemId: idSchema,
+  optionId: idSchema,
+  expectedDraftRevision: z.number().int().nonnegative(),
+}).strict();
+
+export const saveAppraisalRevisionSchema = z.object({
+  paperId: idSchema,
+  frameworkId: idSchema,
+  frameworkVersionId: idSchema,
+  expectedCurrentRevisionId: idSchema.nullable(),
+  overallJudgementOptionId: idSchema.nullable().optional(),
+  overallRationale: z.string().max(10000).nullable().optional(),
+  responses: z.array(z.object({
+    itemId: idSchema,
+    selectedOptionId: idSchema.nullable().optional(),
+    rationale: z.string().max(10000).nullable().optional(),
+    evidenceIds: z.array(idSchema).max(50).default([]),
+  }).strict()).max(200),
+}).strict();
+
+export type CreateAppraisalFrameworkInput = z.input<typeof createAppraisalFrameworkSchema>;
+export type UpdateFrameworkDraftMetadataInput = z.input<typeof updateFrameworkDraftMetadataSchema>;
+export type AppraisalSectionInput = z.input<typeof appraisalSectionInputSchema>;
+export type AppraisalSectionUpdateInput = z.input<typeof appraisalSectionUpdateSchema>;
+export type AppraisalItemInput = z.input<typeof appraisalItemInputSchema>;
+export type AppraisalItemUpdateInput = z.input<typeof appraisalItemUpdateSchema>;
+export type AppraisalResponseOptionInput = z.input<typeof appraisalResponseOptionInputSchema>;
+export type AppraisalResponseOptionUpdateInput = z.input<typeof appraisalResponseOptionUpdateSchema>;
+export type AppraisalOverallOptionsInput = z.input<typeof appraisalOverallOptionsSchema>;
+export type AppraisalReorderInput = z.input<typeof appraisalReorderSchema>;
+export type SaveAppraisalRevisionInput = z.input<typeof saveAppraisalRevisionSchema>;

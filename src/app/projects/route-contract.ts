@@ -87,6 +87,7 @@ const ROUTE_RULES: readonly RouteRule[] = [
       Boolean(segments[1]) &&
       segments[2] === "documents",
   },
+  { key: "extract", matches: (segments) => segments[0] === "appraisal" },
   {
     key: "papers",
     matches: (segments) =>
@@ -152,6 +153,8 @@ export function getProjectBreadcrumbs(
     crumbs.push({ label: "Preparation" });
   } else if (pathSegments[0] === "extraction" && pathSegments[1] === "batches") {
     crumbs.push({ label: "AI batch" });
+  } else if (pathSegments[0] === "appraisal") {
+    crumbs.push({ label: "Critical appraisal" });
   } else if (pathSegments[0] === "research-questions" && pathSegments[2] === "answers") {
     crumbs.push({ label: "Answer" });
     if (pathSegments[4] === "manuscript") crumbs.push({ label: "Manuscript drafting" });
