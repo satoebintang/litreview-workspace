@@ -1,0 +1,3 @@
+DROP INDEX "retrieved_records_project_doi_comparison_idx";--> statement-breakpoint
+CREATE INDEX "retrieved_records_project_source_record_comparison_idx" ON "retrieved_records" USING btree ("project_id","search_source_id","source_record_id") WHERE "retrieved_records"."source_record_id" is not null and btrim("retrieved_records"."source_record_id") <> '';--> statement-breakpoint
+CREATE INDEX "retrieved_records_project_doi_comparison_idx" ON "retrieved_records" USING btree ("project_id",btrim(lower(regexp_replace(regexp_replace(btrim("doi"), '^https?://(dx\.)?doi\.org/', '', 'i'), '^doi:[[:space:]]*', '', 'i')))) WHERE "retrieved_records"."doi" is not null and btrim("retrieved_records"."doi") <> '';

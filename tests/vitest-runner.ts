@@ -3,8 +3,12 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import postgres from "postgres";
+import { resolveDatabaseUrl } from "../src/db/config";
 
-const DEFAULT_DATABASE_URL = "postgres://litreview:litreview@127.0.0.1:5432/litreview";
+function formatError(error: unknown) {
+  const message = error instanceof Error ? error.name + ": " + error.message : String(error);
+  return message.replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted database URL]");
+}
 
 function quoteIdentifier(value: string) {
   return `"${value.replaceAll('"', '""')}"`;
@@ -12,7 +16,7 @@ function quoteIdentifier(value: string) {
 
 async function main() {
   const databaseName = `litreview_vitest_${process.pid}_${Date.now()}_${randomUUID().replaceAll("-", "").slice(0, 8)}`;
-  const adminUrl = process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
+  const adminUrl = resolveDatabaseUrl(undefined, process.env.DATABASE_URL);
   const testDatabaseUrl = new URL(adminUrl);
   testDatabaseUrl.pathname = `/${databaseName}`;
   const vitestBin = path.resolve(process.cwd(), "node_modules", "vitest", "vitest.mjs");
@@ -39,6 +43,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error);
+  console.error(formatError(error));
   process.exitCode = 1;
 });

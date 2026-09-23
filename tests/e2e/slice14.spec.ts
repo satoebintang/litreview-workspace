@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 14 full-text document workflow", () => {
   test("keeps active duplicate detection and archived Evidence provenance exact", async ({ page }) => {
@@ -13,7 +14,7 @@ test.describe("Slice 14 full-text document workflow", () => {
 
     await page.getByLabel("Title", { exact: true }).fill("Document study");
     await page.getByLabel("Abstract").fill("Document study abstract");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     const documentsLink = page.getByRole("link", { name: "Document study", exact: true });
     await expect(documentsLink).toBeVisible();
     await documentsLink.click();

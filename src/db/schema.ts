@@ -17,6 +17,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { retrievedRecordDoiComparison } from "./comparison-expressions";
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => "bytea",
@@ -1745,8 +1746,11 @@ export const retrievedRecords = pgTable(
       name: "retrieved_records_project_run_source_fk",
     }).onDelete("restrict"),
     doiComparison: index("retrieved_records_project_doi_comparison_idx")
-      .using("btree", table.projectId, sql`lower(regexp_replace(regexp_replace(btrim(${table.doi}), '^https?://(dx\\.)?doi\\.org/', '', 'i'), '^doi:[[:space:]]*', '', 'i'))`)
+      .using("btree", table.projectId, retrievedRecordDoiComparison(table.doi))
       .where(sql`${table.doi} is not null and btrim(${table.doi}) <> ''`),
+    sourceRecordComparison: index("retrieved_records_project_source_record_comparison_idx")
+      .on(table.projectId, table.searchSourceId, table.sourceRecordId)
+      .where(sql`${table.sourceRecordId} is not null and btrim(${table.sourceRecordId}) <> ''`),
     titleComparison: index("retrieved_records_project_title_comparison_idx")
       .using("btree", table.projectId, sql`lower(regexp_replace(btrim(${table.title}), '[[:space:]]+', ' ', 'g'))`, table.publicationYear)
       .where(sql`${table.title} is not null and btrim(${table.title}) <> ''`),

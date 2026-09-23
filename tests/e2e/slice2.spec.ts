@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 2 screening workflow", () => {
   test("collects a paper, records revisions, and preserves screening history", async ({ page }) => {
@@ -15,7 +16,7 @@ test.describe("Slice 2 screening workflow", () => {
     await page.getByLabel("Authors").fill("Ada Researcher");
     await page.getByLabel("Publication year").fill("2024");
     await page.getByLabel("Abstract").fill("This abstract studies security attacks against machine learning systems.");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     await expect(page.getByText("Adversarial Machine Learning in IoT", { exact: true }).first()).toBeVisible();
 
     await page.getByRole("link", { name: /Review screening/ }).click();

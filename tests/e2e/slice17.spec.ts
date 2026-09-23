@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 17 Evidence Sets", () => {
   test("creates an empty set, adds Evidence without changing provenance, and archives it", async ({ page }) => {
@@ -11,7 +12,7 @@ test.describe("Slice 17 Evidence Sets", () => {
     await page.goto(`/projects/${projectId}/papers`);
 
     await page.getByLabel("Title", { exact: true }).fill("Evidence Set study");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     await expect(page.getByText("Evidence Set study", { exact: true }).first()).toBeVisible();
     await page.goto(`/projects/${projectId}/evidence`);
     await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Evidence Set study" });

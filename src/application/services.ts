@@ -1178,10 +1178,9 @@ export function createReviewServices(db: Database, options: {
       return { field, totalIncludedPapers: rows.length, counts };
     },
 
-    async addPaper(projectId: string, input: CreatePaperInput) {
+    async addPaper(projectId: string, input: CreatePaperInput & { distinctPaperAcknowledged?: boolean; candidatePaperIds?: string[] }) {
       await requireProject(projectId);
       const values = validate(createPaperSchema, input);
-      const reviewInput = input as CreatePaperInput & { distinctPaperAcknowledged?: boolean; candidatePaperIds?: string[] };
       // Manual reviewed creation is the only workflow that uses the new
       // project intake lock. Acquisition and deduplication keep their own
       // RetrievedRecord/pair lock order and never enter this path.
@@ -1191,9 +1190,9 @@ export function createReviewServices(db: Database, options: {
         const candidateRows = await findPaperCandidates(tx, projectId, values);
         const candidateIds = candidateRows.map((row) => String(row.id));
         if (candidateIds.length > 0) {
-          const submittedIds = [...new Set(reviewInput.candidatePaperIds ?? [])].sort();
+          const submittedIds = [...new Set(input.candidatePaperIds ?? [])].sort();
           const expectedIds = [...candidateIds].sort();
-          if (!reviewInput.distinctPaperAcknowledged || submittedIds.join(",") !== expectedIds.join(",")) {
+          if (!input.distinctPaperAcknowledged || submittedIds.join(",") !== expectedIds.join(",")) {
             throw new DomainError("DUPLICATE_REVIEW_REQUIRED", "Review candidate Papers before creating a distinct Paper", { candidates: candidateRows });
           }
         }

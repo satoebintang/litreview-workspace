@@ -1,10 +1,16 @@
 import { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LocalDocumentStorage, LocalPdfIntakeStorage } from "@/infrastructure/document-storage";
+
+async function withTemporaryStorageRoot(run: (root: string) => Promise<void>) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "litreview_storage_integrity_test_"));
+  try { await run(root); }
+  finally { await rm(root, { recursive: true, force: true }); }
+}
 
 describe("full-text document storage", () => {
   let root = "";
@@ -33,7 +39,7 @@ describe("full-text document storage", () => {
   });
 
   it("removes staged bytes after overflow, invalid signatures, and stream interruption", async () => {
-    await expect(storage.stage(Readable.from([Buffer.from("%PDF-1.7\n1234567890")]), { maxBytes: 10 })).rejects.toMatchObject({ code: "UPLOAD_TOO_LARGE" });
+    await expect(storage.stage(Readable.from([Buffer.from("%PDF-1.7\n1234567890")]), { maxBytes: 10 })).rejects.toMatchObject({ code: "UPLOAD_TOO_LARGE", message: expect.stringContaining("10 bytes") });
     await expect(storage.stage(Readable.from([Buffer.from("not a PDF")]), { maxBytes: 50 })).rejects.toMatchObject({ code: "UPLOAD_INTERRUPTED" });
     async function* interrupted() {
       yield Buffer.from("%PDF-1.7\npartial");
@@ -51,7 +57,7 @@ describe("full-text document storage", () => {
     expect(staged.byteSize).toBe(maxBytes);
     await storage.remove(staged.temporaryKey);
     const overflow = Buffer.concat([exact, Buffer.from("x")]);
-    await expect(storage.stage(Readable.from([overflow]), { maxBytes })).rejects.toMatchObject({ code: "UPLOAD_TOO_LARGE" });
+    await expect(storage.stage(Readable.from([overflow]), { maxBytes })).rejects.toMatchObject({ code: "UPLOAD_TOO_LARGE", message: expect.stringContaining("50 MiB") });
   }, 20_000);
 
   it("rejects traversal and absolute storage keys", async () => {
@@ -69,6 +75,181 @@ describe("full-text document storage", () => {
     expect(staged.temporaryKey).not.toMatch(/^\.tmp\//);
     await expect(intake.open("projects/not-an-intake-key")).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
     await intake.remove(staged.temporaryKey);
+  });
+
+  it("returns false only for missing keys in each adapter's namespace", async () => {
+    await withTemporaryStorageRoot(async (temporaryRoot) => {
+      const documentStorage = new LocalDocumentStorage(temporaryRoot);
+      const intakeStorage = new LocalPdfIntakeStorage(temporaryRoot);
+      const projectId = randomUUID();
+      const paperId = randomUUID();
+      const documentId = randomUUID();
+      const intakeId = randomUUID();
+      const documentKey = `projects/${projectId}/papers/${paperId}/documents/${documentId}/source.pdf`;
+      const intakeKey = `projects/${projectId}/pdf-intakes/${intakeId}/source.pdf`;
+
+      await expect(documentStorage.exists(documentKey)).resolves.toBe(false);
+      await expect(documentStorage.exists(`.tmp/${randomUUID()}.upload`)).resolves.toBe(false);
+      await expect(intakeStorage.exists(intakeKey)).resolves.toBe(false);
+      await expect(documentStorage.exists("documents/not-a-document.pdf")).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+      await expect(intakeStorage.exists("projects/not-an-intake-key")).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+      await expect(intakeStorage.exists(".pdf-intake/.tmp/../outside.pdf")).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+    });
+  });
+
+  it("rejects non-directory ancestors and directory final entries for both adapters", async () => {
+    await withTemporaryStorageRoot(async (temporaryRoot) => {
+      const projectId = randomUUID();
+      const documentKey = `projects/${projectId}/papers/${randomUUID()}/documents/${randomUUID()}/source.pdf`;
+      const intakeKey = `projects/${projectId}/pdf-intakes/${randomUUID()}/source.pdf`;
+      const documentStorage = new LocalDocumentStorage(temporaryRoot);
+      const intakeStorage = new LocalPdfIntakeStorage(temporaryRoot);
+
+      await writeFile(path.join(temporaryRoot, "projects"), "not a directory");
+      await expect(documentStorage.exists(documentKey)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+      await expect(intakeStorage.exists(intakeKey)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+    });
+
+    await withTemporaryStorageRoot(async (temporaryRoot) => {
+      const projectId = randomUUID();
+      const documentKey = `projects/${projectId}/papers/${randomUUID()}/documents/${randomUUID()}/source.pdf`;
+      const intakeKey = `projects/${projectId}/pdf-intakes/${randomUUID()}/source.pdf`;
+      const documentPath = path.join(temporaryRoot, ...documentKey.split("/"));
+      const intakePath = path.join(temporaryRoot, ...intakeKey.split("/"));
+      await mkdir(documentPath, { recursive: true });
+      await mkdir(intakePath, { recursive: true });
+
+      await expect(new LocalDocumentStorage(temporaryRoot).exists(documentKey)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+      await expect(new LocalPdfIntakeStorage(temporaryRoot).exists(intakeKey)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+    });
+  });
+
+  it("wraps permission failures as storage integrity errors when the OS enforces them", async () => {
+    if (process.platform === "win32" || typeof process.getuid !== "function") return;
+
+    await withTemporaryStorageRoot(async (temporaryRoot) => {
+      const projectDirectory = path.join(temporaryRoot, "projects", randomUUID());
+      await mkdir(projectDirectory, { recursive: true });
+      await chmod(projectDirectory, 0);
+      try {
+        let permissionDenied = false;
+        try { await readdir(projectDirectory); }
+        catch (error) {
+          permissionDenied = Boolean(error && typeof error === "object" && "code" in error && ["EACCES", "EPERM"].includes(String((error as { code?: string }).code)));
+        }
+        if (!permissionDenied) return;
+
+        const projectId = path.basename(projectDirectory);
+        const documentKey = `projects/${projectId}/papers/${randomUUID()}/documents/${randomUUID()}/source.pdf`;
+        const intakeKey = `projects/${projectId}/pdf-intakes/${randomUUID()}/source.pdf`;
+        await expect(new LocalDocumentStorage(temporaryRoot).exists(documentKey)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+        await expect(new LocalPdfIntakeStorage(temporaryRoot).exists(intakeKey)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+      } finally {
+        await chmod(projectDirectory, 0o700);
+      }
+    });
+  });
+
+  it("rejects ancestor and final symlinks for both adapters when creation is supported", async () => {
+    await withTemporaryStorageRoot(async (temporaryRoot) => {
+      const outside = await mkdtemp(path.join(os.tmpdir(), "litreview_storage_exists_symlink_outside_"));
+      const directoryProbe = path.join(temporaryRoot, "directory-symlink-probe");
+      const directorySymlinkType = process.platform === "win32" ? "junction" : "dir";
+      let directorySymlinksSupported = true;
+      try { await symlink(outside, directoryProbe, directorySymlinkType); }
+      catch (error) {
+        directorySymlinksSupported = false;
+        if (process.platform !== "win32") throw error;
+      }
+      await rm(directoryProbe, { recursive: false, force: true });
+      if (!directorySymlinksSupported) {
+        expect(process.platform).toBe("win32");
+        await rm(outside, { recursive: true, force: true });
+        return;
+      }
+
+      const outsideFile = path.join(outside, "outside.pdf");
+      await writeFile(outsideFile, "outside");
+      const fileProbe = path.join(temporaryRoot, "file-symlink-probe");
+      let fileSymlinksSupported = true;
+      try { await symlink(outsideFile, fileProbe, process.platform === "win32" ? "file" : undefined); }
+      catch (error) {
+        fileSymlinksSupported = false;
+        if (process.platform !== "win32") throw error;
+      }
+      await rm(fileProbe, { force: true });
+
+      try {
+        const projectId = randomUUID();
+        await mkdir(path.join(temporaryRoot, "projects", projectId), { recursive: true });
+        const cases = [
+          {
+            storage: new LocalDocumentStorage(temporaryRoot),
+            key: `projects/${projectId}/papers/${randomUUID()}/documents/${randomUUID()}/source.pdf`,
+            ancestor: path.join(temporaryRoot, "projects", projectId, "papers"),
+          },
+          {
+            storage: new LocalPdfIntakeStorage(temporaryRoot),
+            key: `projects/${projectId}/pdf-intakes/${randomUUID()}/source.pdf`,
+            ancestor: path.join(temporaryRoot, "projects", projectId, "pdf-intakes"),
+          },
+        ];
+
+        for (const testCase of cases) {
+          await symlink(outside, testCase.ancestor, directorySymlinkType);
+          await expect(testCase.storage.exists(testCase.key)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+          await expect(testCase.storage.open(testCase.key)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+          await rm(testCase.ancestor, { recursive: false, force: true });
+
+          if (fileSymlinksSupported) {
+            const finalPath = path.join(temporaryRoot, ...testCase.key.split("/"));
+            await mkdir(path.dirname(finalPath), { recursive: true });
+            await symlink(outsideFile, finalPath, process.platform === "win32" ? "file" : undefined);
+            await expect(testCase.storage.exists(testCase.key)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+            await expect(testCase.storage.open(testCase.key)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+            await rm(finalPath, { force: true });
+          }
+        }
+      } finally {
+        await rm(outside, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("rejects in-root symlink aliases for exists and open on both adapters", async () => {
+    await withTemporaryStorageRoot(async (temporaryRoot) => {
+      const projectId = randomUUID();
+      const paperId = randomUUID();
+      const documentId = randomUUID();
+      const intakeId = randomUUID();
+      const documentKey = `projects/${projectId}/papers/${paperId}/documents/${documentId}/source.pdf`;
+      const intakeKey = `projects/${projectId}/pdf-intakes/${intakeId}/source.pdf`;
+      const documentAlias = path.join(temporaryRoot, "projects", projectId, "papers");
+      const documentTarget = path.join(temporaryRoot, "projects", projectId, "papers-target");
+      const intakeAlias = path.join(temporaryRoot, "projects", projectId, "pdf-intakes");
+      const intakeTarget = path.join(temporaryRoot, "projects", projectId, "pdf-intakes-target");
+      const symlinkType = process.platform === "win32" ? "junction" : "dir";
+      await mkdir(path.dirname(documentAlias), { recursive: true });
+      await mkdir(path.join(documentTarget, paperId, "documents", documentId), { recursive: true });
+      await mkdir(path.join(intakeTarget, intakeId), { recursive: true });
+      await writeFile(path.join(documentTarget, paperId, "documents", documentId, "source.pdf"), "%PDF-1.7\nin-root target");
+      await writeFile(path.join(intakeTarget, intakeId, "source.pdf"), "%PDF-1.7\nin-root target");
+
+      try {
+        await symlink(documentTarget, documentAlias, symlinkType);
+        await symlink(intakeTarget, intakeAlias, symlinkType);
+      } catch (error) {
+        if (process.platform !== "win32") throw error;
+        return;
+      }
+
+      const documentStorage = new LocalDocumentStorage(temporaryRoot);
+      const intakeStorage = new LocalPdfIntakeStorage(temporaryRoot);
+      await expect(documentStorage.exists(documentKey)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+      await expect(documentStorage.open(documentKey)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+      await expect(intakeStorage.exists(intakeKey)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+      await expect(intakeStorage.open(intakeKey)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+    });
   });
 
   it("executes all write-side symlink confinement cases when the platform permits symlinks", async () => {

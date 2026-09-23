@@ -225,6 +225,13 @@
       "when": 1790079277226,
       "tag": "0031_critical_appraisal",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790156313627,
+      "tag": "0032_hot_path_hardening",
+      "breakpoints": true
     }
   ]
 }

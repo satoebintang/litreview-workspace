@@ -2,9 +2,15 @@
 
 Tracework is a source-first workspace for building literature-review claims that remain auditable to their source passages.
 
+This release is designed for one trusted researcher on a local machine. It has no authentication and is not intended for LAN, remote, or multiuser deployment. See docs/security-model.md for the supported boundary and storage limits.
+
 ## Local development
 
-Requirements: Node.js >=22.13.0, Docker Desktop.
+Requirements: Node.js 22.13.0, Docker Desktop.
+
+PostgreSQL and document files are local. External AI requests occur only through
+the existing explicit researcher-controlled actions. Remote exposure is
+unsupported.
 
 Slice 15 text extraction uses the exact `pdfjs-dist@6.3.289` server-only entry
 (`pdfjs-dist/legacy/build/pdf.mjs`). Next externalizes that package at runtime;
@@ -17,12 +23,18 @@ optional rendering packages.
 ```bash
 npm install
 docker compose up -d
-copy .env.example .env   # PowerShell: Copy-Item .env.example .env
+cp .env.example .env
 npm run db:migrate
 npm run dev
 ```
 
-Open <http://localhost:3000>.
+PowerShell setup equivalent:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Open <http://127.0.0.1:3000>.
 
 Tracework follows the review chain from protocol and search through screening,
 retrieval, documents, Evidence and Extraction, Synthesis, Claims, Research

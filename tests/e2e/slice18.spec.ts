@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { addManualPaper } from "./manual-paper";
 
 test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
   test("creates preparation workspace from Evidence Set, manages selections with connecting evidence, and finalizes to synthesis statement with preparation context", async ({ page }) => {
@@ -16,7 +17,7 @@ test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     await page.getByLabel("Title", { exact: true }).fill("Study Alpha");
     await page.getByLabel("Authors").fill("Lead Researcher");
     await page.getByLabel("Abstract").fill("Study Alpha abstract on outcomes");
-    await page.getByRole("button", { name: "Add paper" }).click();
+    await addManualPaper(page);
     await expect(page.locator(".paper-chip, .item-title").filter({ hasText: "Study Alpha" }).first()).toBeVisible({ timeout: 30_000 });
 
     // 2. Record Evidence

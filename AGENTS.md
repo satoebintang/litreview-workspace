@@ -1,115 +1,58 @@
-# Project Agent Instructions
+# Repository Agent Instructions
 
-<!-- BEGIN SHARED-CODE-MEMORY-POLICY -->
+## Sources of truth
 
-## Repository memory
+Treat current source, tests, configuration, and observed runtime behavior as
+current truth. Use Git history for implementation history. Memory and handoff
+notes provide context only and never override current repository evidence.
 
-Canonical Graphiti group:
+Before continuing existing work, read .ai/handoff.md if present, then inspect
+the active branch, Git status, diff, and relevant recent commits. Preserve
+unrelated user changes. Do not reset, clean, overwrite, stash, or revert work
+to simplify a task.
 
-```text
-repo-local-litreview-workspace
-```
+## Scope and workflow
 
-Always use this exact `group_id` for project-specific Graphiti reads/writes. Never use the default `main` group.
+Implement only the explicitly approved task or slice. Keep changes narrow and
+preserve research semantics, provenance, and researcher-controlled acceptance.
+Do not infer authorization for adjacent features or architecture changes.
 
-The ID is also stored in `.graphiti-group-id`.
+For substantial work, identify acceptance criteria, inspect only relevant
+history and structure, make the smallest coherent change, and run verification
+that matches the scope and risk. Report checks that were not run; never claim
+unverified gates passed.
 
-### Sources of truth
+Use codebase-memory when available for structural exploration and impact
+analysis. Check the indexed project and relevant path coverage, then read source
+for any partial, stale, or uncertain results. Search Graphiti only when
+historical rationale could materially affect the task. Read .graphiti-group-id
+and use that exact group. Store only confirmed, non-obvious durable findings
+that are useful to future work.
 
-Priority:
+## Checkpoints and releases
 
-1. Source code, tests, config, and observed runtime behavior
-2. Git history for version history
-3. codebase-memory-mcp (CBM) for current repository structure
-4. Graphiti for durable historical/engineering context
+Create or refresh the local .ai/handoff.md when explicitly requested, when
+substantial work remains unfinished, when switching agents, sessions, or
+worktrees, or when usage limits are approaching. Keep it concise and under
+about 600 words. Include the objective, acceptance criteria, branch, completed
+work, important files, decisions, verification, unresolved issues, and next
+actions. Do not include secrets or raw logs. Keep this temporary file
+uncommitted unless project policy says otherwise. Remove it after its objective
+is complete.
 
-Memory tools supplement the repository; they do not override it.
+At a checkpoint, verify current repository state and relevant CBM coverage when
+available. Search the canonical Graphiti group before making any durable
+memory write. Do not store temporary progress in Graphiti.
 
-### CBM
+Before a release, follow the current user-authorized release plan and verify
+its exact baseline, required gates, and repository state. Do not create a
+branch, commit, tag, push, publish, merge, or begin a later slice unless the
+user explicitly authorizes that operation. Honor any explicit uncommitted stop
+state.
 
-Use codebase-memory-mcp for current structural questions, including:
+## Security and data handling
 
-* symbols/definitions
-* callers/callees
-* imports/dependencies
-* code paths/routes
-* repository structure
-* impact analysis
-
-Prefer CBM over broad grep/glob searches when its graph can answer the question.
-
-### Graphiti
-
-Use Graphiti for confirmed, durable, non-obvious context not reliably recoverable from source, such as:
-
-* architectural decisions and rationale
-* important constraints
-* debugging/root-cause findings
-* rejected approaches
-* migration decisions
-* integration quirks
-* durable operational lessons
-
-Do not store routine conversation, speculation, obvious source facts, transient progress, secrets, or information already represented well by source/CBM.
-
-A Graphiti write should be:
-
-* confirmed
-* useful in future sessions
-* non-obvious from current source
-* relevant to future implementation, debugging, maintenance, or design
-
-### Engineering workflow
-
-For non-trivial work:
-
-1. Search Graphiti group `repo-local-litreview-workspace` for prior decisions/constraints/findings.
-2. Query CBM for the current implementation.
-3. Read only necessary source files.
-4. Make and test the change.
-5. Store only qualifying durable findings in Graphiti.
-
-### Graphiti write verification
-
-`add_memory` is asynchronous; success only means the episode was queued.
-
-After writing:
-
-1. Use `get_episodes` to confirm the episode.
-2. Wait for ingestion, then check `search_memory_facts`.
-3. If the episode exists but facts do not, inspect Graphiti worker/LLM logs before retrying.
-4. Do not manually create arbitrary Neo4j relationships; fix ingestion and re-ingest.
-
-Always use `group_id=repo-local-litreview-workspace` for verification reads.
-
-<!-- END SHARED-CODE-MEMORY-POLICY -->
-
-## Checkpoints and handoffs
-
-Also follow the global instructions in:
-
-```text
-C:\Users\BSSN-769X\.codex\AGENTS.md
-```
-
-Especially the **Checkpoints and handoffs**, **CBM and source discovery**, and **Graphiti** sections. Do not modify that file from this repository.
-
-Create or refresh a checkpoint when:
-
-* explicitly requested
-* a substantial phase ends with work remaining
-* switching agents, sessions, or worktrees
-* usage limits are approaching
-* a long session stops or needs context reset
-
-At a checkpoint:
-
-1. Update `.ai/handoff.md` per global rules.
-2. Reindex with CBM and verify project, generation, index status, and relevant coverage. Read any reported partial/missed ranges directly.
-3. Search the canonical Graphiti group before writing memory.
-4. Persist only qualifying durable Graphiti knowledge.
-5. Verify Graphiti ingestion as described above.
-
-Do not checkpoint routine completed work unless a global trigger applies.
-
-When the objective is fully complete, perform the global final verification and remove the completed temporary handoff.
+Raise rigor for authentication, authorization, uploads, secrets, migrations,
+data deletion, and infrastructure. Map affected boundaries and verify failure
+behavior. Never expose credentials or raw database URLs in logs, tests,
+handoffs, commits, or Graphiti.

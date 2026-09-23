@@ -1,23 +1,13 @@
 import fs from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
-import postgres from "postgres";
+import { createPlaywrightTestDatabaseClient } from "./playwright-database";
 import { expect, test } from "@playwright/test";
 
-const DEFAULT_DATABASE_URL = "postgres://litreview:litreview@127.0.0.1:5432/litreview";
 const nativePdf = fs.readFileSync(path.join(process.cwd(), "tests", "fixtures", "slice15", "native-text-unicode-2page.pdf"));
 
 async function getTestDbClient() {
-  const markerPath = path.resolve(process.cwd(), ".ai", "playwright-db.json");
-  if (fs.existsSync(markerPath)) {
-    try {
-      const marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
-      if (marker.adminUrl && marker.databaseName) return postgres(`${marker.adminUrl.replace(/\/[^/]+$/, "")}/${marker.databaseName}`, { max: 1, prepare: false });
-    } catch {
-      // Fall back to the configured test database.
-    }
-  }
-  return postgres(process.env.DATABASE_URL || DEFAULT_DATABASE_URL, { max: 1, prepare: false });
+  return createPlaywrightTestDatabaseClient({ prepare: false });
 }
 
 test.describe("Slice 28 PDF-first intake", () => {
