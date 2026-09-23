@@ -54,6 +54,9 @@ export type ProjectOverviewFacts = {
     requiredFieldCount: number;
     missingRequiredExtractionPaperCount: number;
     aiSuggestionAwaitingReviewCount: number;
+    activeAppraisalFrameworkCount: number;
+    awaitingAppraisalPaperCount: number;
+    completeCurrentAppraisalCount: number;
     nextAiSuggestionHref: string | null;
   };
   synthesis: {
@@ -95,6 +98,8 @@ export type ProjectGuidanceFacts = {
   requiredFieldCount: number;
   aiExtractionSuggestionCount: number;
   missingRequiredExtractionPaperCount: number;
+  activeAppraisalFrameworkCount?: number;
+  awaitingAppraisalPaperCount?: number;
   evidenceCount: number;
   evidenceSetCount: number;
   aiSynthesisSuggestionCount: number;
@@ -138,6 +143,11 @@ export function deriveProjectGuidance(facts: ProjectGuidanceFacts): ProjectGuida
     add("ai-extraction", "Review the next AI extraction suggestion", "/extraction", facts.nextAiExtractionHref);
   }
   if (facts.missingRequiredExtractionPaperCount > 0) add("extraction", "Continue extraction", "/extraction");
+  if ((facts.activeAppraisalFrameworkCount ?? 0) > 0 && (facts.awaitingAppraisalPaperCount ?? 0) > 0) {
+    add("critical-appraisal", "Appraise included Papers", "/appraisal");
+  } else if (facts.finallyIncludedPaperCount > 0 && (facts.activeAppraisalFrameworkCount ?? 0) === 0) {
+    add("critical-appraisal-setup", "Set up critical appraisal", "/appraisal/frameworks/new");
+  }
   if (facts.evidenceCount > 0 && facts.evidenceSetCount === 0) add("evidence-set", "Create an Evidence Set", "/evidence-sets");
   if (facts.aiSynthesisSuggestionCount > 0) {
     add("ai-synthesis", "Review the next AI synthesis suggestion", "/synthesis", facts.nextAiSynthesisHref);
@@ -199,6 +209,9 @@ function mapOverviewFacts(
       requiredFieldCount: numberValue(extractionRow.required_field_count),
       missingRequiredExtractionPaperCount: numberValue(extractionRow.missing_required_paper_count),
       aiSuggestionAwaitingReviewCount: numberValue(extractionRow.ai_suggestion_count),
+      activeAppraisalFrameworkCount: numberValue(extractionRow.active_appraisal_framework_count),
+      awaitingAppraisalPaperCount: numberValue(extractionRow.awaiting_appraisal_paper_count),
+      completeCurrentAppraisalCount: numberValue(extractionRow.complete_current_appraisal_count),
       nextAiSuggestionHref: extractionRow.next_ai_paper_id && extractionRow.next_ai_request_id
         ? `/projects/${projectId}/extraction/${String(extractionRow.next_ai_paper_id)}/suggestions/${String(extractionRow.next_ai_request_id)}`
         : null,
@@ -333,11 +346,58 @@ export function createProjectWorkspaceReadServices(db: Database) {
         where r.project_id=${projectId} and r.outcome='succeeded' and r.candidate_state='present'
           and not exists (select 1 from ai_extraction_decisions d where d.project_id=r.project_id and d.request_id=r.request_id)
         order by r.created_at asc, r.id asc
+      ), latest_framework_versions as (
+        select distinct on (project_id, framework_id) project_id, framework_id, id, overall_judgement_required
+        from appraisal_framework_versions
+        where project_id=${projectId} and finalized_at is not null
+        order by project_id, framework_id, version_number desc
+      ), active_appraisal_frameworks as (
+        select f.id as framework_id
+        from appraisal_frameworks f
+        join latest_framework_versions v on v.project_id=f.project_id and v.framework_id=f.id
+        where f.project_id=${projectId} and f.archived_at is null
+      ), latest_appraisals as (
+        select distinct on (project_id, appraisal_id) project_id, paper_id, framework_id, framework_version_id, id, overall_judgement_option_id
+        from appraisal_revisions
+        where project_id=${projectId} and finalized_at is not null
+        order by project_id, appraisal_id, revision_number desc
+      ), complete_current_appraisals as (
+        select a.project_id, a.paper_id, a.framework_id
+        from latest_appraisals a
+        join appraisal_framework_versions v on v.project_id=a.project_id and v.id=a.framework_version_id
+        where not exists (
+          select 1 from appraisal_framework_items i
+          where i.project_id=a.project_id and i.framework_version_id=a.framework_version_id and i.required=true
+            and not exists (
+              select 1 from appraisal_revision_responses r
+              where r.project_id=a.project_id and r.revision_id=a.id and r.framework_item_id=i.id and r.selected_option_id is not null
+            )
+        )
+        and (not v.overall_judgement_required or a.overall_judgement_option_id is not null)
+      ), awaiting_appraisal_papers as (
+        select distinct fi.paper_id
+        from finally_included fi
+        where exists (select 1 from active_appraisal_frameworks)
+          and exists (
+            select 1 from active_appraisal_frameworks af
+            where not exists (
+              select 1 from complete_current_appraisals ca
+              where ca.project_id=${projectId} and ca.paper_id=fi.paper_id and ca.framework_id=af.framework_id
+            )
+          )
+      ), complete_active_appraisals as (
+        select count(*)::int as count
+        from complete_current_appraisals ca
+        join finally_included fi on fi.paper_id=ca.paper_id
+        join active_appraisal_frameworks af on af.framework_id=ca.framework_id
       )
       select
         (select count(*)::int from required_fields) as required_field_count,
         (select count(*)::int from missing_papers) as missing_required_paper_count,
         (select count(*)::int from ai_candidates) as ai_suggestion_count,
+        (select count(*)::int from active_appraisal_frameworks) as active_appraisal_framework_count,
+        (select count(*)::int from awaiting_appraisal_papers) as awaiting_appraisal_paper_count,
+        (select count from complete_active_appraisals) as complete_current_appraisal_count,
         (select paper_id from ai_candidates limit 1) as next_ai_paper_id,
         (select request_id from ai_candidates limit 1) as next_ai_request_id
     `));

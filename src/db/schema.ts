@@ -290,6 +290,7 @@ export const evidenceReviewDecisions = pgTable(
   },
   (table) => ({
     projectIdentity: unique("evidence_review_decisions_project_id_id_unique").on(table.projectId, table.id),
+    evidenceIdentity: unique("evidence_review_decisions_project_evidence_id_id_unique").on(table.projectId, table.evidenceId, table.id),
     evidenceSequence: index("evidence_review_decisions_project_evidence_sequence_idx").on(table.projectId, table.evidenceId, table.sequence),
     evidenceOwnership: foreignKey({
       columns: [table.projectId, table.evidenceId],
@@ -612,6 +613,7 @@ export const screeningDecisions = pgTable(
   },
   (table) => ({
     projectIdentity: unique("screening_decisions_project_id_id_unique").on(table.projectId, table.id),
+    paperIdentity: unique("screening_decisions_project_paper_id_id_unique").on(table.projectId, table.paperId, table.id),
     paperOwnership: foreignKey({
       columns: [table.projectId, table.paperId],
       foreignColumns: [papers.projectId, papers.id],
@@ -665,6 +667,7 @@ export const fullTextScreeningDecisions = pgTable(
   },
   (table) => ({
     projectIdentity: unique("full_text_screening_decisions_project_id_id_unique").on(table.projectId, table.id),
+    paperIdentity: unique("full_text_screening_decisions_project_paper_id_id_unique").on(table.projectId, table.paperId, table.id),
     paperOwnership: foreignKey({
       columns: [table.projectId, table.paperId],
       foreignColumns: [papers.projectId, papers.id],
@@ -3292,6 +3295,282 @@ export const bibliographicMetadataHttpAttempts = pgTable(
   }),
 );
 
+// Slice 33: researcher-authored, Paper-level critical appraisal. The model is
+// deliberately separate from extraction, Evidence, screening, synthesis, and
+// manuscript provenance. Framework definitions are versioned; appraisal
+// history is append-only full snapshots.
+export const appraisalFrameworks = pgTable(
+  "appraisal_frameworks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => ({
+    projectIdentity: unique("appraisal_frameworks_project_id_id_unique").on(table.projectId, table.id),
+    projectCreatedAt: index("appraisal_frameworks_project_created_at_idx").on(table.projectId, table.createdAt, table.id),
+    projectNameUnique: uniqueIndex("appraisal_frameworks_project_name_unique").on(table.projectId, sql`lower(btrim(${table.name}))`),
+    projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "appraisal_frameworks_project_fk" }).onDelete("restrict"),
+    nameShape: check("appraisal_frameworks_name_shape", sql`btrim(${table.name}) <> '' and char_length(${table.name}) <= 200`),
+  }),
+);
+
+export const appraisalFrameworkVersions = pgTable(
+  "appraisal_framework_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    frameworkId: uuid("framework_id").notNull(),
+    versionNumber: integer("version_number").notNull(),
+    versionLabel: text("version_label").notNull(),
+    description: text("description"),
+    citation: text("citation"),
+    externalReferenceUrl: text("external_reference_url"),
+    rightsNote: text("rights_note"),
+    instructions: text("instructions"),
+    intendedStudyDesign: text("intended_study_design"),
+    applicabilityNote: text("applicability_note"),
+    overallJudgementRequired: boolean("overall_judgement_required").notNull().default(false),
+    draftRevision: integer("draft_revision").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+  },
+  (table) => ({
+    projectIdentity: unique("appraisal_framework_versions_project_id_id_unique").on(table.projectId, table.id),
+    frameworkVersionNumber: unique("appraisal_framework_versions_framework_version_number_unique").on(table.projectId, table.frameworkId, table.versionNumber),
+    frameworkVersionIdentity: unique("appraisal_framework_versions_project_id_id_framework_unique").on(table.projectId, table.id, table.frameworkId),
+    frameworkVersionLabel: uniqueIndex("appraisal_framework_versions_framework_version_label_unique").on(table.projectId, table.frameworkId, sql`lower(btrim(${table.versionLabel}))`),
+    frameworkLookup: index("appraisal_framework_versions_project_framework_idx").on(table.projectId, table.frameworkId, table.versionNumber),
+    projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "appraisal_framework_versions_project_fk" }).onDelete("restrict"),
+    frameworkOwnership: foreignKey({ columns: [table.projectId, table.frameworkId], foreignColumns: [appraisalFrameworks.projectId, appraisalFrameworks.id], name: "appraisal_framework_versions_framework_fk" }).onDelete("restrict"),
+    versionNumberPositive: check("appraisal_framework_versions_version_number_positive", sql`${table.versionNumber} >= 1`),
+    versionLabelShape: check("appraisal_framework_versions_version_label_shape", sql`btrim(${table.versionLabel}) <> '' and char_length(${table.versionLabel}) <= 100`),
+    descriptionShape: check("appraisal_framework_versions_description_shape", sql`${table.description} is null or char_length(${table.description}) <= 10000`),
+    citationShape: check("appraisal_framework_versions_citation_shape", sql`${table.citation} is null or char_length(${table.citation}) <= 10000`),
+    externalReferenceShape: check("appraisal_framework_versions_external_reference_shape", sql`${table.externalReferenceUrl} is null or (char_length(${table.externalReferenceUrl}) <= 2048 and ${table.externalReferenceUrl} ~ '^https?://')`),
+    rightsNoteShape: check("appraisal_framework_versions_rights_note_shape", sql`${table.rightsNote} is null or char_length(${table.rightsNote}) <= 10000`),
+    instructionsShape: check("appraisal_framework_versions_instructions_shape", sql`${table.instructions} is null or char_length(${table.instructions}) <= 20000`),
+    intendedDesignShape: check("appraisal_framework_versions_intended_design_shape", sql`${table.intendedStudyDesign} is null or char_length(${table.intendedStudyDesign}) <= 1000`),
+    applicabilityShape: check("appraisal_framework_versions_applicability_shape", sql`${table.applicabilityNote} is null or char_length(${table.applicabilityNote}) <= 10000`),
+    draftRevisionNonnegative: check("appraisal_framework_versions_draft_revision_nonnegative", sql`${table.draftRevision} >= 0`),
+  }),
+);
+
+export const appraisalFrameworkSections = pgTable(
+  "appraisal_framework_sections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    frameworkVersionId: uuid("framework_version_id").notNull(),
+    label: text("label").notNull(),
+    description: text("description"),
+    sortOrder: integer("sort_order").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("appraisal_framework_sections_project_id_id_unique").on(table.projectId, table.id),
+    versionIdentity: unique("appraisal_framework_sections_project_version_id_id_unique").on(table.projectId, table.frameworkVersionId, table.id),
+    versionOrder: unique("appraisal_framework_sections_project_version_order_unique").on(table.projectId, table.frameworkVersionId, table.sortOrder),
+    versionLookup: index("appraisal_framework_sections_project_version_idx").on(table.projectId, table.frameworkVersionId, table.sortOrder),
+    projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "appraisal_framework_sections_project_fk" }).onDelete("restrict"),
+    versionOwnership: foreignKey({ columns: [table.projectId, table.frameworkVersionId], foreignColumns: [appraisalFrameworkVersions.projectId, appraisalFrameworkVersions.id], name: "appraisal_framework_sections_version_fk" }).onDelete("restrict"),
+    labelShape: check("appraisal_framework_sections_label_shape", sql`btrim(${table.label}) <> '' and char_length(${table.label}) <= 200`),
+    descriptionShape: check("appraisal_framework_sections_description_shape", sql`${table.description} is null or char_length(${table.description}) <= 5000`),
+    sortOrderPositive: check("appraisal_framework_sections_sort_order_positive", sql`${table.sortOrder} >= 1 and ${table.sortOrder} <= 50`),
+  }),
+);
+
+export const appraisalFrameworkItems = pgTable(
+  "appraisal_framework_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    frameworkVersionId: uuid("framework_version_id").notNull(),
+    sectionId: uuid("section_id").notNull(),
+    prompt: text("prompt").notNull(),
+    guidance: text("guidance"),
+    required: boolean("required").notNull().default(false),
+    sortOrder: integer("sort_order").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("appraisal_framework_items_project_id_id_unique").on(table.projectId, table.id),
+    versionIdentity: unique("appraisal_framework_items_project_version_id_id_unique").on(table.projectId, table.frameworkVersionId, table.id),
+    sectionOrder: unique("appraisal_framework_items_project_section_order_unique").on(table.projectId, table.sectionId, table.sortOrder),
+    versionLookup: index("appraisal_framework_items_project_version_idx").on(table.projectId, table.frameworkVersionId, table.sortOrder, table.id),
+    projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "appraisal_framework_items_project_fk" }).onDelete("restrict"),
+    versionOwnership: foreignKey({ columns: [table.projectId, table.frameworkVersionId], foreignColumns: [appraisalFrameworkVersions.projectId, appraisalFrameworkVersions.id], name: "appraisal_framework_items_version_fk" }).onDelete("restrict"),
+    sectionOwnership: foreignKey({ columns: [table.projectId, table.frameworkVersionId, table.sectionId], foreignColumns: [appraisalFrameworkSections.projectId, appraisalFrameworkSections.frameworkVersionId, appraisalFrameworkSections.id], name: "appraisal_framework_items_section_fk" }).onDelete("restrict"),
+    promptShape: check("appraisal_framework_items_prompt_shape", sql`btrim(${table.prompt}) <> '' and char_length(${table.prompt}) <= 2000`),
+    guidanceShape: check("appraisal_framework_items_guidance_shape", sql`${table.guidance} is null or char_length(${table.guidance}) <= 10000`),
+    sortOrderPositive: check("appraisal_framework_items_sort_order_positive", sql`${table.sortOrder} >= 1 and ${table.sortOrder} <= 200`),
+  }),
+);
+
+export const appraisalFrameworkResponseOptions = pgTable(
+  "appraisal_framework_response_options",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    frameworkVersionId: uuid("framework_version_id").notNull(),
+    itemId: uuid("item_id").notNull(),
+    optionKey: text("option_key").notNull(),
+    label: text("label").notNull(),
+    sortOrder: integer("sort_order").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("appraisal_framework_response_options_project_id_id_unique").on(table.projectId, table.id),
+    itemIdentity: unique("appraisal_framework_response_options_project_item_id_id_unique").on(table.projectId, table.frameworkVersionId, table.itemId, table.id),
+    itemKey: uniqueIndex("appraisal_framework_response_options_project_item_key_unique").on(table.projectId, table.frameworkVersionId, table.itemId, sql`lower(btrim(${table.optionKey}))`),
+    itemLabel: uniqueIndex("appraisal_framework_response_options_project_item_label_unique").on(table.projectId, table.frameworkVersionId, table.itemId, sql`lower(btrim(${table.label}))`),
+    itemOrder: unique("appraisal_framework_response_options_project_item_order_unique").on(table.projectId, table.frameworkVersionId, table.itemId, table.sortOrder),
+    projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "appraisal_framework_response_options_project_fk" }).onDelete("restrict"),
+    itemOwnership: foreignKey({ columns: [table.projectId, table.frameworkVersionId, table.itemId], foreignColumns: [appraisalFrameworkItems.projectId, appraisalFrameworkItems.frameworkVersionId, appraisalFrameworkItems.id], name: "appraisal_framework_response_options_item_fk" }).onDelete("restrict"),
+    optionKeyShape: check("appraisal_framework_response_options_key_shape", sql`btrim(${table.optionKey}) <> '' and char_length(${table.optionKey}) <= 100`),
+    labelShape: check("appraisal_framework_response_options_label_shape", sql`btrim(${table.label}) <> '' and char_length(${table.label}) <= 500`),
+    sortOrderPositive: check("appraisal_framework_response_options_sort_order_positive", sql`${table.sortOrder} >= 1 and ${table.sortOrder} <= 20`),
+  }),
+);
+
+export const appraisalFrameworkOverallJudgementOptions = pgTable(
+  "appraisal_framework_overall_judgement_options",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    frameworkVersionId: uuid("framework_version_id").notNull(),
+    optionKey: text("option_key").notNull(),
+    label: text("label").notNull(),
+    sortOrder: integer("sort_order").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("appraisal_framework_overall_judgement_options_project_id_id_unique").on(table.projectId, table.id),
+    versionIdentity: unique("appraisal_framework_overall_judgement_options_project_version_id_id_unique").on(table.projectId, table.frameworkVersionId, table.id),
+    versionKey: uniqueIndex("appraisal_framework_overall_judgement_options_project_version_key_unique").on(table.projectId, table.frameworkVersionId, sql`lower(btrim(${table.optionKey}))`),
+    versionLabel: uniqueIndex("appraisal_framework_overall_judgement_options_project_version_label_unique").on(table.projectId, table.frameworkVersionId, sql`lower(btrim(${table.label}))`),
+    versionOrder: unique("appraisal_framework_overall_judgement_options_project_version_order_unique").on(table.projectId, table.frameworkVersionId, table.sortOrder),
+    projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "appraisal_framework_overall_judgement_options_project_fk" }).onDelete("restrict"),
+    versionOwnership: foreignKey({ columns: [table.projectId, table.frameworkVersionId], foreignColumns: [appraisalFrameworkVersions.projectId, appraisalFrameworkVersions.id], name: "appraisal_framework_overall_judgement_options_version_fk" }).onDelete("restrict"),
+    optionKeyShape: check("appraisal_framework_overall_judgement_options_key_shape", sql`btrim(${table.optionKey}) <> '' and char_length(${table.optionKey}) <= 100`),
+    labelShape: check("appraisal_framework_overall_judgement_options_label_shape", sql`btrim(${table.label}) <> '' and char_length(${table.label}) <= 500`),
+    sortOrderPositive: check("appraisal_framework_overall_judgement_options_sort_order_positive", sql`${table.sortOrder} >= 1 and ${table.sortOrder} <= 20`),
+  }),
+);
+
+export const appraisals = pgTable(
+  "appraisals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    paperId: uuid("paper_id").notNull(),
+    frameworkId: uuid("framework_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("appraisals_project_id_id_unique").on(table.projectId, table.id),
+    paperFrameworkUnique: unique("appraisals_project_paper_framework_unique").on(table.projectId, table.paperId, table.frameworkId),
+    identityWithOwnership: unique("appraisals_project_id_paper_framework_unique").on(table.projectId, table.id, table.paperId, table.frameworkId),
+    projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "appraisals_project_fk" }).onDelete("restrict"),
+    paperOwnership: foreignKey({ columns: [table.projectId, table.paperId], foreignColumns: [papers.projectId, papers.id], name: "appraisals_paper_fk" }).onDelete("restrict"),
+    frameworkOwnership: foreignKey({ columns: [table.projectId, table.frameworkId], foreignColumns: [appraisalFrameworks.projectId, appraisalFrameworks.id], name: "appraisals_framework_fk" }).onDelete("restrict"),
+  }),
+);
+
+export const appraisalRevisions = pgTable(
+  "appraisal_revisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigint("sequence", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    revisionNumber: integer("revision_number").notNull(),
+    projectId: uuid("project_id").notNull(),
+    paperId: uuid("paper_id").notNull(),
+    frameworkId: uuid("framework_id").notNull(),
+    appraisalId: uuid("appraisal_id").notNull(),
+    frameworkVersionId: uuid("framework_version_id").notNull(),
+    titleAbstractDecisionId: uuid("title_abstract_decision_id").notNull(),
+    fullTextDecisionId: uuid("full_text_decision_id").notNull(),
+    overallJudgementOptionId: uuid("overall_judgement_option_id"),
+    overallRationale: text("overall_rationale"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+  },
+  (table) => ({
+    projectIdentity: unique("appraisal_revisions_project_id_id_unique").on(table.projectId, table.id),
+    appraisalRevisionUnique: unique("appraisal_revisions_project_appraisal_revision_number_unique").on(table.projectId, table.appraisalId, table.revisionNumber),
+    revisionIdentity: unique("appraisal_revisions_project_identity_unique").on(table.projectId, table.id, table.paperId, table.frameworkId, table.appraisalId, table.frameworkVersionId),
+    appraisalSequence: index("appraisal_revisions_project_appraisal_sequence_idx").on(table.projectId, table.appraisalId, table.sequence),
+    projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "appraisal_revisions_project_fk" }).onDelete("restrict"),
+    paperOwnership: foreignKey({ columns: [table.projectId, table.paperId], foreignColumns: [papers.projectId, papers.id], name: "appraisal_revisions_paper_fk" }).onDelete("restrict"),
+    frameworkOwnership: foreignKey({ columns: [table.projectId, table.frameworkId], foreignColumns: [appraisalFrameworks.projectId, appraisalFrameworks.id], name: "appraisal_revisions_framework_fk" }).onDelete("restrict"),
+    appraisalOwnership: foreignKey({ columns: [table.projectId, table.appraisalId, table.paperId, table.frameworkId], foreignColumns: [appraisals.projectId, appraisals.id, appraisals.paperId, appraisals.frameworkId], name: "appraisal_revisions_appraisal_fk" }).onDelete("restrict"),
+    frameworkVersionOwnership: foreignKey({ columns: [table.projectId, table.frameworkVersionId, table.frameworkId], foreignColumns: [appraisalFrameworkVersions.projectId, appraisalFrameworkVersions.id, appraisalFrameworkVersions.frameworkId], name: "appraisal_revisions_framework_version_fk" }).onDelete("restrict"),
+    titleAbstractDecisionOwnership: foreignKey({ columns: [table.projectId, table.paperId, table.titleAbstractDecisionId], foreignColumns: [screeningDecisions.projectId, screeningDecisions.paperId, screeningDecisions.id], name: "appraisal_revisions_title_abstract_decision_fk" }).onDelete("restrict"),
+    fullTextDecisionOwnership: foreignKey({ columns: [table.projectId, table.paperId, table.fullTextDecisionId], foreignColumns: [fullTextScreeningDecisions.projectId, fullTextScreeningDecisions.paperId, fullTextScreeningDecisions.id], name: "appraisal_revisions_full_text_decision_fk" }).onDelete("restrict"),
+    overallOptionOwnership: foreignKey({ columns: [table.projectId, table.frameworkVersionId, table.overallJudgementOptionId], foreignColumns: [appraisalFrameworkOverallJudgementOptions.projectId, appraisalFrameworkOverallJudgementOptions.frameworkVersionId, appraisalFrameworkOverallJudgementOptions.id], name: "appraisal_revisions_overall_option_fk" }).onDelete("restrict"),
+    revisionNumberPositive: check("appraisal_revisions_revision_number_positive", sql`${table.revisionNumber} >= 1`),
+    rationaleShape: check("appraisal_revisions_overall_rationale_shape", sql`${table.overallRationale} is null or char_length(${table.overallRationale}) <= 10000`),
+  }),
+);
+
+export const appraisalRevisionResponses = pgTable(
+  "appraisal_revision_responses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    revisionId: uuid("revision_id").notNull(),
+    frameworkVersionId: uuid("framework_version_id").notNull(),
+    frameworkItemId: uuid("framework_item_id").notNull(),
+    selectedOptionId: uuid("selected_option_id"),
+    rationale: text("rationale"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("appraisal_revision_responses_project_id_id_unique").on(table.projectId, table.id),
+    revisionItemUnique: unique("appraisal_revision_responses_project_revision_item_unique").on(table.projectId, table.revisionId, table.frameworkItemId),
+    responseIdentity: unique("appraisal_revision_responses_project_identity_unique").on(table.projectId, table.revisionId, table.id, table.frameworkVersionId, table.frameworkItemId),
+    revisionOwnership: foreignKey({ columns: [table.projectId, table.revisionId], foreignColumns: [appraisalRevisions.projectId, appraisalRevisions.id], name: "appraisal_revision_responses_revision_fk" }).onDelete("restrict"),
+    itemOwnership: foreignKey({ columns: [table.projectId, table.frameworkVersionId, table.frameworkItemId], foreignColumns: [appraisalFrameworkItems.projectId, appraisalFrameworkItems.frameworkVersionId, appraisalFrameworkItems.id], name: "appraisal_revision_responses_item_fk" }).onDelete("restrict"),
+    optionOwnership: foreignKey({ columns: [table.projectId, table.frameworkVersionId, table.frameworkItemId, table.selectedOptionId], foreignColumns: [appraisalFrameworkResponseOptions.projectId, appraisalFrameworkResponseOptions.frameworkVersionId, appraisalFrameworkResponseOptions.itemId, appraisalFrameworkResponseOptions.id], name: "appraisal_revision_responses_option_fk" }).onDelete("restrict"),
+    rationaleShape: check("appraisal_revision_responses_rationale_shape", sql`${table.rationale} is null or char_length(${table.rationale}) <= 10000`),
+  }),
+);
+
+export const appraisalRevisionResponseEvidence = pgTable(
+  "appraisal_revision_response_evidence",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    paperId: uuid("paper_id").notNull(),
+    frameworkId: uuid("framework_id").notNull(),
+    appraisalId: uuid("appraisal_id").notNull(),
+    revisionId: uuid("revision_id").notNull(),
+    frameworkVersionId: uuid("framework_version_id").notNull(),
+    frameworkItemId: uuid("framework_item_id").notNull(),
+    responseId: uuid("response_id").notNull(),
+    evidenceId: uuid("evidence_id").notNull(),
+    evidenceReviewDecisionIdAtSave: uuid("evidence_review_decision_id_at_save"),
+    evidenceReviewStateAtSave: text("evidence_review_state_at_save").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdentity: unique("appraisal_revision_response_evidence_project_id_id_unique").on(table.projectId, table.id),
+    responseEvidenceUnique: unique("appraisal_revision_response_evidence_response_evidence_unique").on(table.projectId, table.responseId, table.evidenceId),
+    projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "appraisal_revision_response_evidence_project_fk" }).onDelete("restrict"),
+    paperOwnership: foreignKey({ columns: [table.projectId, table.paperId], foreignColumns: [papers.projectId, papers.id], name: "appraisal_revision_response_evidence_paper_fk" }).onDelete("restrict"),
+    frameworkOwnership: foreignKey({ columns: [table.projectId, table.frameworkId], foreignColumns: [appraisalFrameworks.projectId, appraisalFrameworks.id], name: "appraisal_revision_response_evidence_framework_fk" }).onDelete("restrict"),
+    appraisalOwnership: foreignKey({ columns: [table.projectId, table.appraisalId, table.paperId, table.frameworkId], foreignColumns: [appraisals.projectId, appraisals.id, appraisals.paperId, appraisals.frameworkId], name: "appraisal_revision_response_evidence_appraisal_fk" }).onDelete("restrict"),
+    revisionOwnership: foreignKey({ columns: [table.projectId, table.revisionId, table.paperId, table.frameworkId, table.appraisalId, table.frameworkVersionId], foreignColumns: [appraisalRevisions.projectId, appraisalRevisions.id, appraisalRevisions.paperId, appraisalRevisions.frameworkId, appraisalRevisions.appraisalId, appraisalRevisions.frameworkVersionId], name: "appraisal_revision_response_evidence_revision_fk" }).onDelete("restrict"),
+    responseOwnership: foreignKey({ columns: [table.projectId, table.revisionId, table.responseId, table.frameworkVersionId, table.frameworkItemId], foreignColumns: [appraisalRevisionResponses.projectId, appraisalRevisionResponses.revisionId, appraisalRevisionResponses.id, appraisalRevisionResponses.frameworkVersionId, appraisalRevisionResponses.frameworkItemId], name: "appraisal_revision_response_evidence_response_fk" }).onDelete("restrict"),
+    itemOwnership: foreignKey({ columns: [table.projectId, table.frameworkVersionId, table.frameworkItemId], foreignColumns: [appraisalFrameworkItems.projectId, appraisalFrameworkItems.frameworkVersionId, appraisalFrameworkItems.id], name: "appraisal_revision_response_evidence_item_fk" }).onDelete("restrict"),
+    evidenceOwnership: foreignKey({ columns: [table.projectId, table.paperId, table.evidenceId], foreignColumns: [evidence.projectId, evidence.paperId, evidence.id], name: "appraisal_revision_response_evidence_evidence_fk" }).onDelete("restrict"),
+    evidenceReviewDecisionOwnership: foreignKey({ columns: [table.projectId, table.evidenceId, table.evidenceReviewDecisionIdAtSave], foreignColumns: [evidenceReviewDecisions.projectId, evidenceReviewDecisions.evidenceId, evidenceReviewDecisions.id], name: "appraisal_revision_response_evidence_review_decision_fk" }).onDelete("restrict"),
+    reviewStateValid: check("appraisal_revision_response_evidence_review_state_valid", sql`${table.evidenceReviewStateAtSave} in ('unreviewed', 'needs_review', 'accepted', 'rejected')`),
+  }),
+);
+
 export const schema = {
   projects,
   papers,
@@ -3395,4 +3674,14 @@ export const schema = {
   bibliographicMetadataResultAuthors,
   doiLookupResolutions,
   bibliographicMetadataHttpAttempts,
+  appraisalFrameworks,
+  appraisalFrameworkVersions,
+  appraisalFrameworkSections,
+  appraisalFrameworkItems,
+  appraisalFrameworkResponseOptions,
+  appraisalFrameworkOverallJudgementOptions,
+  appraisals,
+  appraisalRevisions,
+  appraisalRevisionResponses,
+  appraisalRevisionResponseEvidence,
 };

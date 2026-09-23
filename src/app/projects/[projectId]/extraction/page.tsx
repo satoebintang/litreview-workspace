@@ -43,7 +43,7 @@ export default async function ExtractionDashboardPage({ params, searchParams }: 
   return <div className="project-page">
     <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Structured extraction</p><h1>Extraction protocol</h1><p>{project.title} · {activeFields.length} active {activeFields.length === 1 ? "field" : "fields"}</p></div><span className="status supported">● Researcher-entered</span></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{savedMessage && <div className="success-note" role="status">{savedMessage}</div>}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}><Link className="button secondary" href={`/projects/${projectId}/extraction/batches`}>Open AI extraction batches →</Link><Link className="button ghost" href={`/projects/${projectId}/extraction/batches/new`}>Prepare a batch</Link></div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}><Link className="button secondary" href={`/projects/${projectId}/extraction/batches`}>Open AI extraction batches →</Link><Link className="button ghost" href={`/projects/${projectId}/extraction/batches/new`}>Prepare a batch</Link><Link className="button ghost" href={`/projects/${projectId}/appraisal`}>Critical appraisal</Link></div>
       <div className="workspace-grid">
         <section className="card section-card"><div className="section-heading"><h2>Configure fields</h2><span className="count">{activeRequired} required</span></div>
           <p className="hint">Fields are project-specific and appear in this order on every included paper. Used fields are archived to preserve the research record.</p>

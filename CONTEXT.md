@@ -149,3 +149,59 @@ the Overview reads bounded current facts; primary landing GETs remain
 read-only. Manuscript creation requires an explicit researcher POST, and Paper,
 PDF, and bibliographic intake boundaries remain distinct from canonical Paper
 identity.
+
+## Custom Appraisal Framework
+
+A project-local researcher-authored definition for descriptive appraisal of a
+finally included Paper. Critical appraisal is separate from screening,
+Evidence, Extraction, Synthesis, Claims, Research Question Answers, manuscript
+content, GRADE, and PRISMA accounting. It has no numeric score, no AI-generated
+canonical state, and no downstream synthesis gate.
+
+## Appraisal
+
+The stable identity for one Project × Paper × Custom Appraisal Framework pair.
+Opening a worksheet does not create it; the first explicit save creates the
+identity, and later corrections or reassessments append immutable revisions.
+
+## FrameworkVersion
+
+An immutable finalized definition of one custom critical-appraisal framework.
+Its sections, items, response options, and optional overall-judgment options
+are captured exactly by later AppraisalRevisions. A mutable draft may be
+edited until explicit finalization; finalized definitions cannot be changed.
+
+## AppraisalRevision
+
+An immutable complete response snapshot for one stable Paper × Framework
+Appraisal. It records the exact latest title/abstract and full-text inclusion
+decision identities at save time, exact same-Paper Evidence links and their
+review-state snapshots, response rationales, and an optional researcher overall
+judgment. A revision is valid only when the Paper is currently finally included
+and every response and option belongs to the exact pinned FrameworkVersion.
+
+## Appraisal completion
+
+A derived state, never stored as canonical data. An AppraisalRevision is
+`complete` when every required framework item has a selected option and an
+overall option is selected when that exact FrameworkVersion requires one;
+otherwise it is `in_progress`. Completion has no score and never changes
+screening, synthesis eligibility, or any downstream provenance.
+
+## Appraisal version drift
+
+The derived condition in which a newer finalized FrameworkVersion exists than
+the version currently used by an Appraisal. The researcher may continue editing
+the current version until explicitly beginning a newer-version reassessment.
+Version movement is monotonic: once a newer version becomes current, an older
+version cannot become current again. Response migration is never automatic.
+
+## Appraisal Evidence snapshot
+
+The exact Evidence identity, saved review-decision identity/state, and
+appraisal-item relationship captured in an AppraisalRevision. Accepted,
+needs-review, and rejected links must match the latest review decision at save;
+unreviewed links have no decision identity. A rejected link can survive only
+when the same FrameworkVersion item × Evidence pair existed in the immediately
+preceding finalized revision of the same Appraisal. Current review drift is a
+read-only warning and never rewrites the immutable snapshot.

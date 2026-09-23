@@ -33,6 +33,16 @@ const requiredSchema = {
   document_text_extraction_pages: ["id", "project_id", "paper_id", "document_text_extraction_id", "page_number", "status", "text", "character_count", "error_code", "error_message", "created_at"],
   evidence: ["id", "project_id", "paper_id", "full_text_document_id", "document_text_extraction_id", "source_text", "page_number", "extraction_start_offset", "extraction_end_offset", "note", "created_at", "updated_at"],
   evidence_review_decisions: ["id", "sequence", "project_id", "evidence_id", "decision", "note", "created_at"],
+  appraisal_frameworks: ["id", "project_id", "name", "created_at", "archived_at"],
+  appraisal_framework_versions: ["id", "project_id", "framework_id", "version_number", "version_label", "description", "citation", "external_reference_url", "rights_note", "instructions", "intended_study_design", "applicability_note", "overall_judgement_required", "draft_revision", "created_at", "finalized_at"],
+  appraisal_framework_sections: ["id", "project_id", "framework_version_id", "label", "description", "sort_order", "created_at"],
+  appraisal_framework_items: ["id", "project_id", "framework_version_id", "section_id", "prompt", "guidance", "required", "sort_order", "created_at"],
+  appraisal_framework_response_options: ["id", "project_id", "framework_version_id", "item_id", "option_key", "label", "sort_order", "created_at"],
+  appraisal_framework_overall_judgement_options: ["id", "project_id", "framework_version_id", "option_key", "label", "sort_order", "created_at"],
+  appraisals: ["id", "project_id", "paper_id", "framework_id", "created_at"],
+  appraisal_revisions: ["id", "sequence", "revision_number", "project_id", "paper_id", "framework_id", "appraisal_id", "framework_version_id", "title_abstract_decision_id", "full_text_decision_id", "overall_judgement_option_id", "overall_rationale", "created_at", "finalized_at"],
+  appraisal_revision_responses: ["id", "project_id", "revision_id", "framework_version_id", "framework_item_id", "selected_option_id", "rationale", "created_at"],
+  appraisal_revision_response_evidence: ["id", "project_id", "paper_id", "framework_id", "appraisal_id", "revision_id", "framework_version_id", "framework_item_id", "response_id", "evidence_id", "evidence_review_decision_id_at_save", "evidence_review_state_at_save", "created_at"],
   evidence_annotations: ["id", "sequence", "project_id", "evidence_id", "body", "created_at"],
   evidence_labels: ["id", "project_id", "name", "description", "created_at", "archived_at"],
   evidence_label_events: ["id", "sequence", "project_id", "evidence_id", "label_id", "event", "created_at"],
@@ -190,8 +200,8 @@ async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
 async function assertSchema(client: postgres.Sql, databaseName: string) {
   const { migrations } = readExpectedMigrations();
   const expectedLatest = migrations.at(-1);
-  if (!expectedLatest || expectedLatest.tag !== "0030_ai_extraction_batches") {
-    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0030_ai_extraction_batches, found ${expectedLatest?.tag ?? "none"}`);
+  if (!expectedLatest || expectedLatest.tag !== "0031_critical_appraisal") {
+    throw new Error(`Playwright schema assertion cannot run: migration chain must end at 0031_critical_appraisal, found ${expectedLatest?.tag ?? "none"}`);
   }
 
   const migrationRows = await client.unsafe("select id, hash, created_at from drizzle.__drizzle_migrations order by id") as unknown as MigrationRow[];
@@ -203,7 +213,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
     return [];
   });
   if (migrationRows.length !== migrations.length || migrationMismatches.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0030_ai_extraction_batches; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected the exact ${migrations.length}-migration chain through 0031_critical_appraisal; journal rows=${migrationRows.length}; mismatches=${migrationMismatches.join(", ") || "none"}`);
   }
 
   const tableNames = Object.keys(requiredSchema);
@@ -219,7 +229,7 @@ async function assertSchema(client: postgres.Sql, databaseName: string) {
   const missingColumns = Object.entries(requiredSchema).flatMap(([tableName, columns]) => columns.filter((columnName) => !actualColumns.get(tableName)?.has(columnName)).map((columnName) => `${tableName}.${columnName}`));
   const legacyColumns = await client.unsafe("select table_name, column_name from information_schema.columns where table_schema = 'public' and ((table_name = 'projects' and column_name = 'research_question') or (table_name = 'manuscript_prose_blocks' and column_name in ('text', 'updated_at')))") as unknown as Array<{ table_name: string; column_name: string }>;
   if (missingTables.length > 0 || missingColumns.length > 0 || legacyColumns.length > 0) {
-    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0030_ai_extraction_batches; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `${row.table_name}.${row.column_name}`).join(", ") || "none"}`);
+    throw new Error(`Playwright schema assertion failed for ${databaseName}: expected current schema through 0031_critical_appraisal; missing tables=${missingTables.join(", ") || "none"}; missing columns=${missingColumns.join(", ") || "none"}; retired columns=${legacyColumns.map((row) => `${row.table_name}.${row.column_name}`).join(", ") || "none"}`);
   }
 }
 
@@ -282,7 +292,7 @@ async function main() {
     } finally {
       await database.client.end();
     }
-  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0030_ai_extraction_batches verified; storage=${storageRoot}`);
+  console.error(`[playwright-db] ready: ${databaseName}; migrations through 0031_critical_appraisal verified; storage=${storageRoot}`);
 
     child = spawnNext("next-build", [nextBin, "build"], nextEnv);
     const buildExitCode = await waitForProcess(child, "next-build");

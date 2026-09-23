@@ -49,6 +49,8 @@ export default async function ProjectOverviewPage({ params, searchParams }: { pa
     requiredFieldCount: facts.extraction.requiredFieldCount,
     aiExtractionSuggestionCount: facts.extraction.aiSuggestionAwaitingReviewCount,
     missingRequiredExtractionPaperCount: facts.extraction.missingRequiredExtractionPaperCount,
+    activeAppraisalFrameworkCount: facts.extraction.activeAppraisalFrameworkCount,
+    awaitingAppraisalPaperCount: facts.extraction.awaitingAppraisalPaperCount,
     evidenceCount: facts.evidence.evidenceCount,
     evidenceSetCount: facts.evidence.evidenceSetCount,
     aiSynthesisSuggestionCount: facts.synthesis.aiSuggestionAwaitingReviewCount,
@@ -102,6 +104,9 @@ export default async function ProjectOverviewPage({ params, searchParams }: { pa
           <Metric label="Required fields" value={facts.extraction.requiredFieldCount} />
           <Metric label="Papers missing a required value" value={facts.extraction.missingRequiredExtractionPaperCount} />
           <Metric label="AI suggestions awaiting review" value={facts.extraction.aiSuggestionAwaitingReviewCount} />
+          <Metric label="Active appraisal frameworks" value={facts.extraction.activeAppraisalFrameworkCount} />
+          <Metric label="Included Papers awaiting appraisal" value={facts.extraction.awaitingAppraisalPaperCount} />
+          <Metric label="Complete current appraisals" value={facts.extraction.completeCurrentAppraisalCount} />
         </MetricCard>
         <MetricCard title="Synthesis" href={projectPrimaryHref(projectId, "synthesize")}>
           <Metric label="Active preparations" value={facts.synthesis.activePreparationCount} />

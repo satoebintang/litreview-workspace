@@ -55,6 +55,13 @@ links to the existing domain workspaces. Paper intake methods remain visibly
 separate so staged imports and PDFs are not mistaken for canonical Papers
 before explicit researcher resolution.
 
+Critical appraisal is available from the Extract workspace at
+`/projects/{projectId}/appraisal`. It supports researcher-defined custom
+frameworks, exact immutable framework-version snapshots, Paper-level appraisal
+history, and same-Paper Evidence grounding. It assigns no numeric score, ships
+no official instrument content, calls no AI, and never gates synthesis or any
+downstream provenance.
+
 ## Verification
 
 Everyday local verification (with PostgreSQL 16 running):
