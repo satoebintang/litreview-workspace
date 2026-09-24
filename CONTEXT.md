@@ -205,3 +205,16 @@ unreviewed links have no decision identity. A rejected link can survive only
 when the same FrameworkVersion item × Evidence pair existed in the immediately
 preceding finalized revision of the same Appraisal. Current review drift is a
 read-only warning and never rewrites the immutable snapshot.
+
+## Module architecture boundaries
+
+Slice 35 keeps the v0.34 public façades at `src/db/schema.ts`,
+`src/application/repositories.ts`, `src/application/services.ts`, and
+`src/app/actions.ts` while splitting their implementations by bounded context.
+The compatibility contract is 113 schema exports with the released `schema`
+key order, 22 repository classes, 67 core review-service methods, and 137
+Server Actions. See `docs/architecture/module-boundaries.md` and
+`docs/adr/0035-bounded-context-modularization.md` for the dependency direction,
+service composition order, accepted `createProject` precedence, and compiler-API
+architecture checks. This refactor preserves research behavior and does not
+change the data model or migrations.

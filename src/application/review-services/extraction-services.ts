@@ -1,0 +1,249 @@
+import type { Database } from "@/db/client";
+import { DomainError, isConstraintError } from "@/domain/errors";
+import type { ExtractionFieldType } from "@/domain/types";
+import {
+  createExtractionFieldSchema,
+  createExtractionOptionSchema,
+  extractionComparisonFilterSchema,
+  reviseExtractionValueSchema,
+  updateExtractionFieldSchema,
+  type CreateExtractionFieldInput,
+  type CreateExtractionOptionInput,
+  type ExtractionComparisonFilter,
+  type ReviseExtractionValueInput,
+  type UpdateExtractionFieldInput,
+} from "@/domain/validation";
+import type {
+  ExtractionFieldRepository,
+  ExtractionOptionRepository,
+  ExtractionRevisionEvidenceRepository,
+  ExtractionRevisionRepository,
+  ExtractionValueRepository,
+  PaperRepository,
+  PaperReviewRepository,
+  ScreeningDecisionRepository,
+  SynthesisRevisionSupportRepository,
+} from "../repositories";
+import { requireEvidenceUsableForNewDirectSupport } from "../evidence-curation-services";
+import { writeExtractedExtractionRevision } from "../extraction-value-writer";
+import { createEvidenceReviewHelpers } from "./evidence-helpers";
+import { mapEvidence, mapExtractionRevision, mapPaper } from "./mappers";
+import { createPaperReviewHelpers } from "./paper-review-helpers";
+import { ensureId, typedRevisionPayload, validate } from "./shared";
+
+export function createExtractionServices<TProject, TPaper, TEvidence extends { paperId: string }, TField extends { id: string; fieldType: string; archivedAt: Date | null }>(deps: {
+  db: Database;
+  paperRepo: PaperRepository;
+  paperReviewRepo: PaperReviewRepository;
+  decisionRepo: ScreeningDecisionRepository;
+  extractionFieldRepo: ExtractionFieldRepository;
+  extractionOptionRepo: ExtractionOptionRepository;
+  extractionValueRepo: ExtractionValueRepository;
+  extractionRevisionRepo: ExtractionRevisionRepository;
+  extractionEvidenceRepo: ExtractionRevisionEvidenceRepository;
+  synthesisSupportRepo: SynthesisRevisionSupportRepository;
+  requireProject: (projectId: string) => Promise<TProject>;
+  requirePaper: (projectId: string, paperId: string) => Promise<TPaper>;
+  requireEvidence: (projectId: string, evidenceId: string) => Promise<TEvidence>;
+  requireExtractionField: (projectId: string, fieldId: string, includeArchived?: boolean) => Promise<TField>;
+}) {
+  const { db, paperRepo, paperReviewRepo, decisionRepo, extractionFieldRepo, extractionOptionRepo, extractionValueRepo, extractionRevisionRepo, extractionEvidenceRepo, synthesisSupportRepo, requireProject, requirePaper, requireEvidence, requireExtractionField } = deps;
+  const { requireFinallyIncludedPaperLocked, getPaperReviewStatusFor, listPaperReviewStatusesFor } = createPaperReviewHelpers(db, paperRepo, paperReviewRepo);
+  const { enrichEvidenceDocuments } = createEvidenceReviewHelpers(db);
+  return {
+    async listExtractionFields(projectId: string, includeArchived = false) {
+      await requireProject(projectId);
+      return extractionFieldRepo.list(projectId, includeArchived);
+    },
+
+    async createExtractionField(projectId: string, input: CreateExtractionFieldInput) {
+      await requireProject(projectId);
+      const values = validate(createExtractionFieldSchema, input);
+      const fields = await extractionFieldRepo.list(projectId, true);
+      const sortOrder = fields.reduce((max, field) => Math.max(max, field.sortOrder), -1) + 1;
+      try {
+        return await extractionFieldRepo.create({ projectId, name: values.name, description: values.description ?? null, fieldType: values.fieldType, required: values.required, sortOrder });
+      } catch (error) { if (isConstraintError(error)) throw new DomainError("DATABASE_CONSTRAINT", "Extraction field could not be created"); throw error; }
+    },
+
+    async updateExtractionField(projectId: string, fieldId: string, input: UpdateExtractionFieldInput) {
+      const field = await requireExtractionField(projectId, fieldId);
+      const values = validate(updateExtractionFieldSchema, input);
+      if (values.name === undefined && values.description === undefined && values.required === undefined && values.sortOrder === undefined) return field;
+      if (values.name !== undefined || values.description !== undefined) {
+        if (await extractionFieldRepo.countValues(projectId, fieldId)) throw new DomainError("VALIDATION_ERROR", "A used extraction field cannot change its definition");
+      }
+      const updated = await extractionFieldRepo.update(projectId, fieldId, { ...values, description: values.description === undefined ? undefined : values.description ?? null });
+      return updated[0] ?? field;
+    },
+
+    async archiveExtractionField(projectId: string, fieldId: string) {
+      const field = await requireExtractionField(projectId, fieldId);
+      if (field.archivedAt) return field;
+      const updated = await extractionFieldRepo.archive(projectId, fieldId);
+      return updated[0] ?? field;
+    },
+
+    async createExtractionOption(projectId: string, input: CreateExtractionOptionInput) {
+      await requireProject(projectId);
+      const values = validate(createExtractionOptionSchema, input);
+      const field = await requireExtractionField(projectId, values.fieldId, false);
+      if (field.fieldType !== "single_select") throw new DomainError("VALIDATION_ERROR", "Options are only valid for single-select fields");
+      const options = await extractionOptionRepo.listForField(projectId, field.id, true);
+      const sortOrder = options.reduce((max, option) => Math.max(max, option.sortOrder), -1) + 1;
+      try { return await extractionOptionRepo.create({ projectId, fieldId: field.id, label: values.label, sortOrder }); }
+      catch (error) { if (isConstraintError(error)) throw new DomainError("DATABASE_CONSTRAINT", "Extraction option could not be created"); throw error; }
+    },
+
+    async listExtractionOptions(projectId: string, fieldId: string, includeArchived = false) {
+      await requireExtractionField(projectId, fieldId);
+      return extractionOptionRepo.listForField(projectId, fieldId, includeArchived);
+    },
+
+    async archiveExtractionOption(projectId: string, optionId: string) {
+      await requireProject(projectId);
+      ensureId(optionId);
+      const option = await extractionOptionRepo.findById(projectId, optionId);
+      if (!option) throw new DomainError("CROSS_PROJECT_REFERENCE", "Extraction option does not belong to this project");
+      if (option.archivedAt) return option;
+      const updated = await extractionOptionRepo.archive(projectId, optionId);
+      return updated[0] ?? option;
+    },
+
+    async reviseExtractionValue(projectId: string, paperId: string, fieldId: string, input: ReviseExtractionValueInput) {
+      await requireProject(projectId);
+      return db.transaction(async (tx) => {
+        await requireFinallyIncludedPaperLocked(tx, projectId, paperId);
+        const field = await requireExtractionField(projectId, fieldId, false);
+        const values = validate(reviseExtractionValueSchema, input);
+        const payload = typedRevisionPayload(field.fieldType as ExtractionFieldType, values);
+        const evidenceIds = [...new Set(values.evidenceIds ?? [])];
+        if (evidenceIds.length !== (values.evidenceIds ?? []).length) throw new DomainError("VALIDATION_ERROR", "Evidence cannot be repeated in one revision");
+        for (const evidenceId of [...evidenceIds].sort()) {
+          await requireEvidenceUsableForNewDirectSupport(tx, projectId, evidenceId);
+        }
+        if (payload.optionId) {
+          const option = await extractionOptionRepo.findById(projectId, payload.optionId);
+          if (!option || option.fieldId !== field.id || option.archivedAt) throw new DomainError("CROSS_PROJECT_REFERENCE", "Option does not belong to this active extraction field");
+        }
+        const evidenceItems = await Promise.all(evidenceIds.map((id) => requireEvidence(projectId, id)));
+        if (evidenceItems.some((item) => item.paperId !== paperId)) throw new DomainError("CROSS_PROJECT_REFERENCE", "Evidence must belong to the same paper as the extraction value");
+        return writeExtractedExtractionRevision(tx, {
+          projectId,
+          paperId,
+          fieldId: field.id,
+          fieldType: field.fieldType as ExtractionFieldType,
+          ...payload,
+          evidenceIds,
+        });
+      });
+    },
+
+    async setExtractionValue(projectId: string, paperId: string, fieldId: string, input: ReviseExtractionValueInput) {
+      return this.reviseExtractionValue(projectId, paperId, fieldId, input);
+    },
+
+    async clearExtractionValue(projectId: string, paperId: string, fieldId: string, researcherNote?: string) {
+      return this.reviseExtractionValue(projectId, paperId, fieldId, { state: "cleared", researcherNote, evidenceIds: [] });
+    },
+
+    async linkEvidenceToExtractionValue(projectId: string, input: { paperId: string; fieldId: string; evidenceId: string }) {
+      const current = await this.getPaperExtraction(projectId, input.paperId);
+      const item = current.values.find((value) => value.field.id === input.fieldId);
+      if (!item?.currentRevision) throw new DomainError("NOT_FOUND", "There is no current extraction revision to support");
+      const evidenceIds = [...item.currentRevision.evidence.map((evidence) => evidence.id), input.evidenceId];
+      return this.reviseExtractionValue(projectId, input.paperId, input.fieldId, { state: item.currentRevision.valueState as "present" | "not_reported" | "not_applicable" | "cleared", value: item.currentRevision.optionId ?? item.currentRevision.textValue ?? item.currentRevision.numberValue ?? item.currentRevision.booleanValue ?? undefined, researcherNote: item.currentRevision.researcherNote ?? undefined, evidenceIds });
+    },
+
+    async unlinkEvidenceFromExtractionValue(projectId: string, input: { paperId: string; fieldId: string; evidenceId: string }) {
+      const current = await this.getPaperExtraction(projectId, input.paperId);
+      const item = current.values.find((value) => value.field.id === input.fieldId);
+      if (!item?.currentRevision) throw new DomainError("NOT_FOUND", "There is no current extraction revision");
+      const evidenceIds = item.currentRevision.evidence.filter((evidence) => evidence.id !== input.evidenceId).map((evidence) => evidence.id);
+      return this.reviseExtractionValue(projectId, input.paperId, input.fieldId, { state: item.currentRevision.valueState as "present" | "not_reported" | "not_applicable" | "cleared", value: item.currentRevision.optionId ?? item.currentRevision.textValue ?? item.currentRevision.numberValue ?? item.currentRevision.booleanValue ?? undefined, researcherNote: item.currentRevision.researcherNote ?? undefined, evidenceIds });
+    },
+
+    async getPaperExtraction(projectId: string, paperId: string) {
+      const paper = await requirePaper(projectId, paperId);
+      const fields = await extractionFieldRepo.list(projectId);
+      const slots = await extractionValueRepo.listForPaper(projectId, paperId);
+      const slotByField = new Map(slots.map((slot) => [slot.fieldId, slot]));
+      const values = await Promise.all(fields.map(async (field) => {
+        const slot = slotByField.get(field.id);
+        const current = slot ? await extractionRevisionRepo.current(projectId, slot.id) : null;
+        const support = current ? await extractionEvidenceRepo.listForRevision(projectId, paperId, current.id) : [];
+        return { ...(slot ?? { id: "", projectId, paperId, fieldId: field.id, createdAt: null, updatedAt: null }), field, currentRevision: current ? { ...current, evidence: support.map((row) => row.item) } : null, supportStatus: current && current.valueState !== "cleared" && support.length > 0 ? "grounded" as const : "ungrounded" as const };
+      }));
+      return { paper, fields, values, reviewStatus: await getPaperReviewStatusFor(projectId, paperId) };
+    },
+
+    async getExtractionValueHistory(projectId: string, paperId: string, fieldId: string) {
+      await requirePaper(projectId, paperId);
+      const field = await requireExtractionField(projectId, fieldId);
+      const slot = await extractionValueRepo.findSlot(projectId, paperId, field.id);
+      if (!slot) return [];
+      const revisions = await extractionRevisionRepo.list(projectId, slot.id);
+      return Promise.all(revisions.map(async (revision) => ({ ...revision, evidence: (await extractionEvidenceRepo.listForRevision(projectId, paperId, revision.id)).map((row) => row.item) })));
+    },
+
+    async getProjectExtractionProgress(projectId: string) {
+      await requireProject(projectId);
+      const [papersWithState, fields, reviewStatuses] = await Promise.all([decisionRepo.listPapersWithCurrentState(projectId), extractionFieldRepo.list(projectId), listPaperReviewStatusesFor(projectId)]);
+      const reviewStatusByPaperId = new Map(reviewStatuses.map((item) => [item.paperId, item.status]));
+      const included = papersWithState.filter((paper) => reviewStatusByPaperId.get(paper.id)?.finalEligibility === "included");
+      const historical = papersWithState.filter((paper) => {
+        const status = reviewStatusByPaperId.get(paper.id);
+        return status?.finalEligibility !== "included" && status?.warnings.includes("legacy_analysis_precedes_full_text_screening");
+      });
+      const required = fields.filter((field) => field.required);
+      const progress = await Promise.all([...included, ...historical].map(async (paper) => {
+        const extraction = await this.getPaperExtraction(projectId, paper.id);
+        const completed = extraction.values.filter((value) => value.field.required && value.currentRevision && ["present", "not_reported", "not_applicable"].includes(value.currentRevision.valueState)).length;
+        const started = extraction.values.some((value) => value.currentRevision && value.currentRevision.valueState !== "cleared");
+        const status = required.length === 0 ? "not_configured" : completed === required.length ? "complete" : started ? "partial" : "not_started";
+        const reviewStatus = reviewStatusByPaperId.get(paper.id)!;
+        return { paper, completedRequired: completed, requiredCount: required.length, status, percentage: required.length ? Math.round((completed / required.length) * 100) : null, reviewStatus, writeEligible: reviewStatus.finalEligibility === "included" };
+      }));
+      return { includedPaperCount: included.length, historicalPaperCount: historical.length, requiredFieldCount: required.length, papers: progress };
+    },
+
+    async listExtractionComparison(projectId: string, fieldId: string, input?: ExtractionComparisonFilter) {
+      const field = await requireExtractionField(projectId, fieldId, false);
+      const filters = validate(extractionComparisonFilterSchema, input ?? {});
+      const rawRows = (await synthesisSupportRepo.listComparison(projectId, field.id)) as unknown as Record<string, unknown>[];
+      const paperIds = filters.paperIds ? new Set(filters.paperIds) : null;
+      const rows = rawRows.filter((row) => {
+        const state = row.revision_id == null ? "not_extracted" : String(row.value_state);
+        if (paperIds && !paperIds.has(String(row.paper_id))) return false;
+        if (filters.valueState && state !== filters.valueState) return false;
+        if (filters.optionId && String(row.option_id) !== filters.optionId) return false;
+        if (filters.booleanValue !== undefined && row.boolean_value !== filters.booleanValue) return false;
+        const displayedValue = row.revision_id == null ? "" : String(row.text_value ?? row.number_value ?? (row.boolean_value == null ? (row.option_label ?? "") : row.boolean_value));
+        if (filters.search && !String(row.paper_title).toLowerCase().includes(filters.search.toLowerCase()) && !displayedValue.toLowerCase().includes(filters.search.toLowerCase())) return false;
+        return true;
+      });
+      const revisions = rows.filter((row) => row.revision_id != null);
+      const evidenceRows = (await synthesisSupportRepo.listEvidenceForRevisions(projectId, revisions.map((row) => String(row.revision_id)))) as unknown as Record<string, unknown>[];
+      const mappedEvidenceRows = await enrichEvidenceDocuments(evidenceRows.map(mapEvidence));
+      const evidenceByRevision = new Map<string, ReturnType<typeof mapEvidence>[]>();
+      for (let i = 0; i < evidenceRows.length; i += 1) {
+        const evidenceRow = evidenceRows[i];
+        const id = String(evidenceRow.revision_id); evidenceByRevision.set(id, [...(evidenceByRevision.get(id) ?? []), mappedEvidenceRows[i]]);
+      }
+      return rows.map((row) => {
+        const revision = row.revision_id == null ? null : mapExtractionRevision(row, evidenceByRevision.get(String(row.revision_id)) ?? []);
+        const state = revision?.valueState ?? "not_extracted";
+        const displayValue = revision ? (revision.textValue ?? revision.numberValue ?? (revision.booleanValue == null ? (row.option_label as string | null) : String(revision.booleanValue))) : null;
+        return { paper: mapPaper(row), field, extractionRevision: revision, valueState: state, displayValue, supportStatus: revision && revision.valueState !== "cleared" && revision.evidence.length > 0 ? "grounded" as const : "ungrounded" as const, isSelectable: Boolean(revision && revision.valueState !== "cleared") };
+      });
+    },
+
+    async getExtractionFieldSummary(projectId: string, fieldId: string) {
+      const field = await requireExtractionField(projectId, fieldId, false);
+      const rows = await this.listExtractionComparison(projectId, field.id);
+      const counts: Record<string, number> = {};
+      for (const row of rows) counts[row.valueState] = (counts[row.valueState] ?? 0) + 1;
+      return { field, totalIncludedPapers: rows.length, counts };
+    },
+  };
+}

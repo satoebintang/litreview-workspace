@@ -1,0 +1,2082 @@
+{
+  "baseline": {
+    "version": "v0.34.0-slice34",
+    "sha": "2892c38bc9bf4a6ef578b4d956a91700ab04d13c"
+  },
+  "schema": {
+    "exports": [
+      "aiExtractionBatches",
+      "aiExtractionBatchItems",
+      "aiExtractionDecisionEvidence",
+      "aiExtractionDecisions",
+      "aiExtractionDispatches",
+      "aiExtractionRequestPages",
+      "aiExtractionRequests",
+      "aiExtractionResultGroundings",
+      "aiExtractionResults",
+      "aiSynthesisDecisions",
+      "aiSynthesisDispatches",
+      "aiSynthesisRequests",
+      "aiSynthesisRequestSources",
+      "aiSynthesisRequestSupports",
+      "aiSynthesisResultGroundings",
+      "aiSynthesisResults",
+      "appraisalFrameworkItems",
+      "appraisalFrameworkOverallJudgementOptions",
+      "appraisalFrameworkResponseOptions",
+      "appraisalFrameworks",
+      "appraisalFrameworkSections",
+      "appraisalFrameworkVersions",
+      "appraisalRevisionResponseEvidence",
+      "appraisalRevisionResponses",
+      "appraisalRevisions",
+      "appraisals",
+      "bibliographicImportRecords",
+      "bibliographicImportResolutions",
+      "bibliographicImports",
+      "bibliographicMetadataFetches",
+      "bibliographicMetadataFetchResults",
+      "bibliographicMetadataHttpAttempts",
+      "bibliographicMetadataResultAuthors",
+      "claimRevisionEvidenceSupports",
+      "claimRevisionExtractionSupports",
+      "claimRevisions",
+      "claimRevisionSynthesisSupports",
+      "claims",
+      "documentTextExtractionPages",
+      "documentTextExtractions",
+      "doiLookupDispatches",
+      "doiLookupRequests",
+      "doiLookupResolutions",
+      "evidence",
+      "evidenceAnnotations",
+      "evidenceLabelEvents",
+      "evidenceLabels",
+      "evidenceReviewDecisions",
+      "evidenceSetAnnotations",
+      "evidenceSetCompositionMembers",
+      "evidenceSetCompositionRevisions",
+      "evidenceSetMemberships",
+      "evidenceSets",
+      "extractionFields",
+      "extractionOptions",
+      "extractionRevisionEvidence",
+      "extractionValueRevisions",
+      "extractionValues",
+      "fullTextDocuments",
+      "fullTextRetrievalAttempts",
+      "fullTextScreeningCriteria",
+      "fullTextScreeningDecisions",
+      "manuscriptClaimPlacementEvents",
+      "manuscriptClaimPlacements",
+      "manuscriptProseBlocks",
+      "manuscriptProseRevisions",
+      "manuscriptReviewEvents",
+      "manuscriptReviewThreads",
+      "manuscripts",
+      "manuscriptSectionItemClaims",
+      "manuscriptSectionItems",
+      "manuscriptSections",
+      "manuscriptSnapshotBibliographyEntries",
+      "manuscriptSnapshotClaimBibliographyMembers",
+      "manuscriptSnapshotClaimItems",
+      "manuscriptSnapshotItems",
+      "manuscriptSnapshotProseItems",
+      "manuscriptSnapshots",
+      "manuscriptSnapshotSections",
+      "manuscriptSnapshotWarnings",
+      "paperFullTextPreferences",
+      "papers",
+      "pdfIntakeMetadataFields",
+      "pdfIntakeMetadataResults",
+      "pdfIntakeResolutions",
+      "pdfIntakes",
+      "projects",
+      "researchQuestionAnswerClaimContexts",
+      "researchQuestionAnswers",
+      "researchQuestionAnswerSynthesisContexts",
+      "researchQuestionClaimEvents",
+      "researchQuestionEvidenceSetEvents",
+      "researchQuestionExtractionFieldEvents",
+      "researchQuestions",
+      "researchQuestionSynthesisStatementEvents",
+      "retrievedRecordDeduplicationDecisions",
+      "retrievedRecordMatches",
+      "retrievedRecords",
+      "schema",
+      "screeningCriteria",
+      "screeningDecisions",
+      "searchRuns",
+      "searchSources",
+      "searchStrategies",
+      "synthesisInterpretationContradictions",
+      "synthesisInterpretationLimitations",
+      "synthesisInterpretationQuestions",
+      "synthesisInterpretations",
+      "synthesisPreparations",
+      "synthesisPreparationSelections",
+      "synthesisRevisions",
+      "synthesisRevisionSupports",
+      "synthesisStatements"
+    ],
+    "keys": [
+      "projects",
+      "papers",
+      "fullTextDocuments",
+      "paperFullTextPreferences",
+      "documentTextExtractions",
+      "documentTextExtractionPages",
+      "evidence",
+      "evidenceReviewDecisions",
+      "evidenceAnnotations",
+      "evidenceLabels",
+      "evidenceLabelEvents",
+      "evidenceSets",
+      "evidenceSetMemberships",
+      "evidenceSetCompositionRevisions",
+      "evidenceSetCompositionMembers",
+      "evidenceSetAnnotations",
+      "claims",
+      "claimRevisions",
+      "claimRevisionEvidenceSupports",
+      "claimRevisionExtractionSupports",
+      "claimRevisionSynthesisSupports",
+      "screeningCriteria",
+      "screeningDecisions",
+      "fullTextScreeningCriteria",
+      "fullTextScreeningDecisions",
+      "fullTextRetrievalAttempts",
+      "extractionFields",
+      "extractionOptions",
+      "extractionValues",
+      "extractionValueRevisions",
+      "extractionRevisionEvidence",
+      "synthesisStatements",
+      "synthesisRevisions",
+      "synthesisRevisionSupports",
+      "synthesisPreparations",
+      "synthesisPreparationSelections",
+      "synthesisInterpretations",
+      "synthesisInterpretationLimitations",
+      "synthesisInterpretationQuestions",
+      "synthesisInterpretationContradictions",
+      "manuscripts",
+      "manuscriptSections",
+      "manuscriptClaimPlacements",
+      "manuscriptSectionItems",
+      "manuscriptSectionItemClaims",
+      "manuscriptProseBlocks",
+      "manuscriptProseRevisions",
+      "manuscriptClaimPlacementEvents",
+      "manuscriptReviewThreads",
+      "manuscriptReviewEvents",
+      "manuscriptSnapshots",
+      "manuscriptSnapshotSections",
+      "manuscriptSnapshotItems",
+      "manuscriptSnapshotProseItems",
+      "manuscriptSnapshotClaimItems",
+      "manuscriptSnapshotBibliographyEntries",
+      "manuscriptSnapshotClaimBibliographyMembers",
+      "manuscriptSnapshotWarnings",
+      "researchQuestions",
+      "researchQuestionExtractionFieldEvents",
+      "researchQuestionEvidenceSetEvents",
+      "researchQuestionSynthesisStatementEvents",
+      "researchQuestionClaimEvents",
+      "researchQuestionAnswers",
+      "researchQuestionAnswerClaimContexts",
+      "researchQuestionAnswerSynthesisContexts",
+      "searchSources",
+      "searchStrategies",
+      "searchRuns",
+      "retrievedRecords",
+      "retrievedRecordMatches",
+      "retrievedRecordDeduplicationDecisions",
+      "aiExtractionRequests",
+      "aiExtractionRequestPages",
+      "aiExtractionDispatches",
+      "aiExtractionResults",
+      "aiExtractionResultGroundings",
+      "aiExtractionDecisions",
+      "aiExtractionDecisionEvidence",
+      "aiExtractionBatches",
+      "aiExtractionBatchItems",
+      "bibliographicImports",
+      "bibliographicImportRecords",
+      "bibliographicImportResolutions",
+      "pdfIntakes",
+      "pdfIntakeMetadataResults",
+      "pdfIntakeMetadataFields",
+      "pdfIntakeResolutions",
+      "aiSynthesisRequests",
+      "aiSynthesisRequestSupports",
+      "aiSynthesisRequestSources",
+      "aiSynthesisDispatches",
+      "aiSynthesisResults",
+      "aiSynthesisResultGroundings",
+      "aiSynthesisDecisions",
+      "doiLookupRequests",
+      "bibliographicMetadataFetches",
+      "doiLookupDispatches",
+      "bibliographicMetadataFetchResults",
+      "bibliographicMetadataResultAuthors",
+      "doiLookupResolutions",
+      "bibliographicMetadataHttpAttempts",
+      "appraisalFrameworks",
+      "appraisalFrameworkVersions",
+      "appraisalFrameworkSections",
+      "appraisalFrameworkItems",
+      "appraisalFrameworkResponseOptions",
+      "appraisalFrameworkOverallJudgementOptions",
+      "appraisals",
+      "appraisalRevisions",
+      "appraisalRevisionResponses",
+      "appraisalRevisionResponseEvidence"
+    ]
+  },
+  "repositories": {
+    "exports": [
+      "ClaimRepository",
+      "ClaimRevisionRepository",
+      "ClaimRevisionSupportRepository",
+      "DocumentTextExtractionRepository",
+      "EvidenceRepository",
+      "ExtractionFieldRepository",
+      "ExtractionOptionRepository",
+      "ExtractionRevisionEvidenceRepository",
+      "ExtractionRevisionRepository",
+      "ExtractionValueRepository",
+      "FullTextDocumentRepository",
+      "FullTextRetrievalAttemptRepository",
+      "FullTextScreeningCriterionRepository",
+      "FullTextScreeningDecisionRepository",
+      "PaperRepository",
+      "PaperReviewRepository",
+      "ProjectRepository",
+      "ScreeningCriterionRepository",
+      "ScreeningDecisionRepository",
+      "SynthesisRevisionRepository",
+      "SynthesisRevisionSupportRepository",
+      "SynthesisStatementRepository"
+    ],
+    "classes": [
+      "ClaimRepository",
+      "ClaimRevisionRepository",
+      "ClaimRevisionSupportRepository",
+      "DocumentTextExtractionRepository",
+      "EvidenceRepository",
+      "ExtractionFieldRepository",
+      "ExtractionOptionRepository",
+      "ExtractionRevisionEvidenceRepository",
+      "ExtractionRevisionRepository",
+      "ExtractionValueRepository",
+      "FullTextDocumentRepository",
+      "FullTextRetrievalAttemptRepository",
+      "FullTextScreeningCriterionRepository",
+      "FullTextScreeningDecisionRepository",
+      "PaperRepository",
+      "PaperReviewRepository",
+      "ProjectRepository",
+      "ScreeningCriterionRepository",
+      "ScreeningDecisionRepository",
+      "SynthesisRevisionRepository",
+      "SynthesisRevisionSupportRepository",
+      "SynthesisStatementRepository"
+    ]
+  },
+  "services": {
+    "exports": [
+      "createResearchQuestionCoverageServices",
+      "createResearchQuestionTraceabilityServices",
+      "createReviewServices",
+      "createSynthesisInterpretationServices"
+    ],
+    "coreMethods": [
+      {
+        "name": "createProject",
+        "signature": "(input: CreateProjectInput) => Promise<{ description: string | null; title: string; id: string; createdAt: Date; updatedAt: Date; }>"
+      },
+      {
+        "name": "getProject",
+        "signature": "(projectId: string) => Promise<{ createdAt: Date; updatedAt: Date; id: string; title: string; description: string | null; }>"
+      },
+      {
+        "name": "listPapers",
+        "signature": "(projectId: string) => Promise<{ createdAt: Date; updatedAt: Date; id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; }[]>"
+      },
+      {
+        "name": "getPaper",
+        "signature": "(projectId: string, paperId: string) => Promise<{ createdAt: Date; updatedAt: Date; id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; }>"
+      },
+      {
+        "name": "listEvidence",
+        "signature": "(projectId: string) => Promise<{ reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; createdAt: Date; updatedAt: Date; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; sourceText: string; pageNumber: number; note: string | null; }[]>"
+      },
+      {
+        "name": "listClaims",
+        "signature": "(projectId: string) => Promise<{ claim: { id: string; projectId: string; claimText: string; createdAt: Date; updatedAt: Date; }; currentRevision: { supportStatus: \"supported\" | \"unsupported\"; supports: { evidence: { projectId: string; claimRevisionId: string; evidenceId: string; createdAt: Date; evidence: { evidence: { reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; createdAt: Date; updatedAt: Date; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; }; }[]; extractionRevisions: { projectId: string; claimRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; paperScreeningState: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\"; }[]; synthesisRevisions: { projectId: string; claimRevisionId: string; synthesisRevisionId: string; createdAt: Date; synthesisRevision: { state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }; statement: { id: string; createdAt: Date; projectId: string; } | undefined; isCurrentSynthesisRevision: boolean; statementLifecycle: \"active\" | \"withdrawn\"; }[]; }; totalSupportCount: number; directEvidenceCount: number; extractionRevisionCount: number; synthesisRevisionCount: number; distinctPaperCount: number; citationCandidateCount: number; citationCandidates: { paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; pathCount: number; supportKinds: (\"evidence\" | \"extractionRevision\" | \"synthesisRevision\")[]; paths: string[]; }[]; id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; lifecycle: \"active\" | \"withdrawn\"; supportStatus: \"supported\" | \"unsupported\"; citationCandidateCount: number; distinctPaperCount: number; id: string; projectId: string; claimText: string; createdAt: Date; updatedAt: Date; }[]>"
+      },
+      {
+        "name": "listScreeningCriteria",
+        "signature": "(projectId: string, includeArchived?: boolean) => Promise<{ id: string; projectId: string; type: string; text: string; sortOrder: number; createdAt: Date; archivedAt: Date | null; }[]>"
+      },
+      {
+        "name": "createScreeningCriterion",
+        "signature": "(projectId: string, input: CreateScreeningCriterionInput) => Promise<{ type: string; id: string; createdAt: Date; projectId: string; archivedAt: Date | null; text: string; sortOrder: number; }>"
+      },
+      {
+        "name": "archiveScreeningCriterion",
+        "signature": "(projectId: string, criterionId: string) => Promise<{ id: string; projectId: string; type: string; text: string; sortOrder: number; createdAt: Date; archivedAt: Date | null; }>"
+      },
+      {
+        "name": "getPaperScreening",
+        "signature": "(projectId: string, paperId: string) => Promise<{ paper: { createdAt: Date; updatedAt: Date; id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; }; criteria: { id: string; projectId: string; type: string; text: string; sortOrder: number; createdAt: Date; archivedAt: Date | null; }[]; currentState: string | undefined; currentDecision: { id: string; sequence: number; projectId: string; paperId: string; stage: string; decision: string; exclusionCriterionId: string | null; exclusionCriterionType: string | null; note: string | null; createdAt: Date; }; history: { exclusionCriterion: { id: string; projectId: string; type: string; text: string; sortOrder: number; createdAt: Date; archivedAt: Date | null; } | null; id: string; sequence: number; projectId: string; paperId: string; stage: string; decision: string; exclusionCriterionId: string | null; exclusionCriterionType: string | null; note: string | null; createdAt: Date; }[]; reviewStatus: PaperReviewStatus; }>"
+      },
+      {
+        "name": "listScreeningPapers",
+        "signature": "(projectId: string, state?: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\") => Promise<{ id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; screeningState: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\"; currentDecision: { id: string; sequence: number; projectId: string; paperId: string; stage: \"title_abstract\"; decision: \"include\" | \"exclude\" | \"maybe\"; exclusionCriterionId: string | null; exclusionCriterionType: \"exclusion\" | null; note: string | null; createdAt: Date; } | null; }[]>"
+      },
+      {
+        "name": "recordScreeningDecision",
+        "signature": "(projectId: string, paperId: string, input: RecordScreeningDecisionInput) => Promise<{ id: string; createdAt: Date; projectId: string; paperId: string; note: string | null; sequence: number; decision: string; stage: string; exclusionCriterionId: string | null; exclusionCriterionType: string | null; }>"
+      },
+      {
+        "name": "listFullTextScreeningCriteria",
+        "signature": "(projectId: string, includeArchived?: boolean) => Promise<{ id: string; projectId: string; text: string; sortOrder: number; createdAt: Date; archivedAt: Date | null; }[]>"
+      },
+      {
+        "name": "createFullTextScreeningCriterion",
+        "signature": "(projectId: string, input: CreateFullTextScreeningCriterionInput) => Promise<{ id: string; createdAt: Date; projectId: string; archivedAt: Date | null; text: string; sortOrder: number; }>"
+      },
+      {
+        "name": "archiveFullTextScreeningCriterion",
+        "signature": "(projectId: string, criterionId: string) => Promise<{ id: string; projectId: string; text: string; sortOrder: number; createdAt: Date; archivedAt: Date | null; }>"
+      },
+      {
+        "name": "getPaperReviewStatus",
+        "signature": "(projectId: string, paperId: string) => Promise<PaperReviewStatus>"
+      },
+      {
+        "name": "listPaperReviewStatuses",
+        "signature": "(projectId: string) => Promise<{ paperId: string; status: PaperReviewStatus; }[]>"
+      },
+      {
+        "name": "getPaperFullTextRetrieval",
+        "signature": "(projectId: string, paperId: string) => Promise<{ paper: { createdAt: Date; updatedAt: Date; id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; }; currentState: FullTextRetrievalState; everRetrieved: boolean; currentAttempt: { id: string; sequence: number; projectId: string; paperId: string; outcome: string; method: string | null; sourceReference: string | null; note: string | null; attemptedAt: Date; createdAt: Date; }; history: { id: string; sequence: number; projectId: string; paperId: string; outcome: string; method: string | null; sourceReference: string | null; note: string | null; attemptedAt: Date; createdAt: Date; }[]; reviewStatus: PaperReviewStatus; }>"
+      },
+      {
+        "name": "listFullTextRetrievalHistory",
+        "signature": "(projectId: string, paperId: string) => Promise<{ id: string; sequence: number; projectId: string; paperId: string; outcome: string; method: string | null; sourceReference: string | null; note: string | null; attemptedAt: Date; createdAt: Date; }[]>"
+      },
+      {
+        "name": "listFullTextRetrievalQueue",
+        "signature": "(projectId: string, state?: \"not_sought\" | \"pending\" | \"unavailable\" | \"retrieved\" | \"conflict\") => Promise<{ paper: { createdAt: Date; updatedAt: Date; id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; }; reviewStatus: PaperReviewStatus; }[]>"
+      },
+      {
+        "name": "recordFullTextRetrievalAttempt",
+        "signature": "(projectId: string, paperId: string, input: RecordFullTextRetrievalAttemptInput) => Promise<{ id: string; createdAt: Date; projectId: string; paperId: string; note: string | null; sequence: number; outcome: string; method: string | null; sourceReference: string | null; attemptedAt: Date; }>"
+      },
+      {
+        "name": "getPaperFullTextScreening",
+        "signature": "(projectId: string, paperId: string) => Promise<{ paper: { createdAt: Date; updatedAt: Date; id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; }; criteria: { id: string; projectId: string; text: string; sortOrder: number; createdAt: Date; archivedAt: Date | null; }[]; currentState: FullTextDecisionState; currentDecision: { id: string; sequence: number; projectId: string; paperId: string; decision: string; exclusionCriterionId: string | null; note: string | null; createdAt: Date; }; history: { exclusionCriterion: { id: string; projectId: string; text: string; sortOrder: number; createdAt: Date; archivedAt: Date | null; } | null; id: string; sequence: number; projectId: string; paperId: string; decision: string; exclusionCriterionId: string | null; note: string | null; createdAt: Date; }[]; reviewStatus: PaperReviewStatus; retrievalCurrent: { id: string; sequence: number; projectId: string; paperId: string; outcome: string; method: string | null; sourceReference: string | null; note: string | null; attemptedAt: Date; createdAt: Date; }; retrievalHistory: { id: string; sequence: number; projectId: string; paperId: string; outcome: string; method: string | null; sourceReference: string | null; note: string | null; attemptedAt: Date; createdAt: Date; }[]; }>"
+      },
+      {
+        "name": "listFullTextScreeningQueue",
+        "signature": "(projectId: string, state?: \"awaiting\" | \"included\" | \"excluded\" | \"maybe\" | \"conflict\") => Promise<{ paper: { createdAt: Date; updatedAt: Date; id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; }; reviewStatus: PaperReviewStatus; }[]>"
+      },
+      {
+        "name": "recordFullTextScreeningDecision",
+        "signature": "(projectId: string, paperId: string, input: RecordFullTextScreeningDecisionInput) => Promise<{ id: string; createdAt: Date; projectId: string; paperId: string; note: string | null; sequence: number; decision: string; exclusionCriterionId: string | null; }>"
+      },
+      {
+        "name": "listExtractionFields",
+        "signature": "(projectId: string, includeArchived?: boolean) => Promise<{ id: string; projectId: string; name: string; description: string | null; fieldType: string; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }[]>"
+      },
+      {
+        "name": "createExtractionField",
+        "signature": "(projectId: string, input: CreateExtractionFieldInput) => Promise<{ description: string | null; id: string; name: string; createdAt: Date; updatedAt: Date; projectId: string; archivedAt: Date | null; sortOrder: number; fieldType: string; required: boolean; }>"
+      },
+      {
+        "name": "updateExtractionField",
+        "signature": "(projectId: string, fieldId: string, input: UpdateExtractionFieldInput) => Promise<{ id: string; projectId: string; name: string; description: string | null; fieldType: string; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }>"
+      },
+      {
+        "name": "archiveExtractionField",
+        "signature": "(projectId: string, fieldId: string) => Promise<{ id: string; projectId: string; name: string; description: string | null; fieldType: string; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }>"
+      },
+      {
+        "name": "createExtractionOption",
+        "signature": "(projectId: string, input: CreateExtractionOptionInput) => Promise<{ id: string; createdAt: Date; updatedAt: Date; projectId: string; archivedAt: Date | null; sortOrder: number; fieldId: string; label: string; }>"
+      },
+      {
+        "name": "listExtractionOptions",
+        "signature": "(projectId: string, fieldId: string, includeArchived?: boolean) => Promise<{ id: string; projectId: string; fieldId: string; label: string; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }[]>"
+      },
+      {
+        "name": "archiveExtractionOption",
+        "signature": "(projectId: string, optionId: string) => Promise<{ id: string; projectId: string; fieldId: string; label: string; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }>"
+      },
+      {
+        "name": "reviseExtractionValue",
+        "signature": "(projectId: string, paperId: string, fieldId: string, input: ReviseExtractionValueInput) => Promise<{ id: string; createdAt: Date; projectId: string; paperId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; fieldId: string; extractionValueId: string; fieldType: string; valueState: string; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; }>"
+      },
+      {
+        "name": "setExtractionValue",
+        "signature": "(projectId: string, paperId: string, fieldId: string, input: ReviseExtractionValueInput) => Promise<{ id: string; createdAt: Date; projectId: string; paperId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; fieldId: string; extractionValueId: string; fieldType: string; valueState: string; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; }>"
+      },
+      {
+        "name": "clearExtractionValue",
+        "signature": "(projectId: string, paperId: string, fieldId: string, researcherNote?: string) => Promise<{ id: string; createdAt: Date; projectId: string; paperId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; fieldId: string; extractionValueId: string; fieldType: string; valueState: string; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; }>"
+      },
+      {
+        "name": "linkEvidenceToExtractionValue",
+        "signature": "(projectId: string, input: { paperId: string; fieldId: string; evidenceId: string; }) => Promise<{ id: string; createdAt: Date; projectId: string; paperId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; fieldId: string; extractionValueId: string; fieldType: string; valueState: string; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; }>"
+      },
+      {
+        "name": "unlinkEvidenceFromExtractionValue",
+        "signature": "(projectId: string, input: { paperId: string; fieldId: string; evidenceId: string; }) => Promise<{ id: string; createdAt: Date; projectId: string; paperId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; fieldId: string; extractionValueId: string; fieldType: string; valueState: string; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; }>"
+      },
+      {
+        "name": "getPaperExtraction",
+        "signature": "(projectId: string, paperId: string) => Promise<{ paper: { createdAt: Date; updatedAt: Date; id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; }; fields: { id: string; projectId: string; name: string; description: string | null; fieldType: string; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }[]; values: ({ field: { id: string; projectId: string; name: string; description: string | null; fieldType: string; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; currentRevision: { evidence: { createdAt: Date; updatedAt: Date; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; sourceText: string; pageNumber: number; note: string | null; }[]; id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: string; valueState: string; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; } | null; supportStatus: \"grounded\" | \"ungrounded\"; id: string; projectId: string; paperId: string; fieldId: string; createdAt: Date; updatedAt: Date; } | { field: { id: string; projectId: string; name: string; description: string | null; fieldType: string; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; currentRevision: { evidence: { createdAt: Date; updatedAt: Date; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; sourceText: string; pageNumber: number; note: string | null; }[]; id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: string; valueState: string; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; } | null; supportStatus: \"grounded\" | \"ungrounded\"; id: string; projectId: string; paperId: string; fieldId: string; createdAt: null; updatedAt: null; })[]; reviewStatus: PaperReviewStatus; }>"
+      },
+      {
+        "name": "getExtractionValueHistory",
+        "signature": "(projectId: string, paperId: string, fieldId: string) => Promise<{ evidence: { createdAt: Date; updatedAt: Date; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; sourceText: string; pageNumber: number; note: string | null; }[]; id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: string; valueState: string; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }[]>"
+      },
+      {
+        "name": "getProjectExtractionProgress",
+        "signature": "(projectId: string) => Promise<{ includedPaperCount: number; historicalPaperCount: number; requiredFieldCount: number; papers: { paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; screeningState: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\"; currentDecision: { id: string; sequence: number; projectId: string; paperId: string; stage: \"title_abstract\"; decision: \"include\" | \"exclude\" | \"maybe\"; exclusionCriterionId: string | null; exclusionCriterionType: \"exclusion\" | null; note: string | null; createdAt: Date; } | null; }; completedRequired: number; requiredCount: number; status: string; percentage: number | null; reviewStatus: PaperReviewStatus; writeEligible: boolean; }[]; }>"
+      },
+      {
+        "name": "createSynthesisStatement",
+        "signature": "(projectId: string, input: SynthesisRevisionInput) => Promise<{ statement: { id: string; createdAt: Date; projectId: string; }; revision: { title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; state: string; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }; }>"
+      },
+      {
+        "name": "reviseSynthesisStatement",
+        "signature": "(projectId: string, statementId: string, input: SynthesisRevisionInput) => Promise<{ statement: { id: string; createdAt: Date; projectId: string; }; revision: { title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; state: string; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }; }>"
+      },
+      {
+        "name": "withdrawSynthesisStatement",
+        "signature": "(projectId: string, statementId: string, input?: SynthesisWithdrawalInput) => Promise<{ statement: { id: string; projectId: string; createdAt: Date; }; revision: { id: string; sequence: number; projectId: string; synthesisStatementId: string; state: string; title: string | null; statementText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; idempotent: boolean; }>"
+      },
+      {
+        "name": "getCurrentSynthesis",
+        "signature": "(projectId: string, statementId: string) => Promise<{ state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; } | null>"
+      },
+      {
+        "name": "getSynthesisHistory",
+        "signature": "(projectId: string, statementId: string) => Promise<{ state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }[]>"
+      },
+      {
+        "name": "getSynthesisProvenance",
+        "signature": "(projectId: string, statementId: string, revisionId?: string) => Promise<{ state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }>"
+      },
+      {
+        "name": "listProjectSynthesis",
+        "signature": "(projectId: string) => Promise<{ state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }[]>"
+      },
+      {
+        "name": "listClaimSupportOptions",
+        "signature": "(projectId: string) => Promise<{ evidence: { paper: { createdAt: Date; updatedAt: Date; id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; } | null; reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; createdAt: Date; updatedAt: Date; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; sourceText: string; pageNumber: number; note: string | null; }[]; extraction: { paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; paperScreeningState: string; id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }[]; synthesis: { state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }[]; }>"
+      },
+      {
+        "name": "listExtractionComparison",
+        "signature": "(projectId: string, fieldId: string, input?: ExtractionComparisonFilter) => Promise<{ paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: string; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; } | null; valueState: string; displayValue: string | null; supportStatus: \"grounded\" | \"ungrounded\"; isSelectable: boolean; }[]>"
+      },
+      {
+        "name": "getExtractionFieldSummary",
+        "signature": "(projectId: string, fieldId: string) => Promise<{ field: { id: string; projectId: string; name: string; description: string | null; fieldType: string; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; totalIncludedPapers: number; counts: Record<string, number>; }>"
+      },
+      {
+        "name": "addPaper",
+        "signature": "(projectId: string, input: CreatePaperInput & { distinctPaperAcknowledged?: boolean; candidatePaperIds?: string[]; }) => Promise<{ title: string; id: string; createdAt: Date; updatedAt: Date; projectId: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; }>"
+      },
+      {
+        "name": "findManualPaperCandidates",
+        "signature": "(projectId: string, input: CreatePaperInput) => Promise<{ id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; candidateReason: string; }[]>"
+      },
+      {
+        "name": "recordEvidence",
+        "signature": "(projectId: string, input: RecordEvidenceInput) => Promise<{ id: string; createdAt: Date; updatedAt: Date; projectId: string; paperId: string; note: string | null; fullTextDocumentId: string | null; documentTextExtractionId: string | null; pageNumber: number; extractionStartOffset: number | null; extractionEndOffset: number | null; sourceText: string; }>"
+      },
+      {
+        "name": "createClaim",
+        "signature": "(projectId: string, input: CreateClaimInput) => Promise<{ id: string; projectId: string; claimText: string; createdAt: Date; updatedAt: Date; claim: { id: string; projectId: string; claimText: string; createdAt: Date; updatedAt: Date; }; revision: { id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; }>"
+      },
+      {
+        "name": "createClaimWithSynthesisSupport",
+        "signature": "(projectId: string, input: CreateClaimWithSynthesisSupportInput) => Promise<{ id: string; projectId: string; claimText: string; createdAt: Date; updatedAt: Date; claim: { id: string; projectId: string; claimText: string; createdAt: Date; updatedAt: Date; }; revision: { id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; }>"
+      },
+      {
+        "name": "createClaimFromInterpretation",
+        "signature": "(projectId: string, input: CreateClaimFromInterpretationInput) => Promise<{ id: string; projectId: string; claimText: string; createdAt: Date; updatedAt: Date; claim: { id: string; projectId: string; claimText: string; createdAt: Date; updatedAt: Date; }; revision: { id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; }>"
+      },
+      {
+        "name": "createClaimRevision",
+        "signature": "(projectId: string, claimId: string, input: CreateClaimRevisionInput) => Promise<{ claim: { claimText: string; id: string; projectId: string; createdAt: Date; updatedAt: Date; }; revision: { supportStatus: \"supported\" | \"unsupported\"; supports: { evidence: { projectId: string; claimRevisionId: string; evidenceId: string; createdAt: Date; evidence: { evidence: { reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; createdAt: Date; updatedAt: Date; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; }; }[]; extractionRevisions: { projectId: string; claimRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; paperScreeningState: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\"; }[]; synthesisRevisions: { projectId: string; claimRevisionId: string; synthesisRevisionId: string; createdAt: Date; synthesisRevision: { state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }; statement: { id: string; createdAt: Date; projectId: string; } | undefined; isCurrentSynthesisRevision: boolean; statementLifecycle: \"active\" | \"withdrawn\"; }[]; }; totalSupportCount: number; directEvidenceCount: number; extractionRevisionCount: number; synthesisRevisionCount: number; distinctPaperCount: number; citationCandidateCount: number; citationCandidates: { paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; pathCount: number; supportKinds: (\"evidence\" | \"extractionRevision\" | \"synthesisRevision\")[]; paths: string[]; }[]; id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; }>"
+      },
+      {
+        "name": "withdrawClaim",
+        "signature": "(projectId: string, claimId: string, input?: WithdrawClaimInput) => Promise<{ claim: { claimText: string; id: string; projectId: string; createdAt: Date; updatedAt: Date; }; revision: { supportStatus: \"supported\" | \"unsupported\"; supports: { evidence: { projectId: string; claimRevisionId: string; evidenceId: string; createdAt: Date; evidence: { evidence: { reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; createdAt: Date; updatedAt: Date; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; }; }[]; extractionRevisions: { projectId: string; claimRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; paperScreeningState: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\"; }[]; synthesisRevisions: { projectId: string; claimRevisionId: string; synthesisRevisionId: string; createdAt: Date; synthesisRevision: { state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }; statement: { id: string; createdAt: Date; projectId: string; } | undefined; isCurrentSynthesisRevision: boolean; statementLifecycle: \"active\" | \"withdrawn\"; }[]; }; totalSupportCount: number; directEvidenceCount: number; extractionRevisionCount: number; synthesisRevisionCount: number; distinctPaperCount: number; citationCandidateCount: number; citationCandidates: { paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; pathCount: number; supportKinds: (\"evidence\" | \"extractionRevision\" | \"synthesisRevision\")[]; paths: string[]; }[]; id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; }>"
+      },
+      {
+        "name": "reactivateClaim",
+        "signature": "(projectId: string, claimId: string, input: CreateClaimRevisionInput) => Promise<{ claim: { claimText: string; id: string; projectId: string; createdAt: Date; updatedAt: Date; }; revision: { supportStatus: \"supported\" | \"unsupported\"; supports: { evidence: { projectId: string; claimRevisionId: string; evidenceId: string; createdAt: Date; evidence: { evidence: { reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; createdAt: Date; updatedAt: Date; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; }; }[]; extractionRevisions: { projectId: string; claimRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; paperScreeningState: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\"; }[]; synthesisRevisions: { projectId: string; claimRevisionId: string; synthesisRevisionId: string; createdAt: Date; synthesisRevision: { state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }; statement: { id: string; createdAt: Date; projectId: string; } | undefined; isCurrentSynthesisRevision: boolean; statementLifecycle: \"active\" | \"withdrawn\"; }[]; }; totalSupportCount: number; directEvidenceCount: number; extractionRevisionCount: number; synthesisRevisionCount: number; distinctPaperCount: number; citationCandidateCount: number; citationCandidates: { paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; pathCount: number; supportKinds: (\"evidence\" | \"extractionRevision\" | \"synthesisRevision\")[]; paths: string[]; }[]; id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; }>"
+      },
+      {
+        "name": "getCurrentClaim",
+        "signature": "(projectId: string, claimId: string) => Promise<{ claim: { claimText: string; id: string; projectId: string; createdAt: Date; updatedAt: Date; }; currentRevision: { supportStatus: \"supported\" | \"unsupported\"; supports: { evidence: { projectId: string; claimRevisionId: string; evidenceId: string; createdAt: Date; evidence: { evidence: { reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; createdAt: Date; updatedAt: Date; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; }; }[]; extractionRevisions: { projectId: string; claimRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; paperScreeningState: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\"; }[]; synthesisRevisions: { projectId: string; claimRevisionId: string; synthesisRevisionId: string; createdAt: Date; synthesisRevision: { state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }; statement: { id: string; createdAt: Date; projectId: string; } | undefined; isCurrentSynthesisRevision: boolean; statementLifecycle: \"active\" | \"withdrawn\"; }[]; }; totalSupportCount: number; directEvidenceCount: number; extractionRevisionCount: number; synthesisRevisionCount: number; distinctPaperCount: number; citationCandidateCount: number; citationCandidates: { paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; pathCount: number; supportKinds: (\"evidence\" | \"extractionRevision\" | \"synthesisRevision\")[]; paths: string[]; }[]; id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; }>"
+      },
+      {
+        "name": "getClaimRevision",
+        "signature": "(projectId: string, claimId: string, revisionId: string) => Promise<{ claim: { claimText: string; id: string; projectId: string; createdAt: Date; updatedAt: Date; }; revision: { supportStatus: \"supported\" | \"unsupported\"; supports: { evidence: { projectId: string; claimRevisionId: string; evidenceId: string; createdAt: Date; evidence: { evidence: { reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; createdAt: Date; updatedAt: Date; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; }; }[]; extractionRevisions: { projectId: string; claimRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; paperScreeningState: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\"; }[]; synthesisRevisions: { projectId: string; claimRevisionId: string; synthesisRevisionId: string; createdAt: Date; synthesisRevision: { state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }; statement: { id: string; createdAt: Date; projectId: string; } | undefined; isCurrentSynthesisRevision: boolean; statementLifecycle: \"active\" | \"withdrawn\"; }[]; }; totalSupportCount: number; directEvidenceCount: number; extractionRevisionCount: number; synthesisRevisionCount: number; distinctPaperCount: number; citationCandidateCount: number; citationCandidates: { paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; pathCount: number; supportKinds: (\"evidence\" | \"extractionRevision\" | \"synthesisRevision\")[]; paths: string[]; }[]; id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; }>"
+      },
+      {
+        "name": "getClaimHistory",
+        "signature": "(projectId: string, claimId: string) => Promise<{ claim: { id: string; projectId: string; claimText: string; createdAt: Date; updatedAt: Date; }; revisions: { supportStatus: \"supported\" | \"unsupported\"; supports: { evidence: { projectId: string; claimRevisionId: string; evidenceId: string; createdAt: Date; evidence: { evidence: { reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; createdAt: Date; updatedAt: Date; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; }; }[]; extractionRevisions: { projectId: string; claimRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; paperScreeningState: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\"; }[]; synthesisRevisions: { projectId: string; claimRevisionId: string; synthesisRevisionId: string; createdAt: Date; synthesisRevision: { state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }; statement: { id: string; createdAt: Date; projectId: string; } | undefined; isCurrentSynthesisRevision: boolean; statementLifecycle: \"active\" | \"withdrawn\"; }[]; }; totalSupportCount: number; directEvidenceCount: number; extractionRevisionCount: number; synthesisRevisionCount: number; distinctPaperCount: number; citationCandidateCount: number; citationCandidates: { paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; pathCount: number; supportKinds: (\"evidence\" | \"extractionRevision\" | \"synthesisRevision\")[]; paths: string[]; }[]; id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }[]; }>"
+      },
+      {
+        "name": "linkEvidenceToClaim",
+        "signature": "(projectId: string, input: { claimId: string; evidenceId: string; }) => Promise<{ claim: { claimText: string; id: string; projectId: string; createdAt: Date; updatedAt: Date; }; revision: { supportStatus: \"supported\" | \"unsupported\"; supports: { evidence: { projectId: string; claimRevisionId: string; evidenceId: string; createdAt: Date; evidence: { evidence: { reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; createdAt: Date; updatedAt: Date; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; }; }[]; extractionRevisions: { projectId: string; claimRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; paperScreeningState: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\"; }[]; synthesisRevisions: { projectId: string; claimRevisionId: string; synthesisRevisionId: string; createdAt: Date; synthesisRevision: { state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }; statement: { id: string; createdAt: Date; projectId: string; } | undefined; isCurrentSynthesisRevision: boolean; statementLifecycle: \"active\" | \"withdrawn\"; }[]; }; totalSupportCount: number; directEvidenceCount: number; extractionRevisionCount: number; synthesisRevisionCount: number; distinctPaperCount: number; citationCandidateCount: number; citationCandidates: { paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; pathCount: number; supportKinds: (\"evidence\" | \"extractionRevision\" | \"synthesisRevision\")[]; paths: string[]; }[]; id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; }>"
+      },
+      {
+        "name": "unlinkEvidenceFromClaim",
+        "signature": "(projectId: string, input: { claimId: string; evidenceId: string; }) => Promise<{ claim: { claimText: string; id: string; projectId: string; createdAt: Date; updatedAt: Date; }; revision: { supportStatus: \"supported\" | \"unsupported\"; supports: { evidence: { projectId: string; claimRevisionId: string; evidenceId: string; createdAt: Date; evidence: { evidence: { reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; createdAt: Date; updatedAt: Date; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; }; }[]; extractionRevisions: { projectId: string; claimRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; paperScreeningState: \"unscreened\" | \"included\" | \"excluded\" | \"maybe\"; }[]; synthesisRevisions: { projectId: string; claimRevisionId: string; synthesisRevisionId: string; createdAt: Date; synthesisRevision: { state: SynthesisState; statement: { id: string; createdAt: Date; projectId: string; }; supports: { projectId: string; synthesisRevisionId: string; extractionRevisionId: string; createdAt: Date; extractionRevision: { id: string; sequence: number; projectId: string; paperId: string; fieldId: string; extractionValueId: string; fieldType: ExtractionFieldType; valueState: \"present\" | \"not_reported\" | \"not_applicable\" | \"cleared\"; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; evidence: { id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; reviewState: \"unreviewed\" | \"needs_review\" | \"accepted\" | \"rejected\" | undefined; curationWarning: \"never_reviewed\" | \"needs_review\" | \"currently_rejected\" | null | undefined; createdAt: Date; updatedAt: Date; }[]; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; field: { id: string; projectId: string; name: string; description: string | null; fieldType: ExtractionFieldType; required: boolean; sortOrder: number; createdAt: Date; updatedAt: Date; archivedAt: Date | null; }; isCurrentExtractionRevision: boolean; }[]; supportStatus: \"supported\" | \"unsupported\"; supportingRevisionCount: number; supportingPaperCount: number; supportingFieldCount: number; title: string | null; id: string; createdAt: Date; projectId: string; sequence: number; researcherNote: string | null; finalizedAt: Date | null; synthesisStatementId: string; statementText: string | null; }; statement: { id: string; createdAt: Date; projectId: string; } | undefined; isCurrentSynthesisRevision: boolean; statementLifecycle: \"active\" | \"withdrawn\"; }[]; }; totalSupportCount: number; directEvidenceCount: number; extractionRevisionCount: number; synthesisRevisionCount: number; distinctPaperCount: number; citationCandidateCount: number; citationCandidates: { paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; pathCount: number; supportKinds: (\"evidence\" | \"extractionRevision\" | \"synthesisRevision\")[]; paths: string[]; }[]; id: string; sequence: number; projectId: string; claimId: string; lifecycle: \"active\" | \"withdrawn\"; claimText: string | null; researcherNote: string | null; createdAt: Date; finalizedAt: Date | null; }; }>"
+      },
+      {
+        "name": "deletePaper",
+        "signature": "(projectId: string, paperId: string) => Promise<{ id: string; }[]>"
+      },
+      {
+        "name": "deleteEvidence",
+        "signature": "(projectId: string, evidenceId: string) => Promise<{ id: string; }[]>"
+      },
+      {
+        "name": "deleteClaim",
+        "signature": "(projectId: string, claimId: string) => Promise<never>"
+      },
+      {
+        "name": "getClaimProvenance",
+        "signature": "(projectId: string, claimId: string) => Promise<{ claim: { claimText: string; id: string; projectId: string; createdAt: Date; updatedAt: Date; }; supportStatus: \"supported\" | \"unsupported\"; evidence: { evidence: { reviewState: EvidenceReviewState; curationWarning: EvidenceCurationWarning; document: { id: string; originalFilename: string; mediaType: \"application/pdf\"; byteSize: number; sha256: string; createdAt: Date; archivedAt: Date | null; } | null; id: string; projectId: string; paperId: string; fullTextDocumentId: string | null; documentTextExtractionId: string | null; sourceText: string; pageNumber: number; note: string | null; extractionStartOffset: number | null; extractionEndOffset: number | null; createdAt: Date; updatedAt: Date; }; paper: { id: string; projectId: string; title: string; authors: string[]; publicationYear: number | null; venue: string | null; doi: string | null; abstract: string | null; bibliographicNote: string | null; createdAt: Date; updatedAt: Date; }; }[]; }>"
+      }
+    ],
+    "composition": {
+      "base": [
+        "services",
+        "manuscriptServices",
+        "manuscriptProseHistoryServices",
+        "manuscriptReviewServices",
+        "manuscriptSnapshotServices",
+        "acquisitionServices",
+        "deduplicationServices",
+        "documentServices as unknown as Record<string, unknown>"
+      ],
+      "final": [
+        "baseServices",
+        "textExtractionServices",
+        "pdfIntakeServices",
+        "reportingServices",
+        "curationServices",
+        "criticalAppraisalServices",
+        "evidenceSetServices",
+        "synthesisPreparationServices",
+        "synthesisInterpretationServices",
+        "traceabilityServices",
+        "coverageServices",
+        "answerWriteServices",
+        "answerReadServices",
+        "answerManuscriptServices",
+        "projectWorkspaceReadServices",
+        "...(bibliographicImportServices ? [bibliographicImportServices] : [])"
+      ]
+    },
+    "coreFactories": [
+      {
+        "factory": "createProjectPaperServices",
+        "keys": [
+          "createProject",
+          "getProject",
+          "listPapers",
+          "getPaper",
+          "addPaper",
+          "findManualPaperCandidates",
+          "deletePaper"
+        ]
+      },
+      {
+        "factory": "createEvidenceServices",
+        "keys": [
+          "listEvidence",
+          "recordEvidence",
+          "deleteEvidence"
+        ]
+      },
+      {
+        "factory": "createScreeningServices",
+        "keys": [
+          "listScreeningCriteria",
+          "createScreeningCriterion",
+          "archiveScreeningCriterion",
+          "getPaperScreening",
+          "listScreeningPapers",
+          "recordScreeningDecision",
+          "listFullTextScreeningCriteria",
+          "createFullTextScreeningCriterion",
+          "archiveFullTextScreeningCriterion",
+          "getPaperReviewStatus",
+          "listPaperReviewStatuses",
+          "getPaperFullTextRetrieval",
+          "listFullTextRetrievalHistory",
+          "listFullTextRetrievalQueue",
+          "recordFullTextRetrievalAttempt",
+          "getPaperFullTextScreening",
+          "listFullTextScreeningQueue",
+          "recordFullTextScreeningDecision"
+        ]
+      },
+      {
+        "factory": "createExtractionServices",
+        "keys": [
+          "listExtractionFields",
+          "createExtractionField",
+          "updateExtractionField",
+          "archiveExtractionField",
+          "createExtractionOption",
+          "listExtractionOptions",
+          "archiveExtractionOption",
+          "reviseExtractionValue",
+          "setExtractionValue",
+          "clearExtractionValue",
+          "linkEvidenceToExtractionValue",
+          "unlinkEvidenceFromExtractionValue",
+          "getPaperExtraction",
+          "getExtractionValueHistory",
+          "getProjectExtractionProgress",
+          "listExtractionComparison",
+          "getExtractionFieldSummary"
+        ]
+      },
+      {
+        "factory": "createSynthesisServices",
+        "keys": [
+          "createSynthesisStatement",
+          "reviseSynthesisStatement",
+          "withdrawSynthesisStatement",
+          "getCurrentSynthesis",
+          "getSynthesisHistory",
+          "getSynthesisProvenance",
+          "listProjectSynthesis"
+        ]
+      },
+      {
+        "factory": "createClaimServices",
+        "keys": [
+          "listClaims",
+          "listClaimSupportOptions",
+          "createClaim",
+          "createClaimWithSynthesisSupport",
+          "createClaimFromInterpretation",
+          "createClaimRevision",
+          "withdrawClaim",
+          "reactivateClaim",
+          "getCurrentClaim",
+          "getClaimRevision",
+          "getClaimHistory",
+          "linkEvidenceToClaim",
+          "unlinkEvidenceFromClaim",
+          "deleteClaim",
+          "getClaimProvenance"
+        ]
+      }
+    ],
+    "specializedFactories": [
+      {
+        "source": "manuscriptServices",
+        "keys": [
+          "getDefaultManuscript",
+          "createDefaultManuscript",
+          "getOrCreateDefaultManuscript",
+          "setManuscriptCitationStyle",
+          "getManuscript",
+          "loadManuscriptProjection",
+          "getFormattedManuscript",
+          "createSection",
+          "renameSection",
+          "reorderSections",
+          "archiveSection",
+          "placeClaimRevision",
+          "replacePlacedClaimRevision",
+          "removeClaimPlacement",
+          "createProseBlock",
+          "reviseProseBlock",
+          "updateProseBlock",
+          "removeProseBlock",
+          "reorderSectionItems",
+          "getManuscriptPlacementHistory",
+          "listPlaceableClaimRevisions"
+        ]
+      },
+      {
+        "source": "manuscriptProseHistoryServices",
+        "keys": [
+          "getProseRevisionHistory",
+          "getProseRevisionComparison"
+        ]
+      },
+      {
+        "source": "manuscriptReviewServices",
+        "keys": [
+          "openManuscriptReviewThread",
+          "appendManuscriptReviewEvent",
+          "commentOnManuscriptReviewThread",
+          "resolveManuscriptReviewThread",
+          "reopenManuscriptReviewThread",
+          "getManuscriptReviewProjection"
+        ]
+      },
+      {
+        "source": "manuscriptSnapshotServices",
+        "keys": [
+          "createManuscriptSnapshot",
+          "listManuscriptSnapshots",
+          "getManuscriptSnapshot",
+          "getManuscriptSnapshotMarkdown"
+        ]
+      },
+      {
+        "source": "acquisitionServices",
+        "keys": [
+          "createProject",
+          "listResearchQuestions",
+          "getResearchQuestion",
+          "createResearchQuestion",
+          "updateResearchQuestion",
+          "reorderResearchQuestions",
+          "archiveResearchQuestion",
+          "listSearchSources",
+          "getSearchSource",
+          "createSearchSource",
+          "updateSearchSource",
+          "archiveSearchSource",
+          "listSearchStrategies",
+          "getSearchStrategy",
+          "createSearchStrategy",
+          "updateSearchStrategy",
+          "archiveSearchStrategy",
+          "createSearchRun",
+          "getSearchRun",
+          "listSearchRuns",
+          "createRetrievedRecord",
+          "getRetrievedRecord",
+          "listRetrievedRecords",
+          "getRetrievedRecordMatch",
+          "listRetrievedRecordMatchHistory",
+          "listRetrievedRecordProjections",
+          "linkRetrievedRecordToPaper",
+          "unlinkRetrievedRecordFromPaper",
+          "relinkRetrievedRecord",
+          "createPaperFromRetrievedRecord",
+          "findPaperDuplicateCandidates",
+          "findRetrievedRecordDuplicateCandidates",
+          "getPaperRetrievalProvenance",
+          "createCustomSearchSource",
+          "updateCustomSearchSource",
+          "archiveCustomSearchSource",
+          "createPaperFromRecord",
+          "linkRetrievedRecord",
+          "unlinkRetrievedRecord",
+          "relinkRetrievedRecordMatch",
+          "getCurrentRetrievedRecordMatch",
+          "listRetrievedRecordMatches",
+          "searchDuplicatePaperCandidates",
+          "getPaperAcquisitionProvenance"
+        ]
+      },
+      {
+        "source": "deduplicationServices",
+        "keys": [
+          "listDeduplicationQueue",
+          "getDeduplicationPair",
+          "listDeduplicationHistory",
+          "confirmSameWork",
+          "confirmSameWorkAndResolve",
+          "decideDifferentWork",
+          "correctDifferentWorkAndResolve",
+          "getReviewFlowSummary",
+          "listReviewFlowContributors"
+        ]
+      },
+      {
+        "source": "documentServices",
+        "keys": [
+          "stageFullTextDocument",
+          "discardStagedFullTextDocument",
+          "attachStagedFullTextDocument",
+          "uploadFullTextDocument",
+          "listFullTextDocuments",
+          "getFullTextDocument",
+          "setPreferredFullTextDocument",
+          "clearPreferredFullTextDocument",
+          "getPreferredFullTextDocument",
+          "archiveFullTextDocument",
+          "openFullTextDocumentDownload",
+          "listEvidenceForFullTextDocument",
+          "auditFullTextDocumentStorage"
+        ]
+      },
+      {
+        "source": "textExtractionServices",
+        "keys": [
+          "extractDocumentText",
+          "listDocumentTextExtractions",
+          "getDocumentTextExtraction",
+          "getLatestDocumentTextExtraction",
+          "recordEvidenceFromExtractedPage"
+        ]
+      },
+      {
+        "source": "pdfIntakeServices",
+        "keys": [
+          "uploadPdfIntake",
+          "ensureInitialPdfMetadataResult",
+          "listPdfIntakes",
+          "getPdfIntake",
+          "previewPdfIntakeResolution",
+          "resolvePdfIntake",
+          "auditPdfIntakeStorage"
+        ]
+      },
+      {
+        "source": "reportingServices",
+        "keys": [
+          "getReviewReport",
+          "listReviewReportContributors"
+        ]
+      },
+      {
+        "source": "curationServices",
+        "keys": [
+          "getEvidenceReviewState",
+          "listEvidenceReviewHistory",
+          "listEvidenceAnnotations",
+          "listEvidenceLabelHistory",
+          "listEvidenceLabels",
+          "listEvidenceDownstreamUsage",
+          "listEvidenceWorkspace",
+          "getEvidenceCurationDetail",
+          "appendEvidenceReviewDecision",
+          "appendEvidenceAnnotation",
+          "createEvidenceLabel",
+          "archiveEvidenceLabel",
+          "assignEvidenceLabel",
+          "removeEvidenceLabel"
+        ]
+      },
+      {
+        "source": "criticalAppraisalServices",
+        "keys": [
+          "createAppraisalFramework",
+          "listAppraisalFrameworks",
+          "readFrameworkVersion",
+          "updateFrameworkDraftMetadata",
+          "addFrameworkSection",
+          "updateFrameworkSection",
+          "reorderFrameworkSections",
+          "removeFrameworkSection",
+          "addFrameworkItem",
+          "updateFrameworkItem",
+          "reorderFrameworkItems",
+          "removeFrameworkItem",
+          "addFrameworkResponseOption",
+          "updateFrameworkResponseOption",
+          "reorderFrameworkResponseOptions",
+          "removeFrameworkResponseOption",
+          "setFrameworkOverallJudgementOptions",
+          "reorderFrameworkOverallJudgementOptions",
+          "finalizeFrameworkVersion",
+          "createNewFrameworkVersion",
+          "archiveAppraisalFramework",
+          "saveAppraisalRevision",
+          "listPaperAppraisalStatus",
+          "readPaperAppraisal",
+          "readAppraisalHistory",
+          "readAppraisalRevision",
+          "listPaperEvidence"
+        ]
+      },
+      {
+        "source": "evidenceSetServices",
+        "keys": [
+          "createEvidenceSet",
+          "updateEvidenceSetMetadata",
+          "archiveEvidenceSet",
+          "listEvidenceSets",
+          "getEvidenceSet",
+          "addEvidenceToSet",
+          "removeEvidenceFromSet",
+          "reorderEvidenceSet",
+          "listEvidenceSetCompositionHistory",
+          "appendEvidenceSetAnnotation",
+          "listEvidenceSetAnnotations",
+          "listCandidateEvidenceForSet",
+          "listRelatedExtractionRevisionsForEvidenceSet"
+        ]
+      },
+      {
+        "source": "synthesisPreparationServices",
+        "keys": [
+          "finalizeSynthesisPreparationInTransaction",
+          "listEvidenceSetSynthesisFields",
+          "createSynthesisPreparation",
+          "listSynthesisPreparations",
+          "getSynthesisPreparationWorkspace",
+          "updateSynthesisPreparation",
+          "replaceSynthesisPreparationSelections",
+          "abandonSynthesisPreparation",
+          "finalizeSynthesisPreparation",
+          "getSynthesisPreparationContextForRevision"
+        ]
+      },
+      {
+        "source": "synthesisInterpretationServices",
+        "keys": [
+          "appendSynthesisInterpretation",
+          "getSynthesisInterpretationSnapshot",
+          "getSynthesisInterpretationProjection"
+        ]
+      },
+      {
+        "source": "traceabilityServices",
+        "keys": [
+          "repo",
+          "linkExtractionField",
+          "unlinkExtractionField",
+          "linkEvidenceSet",
+          "unlinkEvidenceSet",
+          "linkSynthesisStatement",
+          "unlinkSynthesisStatement",
+          "linkClaim",
+          "unlinkClaim",
+          "getCurrentLinksForQuestion",
+          "getCurrentLinksForProject",
+          "getQuestionTraceabilityHistories"
+        ]
+      },
+      {
+        "source": "coverageServices",
+        "keys": [
+          "getQuestionTraceability",
+          "getResearchQuestionMatrix"
+        ]
+      },
+      {
+        "source": "answerWriteServices",
+        "keys": [
+          "appendResearchQuestionAnswer"
+        ]
+      },
+      {
+        "source": "answerReadServices",
+        "keys": [
+          "getResearchQuestionAnswerProjection",
+          "getResearchQuestionAnswerSnapshot",
+          "listResearchQuestionAnswerCandidates",
+          "getProjectResearchQuestionAnswerFacts"
+        ]
+      },
+      {
+        "source": "answerManuscriptServices",
+        "keys": [
+          "getResearchQuestionAnswerManuscriptProjection",
+          "applyResearchQuestionAnswerToSection"
+        ]
+      },
+      {
+        "source": "projectWorkspaceReadServices",
+        "keys": [
+          "listProjectCards",
+          "getProjectOverview"
+        ]
+      },
+      {
+        "source": "bibliographicImportServices",
+        "keys": [
+          "importFile",
+          "getImport",
+          "getBulkImportPreview",
+          "listImports",
+          "listImportRecords",
+          "listRecordCandidates",
+          "resolveImportRecord",
+          "bulkCreateImportRecords",
+          "getRecordSourceBytes",
+          "exportBibtex"
+        ]
+      }
+    ],
+    "baselineCollisions": [
+      {
+        "key": "createProject",
+        "earlier": "createProjectPaperServices",
+        "later": "acquisitionServices",
+        "winner": "acquisitionServices",
+        "intentional": true
+      }
+    ],
+    "thisCalls": [
+      {
+        "owner": "setExtractionValue",
+        "callee": "reviseExtractionValue",
+        "line": 940
+      },
+      {
+        "owner": "clearExtractionValue",
+        "callee": "reviseExtractionValue",
+        "line": 944
+      },
+      {
+        "owner": "linkEvidenceToExtractionValue",
+        "callee": "getPaperExtraction",
+        "line": 948
+      },
+      {
+        "owner": "linkEvidenceToExtractionValue",
+        "callee": "reviseExtractionValue",
+        "line": 952
+      },
+      {
+        "owner": "unlinkEvidenceFromExtractionValue",
+        "callee": "getPaperExtraction",
+        "line": 956
+      },
+      {
+        "owner": "unlinkEvidenceFromExtractionValue",
+        "callee": "reviseExtractionValue",
+        "line": 960
+      },
+      {
+        "owner": "getProjectExtractionProgress",
+        "callee": "getPaperExtraction",
+        "line": 997
+      },
+      {
+        "owner": "getExtractionFieldSummary",
+        "callee": "listExtractionComparison",
+        "line": 1175
+      },
+      {
+        "owner": "createClaimFromInterpretation",
+        "callee": "createClaimWithSynthesisSupport",
+        "line": 1299
+      },
+      {
+        "owner": "createClaimRevision",
+        "callee": "getClaimRevision",
+        "line": 1309
+      },
+      {
+        "owner": "withdrawClaim",
+        "callee": "getClaimRevision",
+        "line": 1323
+      },
+      {
+        "owner": "reactivateClaim",
+        "callee": "createClaimRevision",
+        "line": 1328
+      },
+      {
+        "owner": "linkEvidenceToClaim",
+        "callee": "getCurrentClaim",
+        "line": 1358
+      },
+      {
+        "owner": "linkEvidenceToClaim",
+        "callee": "createClaimRevision",
+        "line": 1368
+      },
+      {
+        "owner": "unlinkEvidenceFromClaim",
+        "callee": "getCurrentClaim",
+        "line": 1378
+      },
+      {
+        "owner": "unlinkEvidenceFromClaim",
+        "callee": "createClaimRevision",
+        "line": 1386
+      },
+      {
+        "owner": "getClaimProvenance",
+        "callee": "getCurrentClaim",
+        "line": 1433
+      }
+    ]
+  },
+  "actions": {
+    "exports": [
+      "abandonSynthesisPreparationAction",
+      "acceptAiExtractionSuggestionAction",
+      "acceptAiSynthesisSuggestionAction",
+      "addAppraisalFrameworkItemAction",
+      "addAppraisalFrameworkResponseOptionAction",
+      "addAppraisalFrameworkSectionAction",
+      "addEvidenceToSetAction",
+      "addPaperAction",
+      "appendEvidenceAnnotationAction",
+      "appendEvidenceReviewDecisionAction",
+      "appendEvidenceSetAnnotationAction",
+      "appendResearchQuestionAnswerAction",
+      "appendSynthesisInterpretationAction",
+      "applyResearchQuestionAnswerToSectionAction",
+      "archiveAppraisalFrameworkAction",
+      "archiveEvidenceLabelAction",
+      "archiveEvidenceSetAction",
+      "archiveExtractionFieldAction",
+      "archiveExtractionOptionAction",
+      "archiveFullTextDocumentAction",
+      "archiveFullTextScreeningCriterionAction",
+      "archiveManuscriptSectionAction",
+      "archiveScreeningCriterionAction",
+      "assignEvidenceLabelAction",
+      "beginAiExtractionSuggestionAction",
+      "beginAiSynthesisSuggestionAction",
+      "beginDoiLookupAction",
+      "bulkCreateBibliographicImportRecordsAction",
+      "cancelAiExtractionBatchAction",
+      "clearDoiLookupResolutionAction",
+      "clearPreferredFullTextDocumentAction",
+      "commentManuscriptReviewThreadAction",
+      "confirmSameWorkAction",
+      "confirmSameWorkAndResolveAction",
+      "correctDifferentWorkAndResolveAction",
+      "createAiExtractionBatchAction",
+      "createAppraisalFrameworkAction",
+      "createAppraisalFrameworkVersionAction",
+      "createClaimAction",
+      "createClaimFromInterpretationAction",
+      "createClaimRevisionAction",
+      "createDefaultManuscriptAction",
+      "createEvidenceLabelAction",
+      "createEvidenceSetAction",
+      "createExtractionFieldAction",
+      "createExtractionOptionAction",
+      "createFullTextScreeningCriterionAction",
+      "createManuscriptProseBlockAction",
+      "createManuscriptSectionAction",
+      "createManuscriptSnapshotAction",
+      "createPaperFromDoiLookupAction",
+      "createPaperFromRetrievedRecordAction",
+      "createProjectAction",
+      "createResearchQuestionAction",
+      "createRetrievedRecordAction",
+      "createScreeningCriterionAction",
+      "createSearchRunAction",
+      "createSearchSourceAction",
+      "createSearchStrategyAction",
+      "createSynthesisPreparationAction",
+      "createSynthesisStatementAction",
+      "decideDifferentWorkAction",
+      "executeAiExtractionSuggestionAction",
+      "executeAiSynthesisSuggestionAction",
+      "executeDoiLookupAction",
+      "expireAiExtractionSuggestionAction",
+      "expireAiSynthesisSuggestionAction",
+      "extractDocumentTextAction",
+      "finalizeAppraisalFrameworkVersionAction",
+      "finalizeSynthesisPreparationAction",
+      "inspectPdfIntakeAction",
+      "linkClaimAction",
+      "linkEvidenceAction",
+      "linkEvidenceSetAction",
+      "linkExtractionEvidenceAction",
+      "linkExtractionFieldAction",
+      "linkRetrievedRecordToPaperAction",
+      "linkSynthesisStatementAction",
+      "matchDoiLookupAction",
+      "openManuscriptReviewThreadAction",
+      "placeClaimRevisionAction",
+      "previewAiExtractionBatchAction",
+      "processAiExtractionBatchAction",
+      "reactivateClaimAction",
+      "recordEvidenceAction",
+      "recordExtractedEvidenceAction",
+      "recordFullTextRetrievalAttemptAction",
+      "recordFullTextScreeningDecisionAction",
+      "recordScreeningDecisionAction",
+      "rejectAiExtractionSuggestionAction",
+      "rejectAiSynthesisSuggestionAction",
+      "relinkRetrievedRecordAction",
+      "removeAppraisalFrameworkItemAction",
+      "removeAppraisalFrameworkResponseOptionAction",
+      "removeAppraisalFrameworkSectionAction",
+      "removeClaimPlacementAction",
+      "removeEvidenceFromSetAction",
+      "removeEvidenceLabelAction",
+      "removeManuscriptProseBlockAction",
+      "renameManuscriptSectionAction",
+      "reopenManuscriptReviewThreadAction",
+      "reorderAppraisalFrameworkItemsAction",
+      "reorderAppraisalFrameworkOverallOptionsAction",
+      "reorderAppraisalFrameworkResponseOptionsAction",
+      "reorderAppraisalFrameworkSectionsAction",
+      "reorderEvidenceSetAction",
+      "reorderManuscriptSectionItemsAction",
+      "reorderManuscriptSectionsAction",
+      "replacePlacedClaimRevisionAction",
+      "replaceSynthesisPreparationSelectionsAction",
+      "resolveBibliographicImportRecordAction",
+      "resolveManuscriptReviewThreadAction",
+      "resolvePdfIntakeAction",
+      "reviseClaimAction",
+      "reviseExtractionValueAction",
+      "reviseSynthesisStatementAction",
+      "saveAppraisalRevisionAction",
+      "setAppraisalFrameworkOverallOptionsAction",
+      "setManuscriptCitationStyleAction",
+      "setPreferredFullTextDocumentAction",
+      "unlinkClaimAction",
+      "unlinkEvidenceAction",
+      "unlinkEvidenceSetAction",
+      "unlinkExtractionEvidenceAction",
+      "unlinkExtractionFieldAction",
+      "unlinkRetrievedRecordFromPaperAction",
+      "unlinkSynthesisStatementAction",
+      "updateAppraisalFrameworkItemAction",
+      "updateAppraisalFrameworkResponseOptionAction",
+      "updateAppraisalFrameworkSectionAction",
+      "updateEvidenceSetMetadataAction",
+      "updateFrameworkDraftMetadataAction",
+      "updateManuscriptProseBlockAction",
+      "updateSynthesisPreparationAction",
+      "uploadBibliographicImportAction",
+      "withdrawClaimAction",
+      "withdrawSynthesisStatementAction"
+    ],
+    "functions": [
+      {
+        "name": "abandonSynthesisPreparationAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "acceptAiExtractionSuggestionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "acceptAiSynthesisSuggestionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "addAppraisalFrameworkItemAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "addAppraisalFrameworkResponseOptionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "addAppraisalFrameworkSectionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "addEvidenceToSetAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "addPaperAction",
+        "signature": "(_previousState: ManualPaperActionState, form: FormData) => Promise<ManualPaperActionState>"
+      },
+      {
+        "name": "appendEvidenceAnnotationAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "appendEvidenceReviewDecisionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "appendEvidenceSetAnnotationAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "appendResearchQuestionAnswerAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "appendSynthesisInterpretationAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "applyResearchQuestionAnswerToSectionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "archiveAppraisalFrameworkAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "archiveEvidenceLabelAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "archiveEvidenceSetAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "archiveExtractionFieldAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "archiveExtractionOptionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "archiveFullTextDocumentAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "archiveFullTextScreeningCriterionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "archiveManuscriptSectionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "archiveScreeningCriterionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "assignEvidenceLabelAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "beginAiExtractionSuggestionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "beginAiSynthesisSuggestionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "beginDoiLookupAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "bulkCreateBibliographicImportRecordsAction",
+        "signature": "(form: FormData) => Promise<never>"
+      },
+      {
+        "name": "cancelAiExtractionBatchAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "clearDoiLookupResolutionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "clearPreferredFullTextDocumentAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "commentManuscriptReviewThreadAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "confirmSameWorkAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "confirmSameWorkAndResolveAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "correctDifferentWorkAndResolveAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createAiExtractionBatchAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createAppraisalFrameworkAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createAppraisalFrameworkVersionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createClaimAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createClaimFromInterpretationAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createClaimRevisionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createDefaultManuscriptAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createEvidenceLabelAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createEvidenceSetAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createExtractionFieldAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createExtractionOptionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createFullTextScreeningCriterionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createManuscriptProseBlockAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createManuscriptSectionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createManuscriptSnapshotAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createPaperFromDoiLookupAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createPaperFromRetrievedRecordAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createProjectAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createResearchQuestionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createRetrievedRecordAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createScreeningCriterionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createSearchRunAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createSearchSourceAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createSearchStrategyAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createSynthesisPreparationAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "createSynthesisStatementAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "decideDifferentWorkAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "executeAiExtractionSuggestionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "executeAiSynthesisSuggestionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "executeDoiLookupAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "expireAiExtractionSuggestionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "expireAiSynthesisSuggestionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "extractDocumentTextAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "finalizeAppraisalFrameworkVersionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "finalizeSynthesisPreparationAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "inspectPdfIntakeAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "linkClaimAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "linkEvidenceAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "linkEvidenceSetAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "linkExtractionEvidenceAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "linkExtractionFieldAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "linkRetrievedRecordToPaperAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "linkSynthesisStatementAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "matchDoiLookupAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "openManuscriptReviewThreadAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "placeClaimRevisionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "previewAiExtractionBatchAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "processAiExtractionBatchAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reactivateClaimAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "recordEvidenceAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "recordExtractedEvidenceAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "recordFullTextRetrievalAttemptAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "recordFullTextScreeningDecisionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "recordScreeningDecisionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "rejectAiExtractionSuggestionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "rejectAiSynthesisSuggestionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "relinkRetrievedRecordAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "removeAppraisalFrameworkItemAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "removeAppraisalFrameworkResponseOptionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "removeAppraisalFrameworkSectionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "removeClaimPlacementAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "removeEvidenceFromSetAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "removeEvidenceLabelAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "removeManuscriptProseBlockAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "renameManuscriptSectionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reopenManuscriptReviewThreadAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reorderAppraisalFrameworkItemsAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reorderAppraisalFrameworkOverallOptionsAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reorderAppraisalFrameworkResponseOptionsAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reorderAppraisalFrameworkSectionsAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reorderEvidenceSetAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reorderManuscriptSectionItemsAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reorderManuscriptSectionsAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "replacePlacedClaimRevisionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "replaceSynthesisPreparationSelectionsAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "resolveBibliographicImportRecordAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "resolveManuscriptReviewThreadAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "resolvePdfIntakeAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reviseClaimAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reviseExtractionValueAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "reviseSynthesisStatementAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "saveAppraisalRevisionAction",
+        "signature": "(_previousState: AppraisalWorksheetActionState, form: FormData) => Promise<AppraisalWorksheetActionState>"
+      },
+      {
+        "name": "setAppraisalFrameworkOverallOptionsAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "setManuscriptCitationStyleAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "setPreferredFullTextDocumentAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "unlinkClaimAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "unlinkEvidenceAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "unlinkEvidenceSetAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "unlinkExtractionEvidenceAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "unlinkExtractionFieldAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "unlinkRetrievedRecordFromPaperAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "unlinkSynthesisStatementAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "updateAppraisalFrameworkItemAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "updateAppraisalFrameworkResponseOptionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "updateAppraisalFrameworkSectionAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "updateEvidenceSetMetadataAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "updateFrameworkDraftMetadataAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "updateManuscriptProseBlockAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "updateSynthesisPreparationAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "uploadBibliographicImportAction",
+        "signature": "(form: FormData) => Promise<never>"
+      },
+      {
+        "name": "withdrawClaimAction",
+        "signature": "(form: FormData) => Promise<void>"
+      },
+      {
+        "name": "withdrawSynthesisStatementAction",
+        "signature": "(form: FormData) => Promise<void>"
+      }
+    ]
+  },
+  "migrationsAndSnapshots": [
+    {
+      "file": "drizzle/0000_initial_slice1.sql",
+      "sha256": "5c6c1d117bb8a508102e120c2de6e9ff4f11506e363bb61382f50d818100002f"
+    },
+    {
+      "file": "drizzle/0001_add_checks.sql",
+      "sha256": "4e29da26b04e4ab724bacf48b8ce533cce907ef8da5bdffac44d0eb6dd342319"
+    },
+    {
+      "file": "drizzle/0002_wide_firebird.sql",
+      "sha256": "b12dc812d5fc7128e44d420bf782c7ae8422dc3f899b70c71ebff13a1ea2981b"
+    },
+    {
+      "file": "drizzle/0003_screening_guardrails.sql",
+      "sha256": "f7de25e8cd4ed297f2a7bbff069dd119190530318e557632b729f78d57e1211d"
+    },
+    {
+      "file": "drizzle/0004_extraction.sql",
+      "sha256": "631a2f078ca3ecf5c44b3c12b21e2199058f86b4c0a92376c2ba6d759ebcdb10"
+    },
+    {
+      "file": "drizzle/0005_synthesis.sql",
+      "sha256": "60d7902ecc24c6a8e5034b601e654e9966fa0e5e5ea025bc04aca329548ede94"
+    },
+    {
+      "file": "drizzle/0006_claim_revisions.sql",
+      "sha256": "877b0ee877db19d3ecc1adeea3f589381687d2bbd2ab0bce1fc2bcfaad332130"
+    },
+    {
+      "file": "drizzle/0007_manuscript_workspace.sql",
+      "sha256": "a07d437a149b23b7f056df8b53214890417dae1241fb213cb07e1eb0679be116"
+    },
+    {
+      "file": "drizzle/0008_manuscript_prose_blocks.sql",
+      "sha256": "b4b986c8961e19ae3485a0db689c44e7d7235509950460cc04638123f3a7873c"
+    },
+    {
+      "file": "drizzle/0009_citation_formatting.sql",
+      "sha256": "6578d4148a80748d7b5c616a5a796d1eeecb0866fcade8483334d30d78d58528"
+    },
+    {
+      "file": "drizzle/0010_review_protocol_search.sql",
+      "sha256": "ff1db1df983741feb5fba8057449455a7dbc6b954071d59e2e5c2e752add289a"
+    },
+    {
+      "file": "drizzle/0011_deduplication_flow.sql",
+      "sha256": "8244985ab6a045b5eca5bf7f86cc0c63f3c6b2de81e678efe0b9a591e6dff2fc"
+    },
+    {
+      "file": "drizzle/0012_full_text_screening.sql",
+      "sha256": "f591d3b0372539273f48a85f020d39a1b420cf3935f6d0cd982b60c4302704b4"
+    },
+    {
+      "file": "drizzle/0013_full_text_retrieval.sql",
+      "sha256": "39962bdb63789cbcb6cd6dab57466737e6e55428f9851a5e1a7bbc7480a0bae4"
+    },
+    {
+      "file": "drizzle/0014_full_text_documents.sql",
+      "sha256": "d1955d7878c0dba8084cf63ab9fabe44d534b75c50b3de88eb33d54e461b1358"
+    },
+    {
+      "file": "drizzle/0015_document_text_extraction.sql",
+      "sha256": "633c4cd1ee49a31907bb282ba1a62ec85f904f8fbedf1a25cba261c60334d41f"
+    },
+    {
+      "file": "drizzle/0016_evidence_review_curation.sql",
+      "sha256": "e148b81938ee72c584dda1e48e1d70a910bb81abb5cb92a91dae414480b8e9a1"
+    },
+    {
+      "file": "drizzle/0017_evidence_sets.sql",
+      "sha256": "2cb187634e5fb1e4b6dc5ec1e47352a0d28995d564b4abfa916d2aa307a4eb39"
+    },
+    {
+      "file": "drizzle/0018_synthesis_preparations.sql",
+      "sha256": "0b812ff350ba868597dcf5b91c7e0459a5a36b5c489ace0bc47898a4d6d493bd"
+    },
+    {
+      "file": "drizzle/0019_synthesis_interpretation.sql",
+      "sha256": "21ba1bb602c52ff87ba0c42a75cf9782482984d26341be3c54222bf492afbf2b"
+    },
+    {
+      "file": "drizzle/0020_research_question_traceability.sql",
+      "sha256": "9cef0c54ee16c5ac0c7b814988c7f1fe96cbfaede500969c3d030c97b1528927"
+    },
+    {
+      "file": "drizzle/0021_research_question_answers.sql",
+      "sha256": "bac7fbfb1c4adb188543486f1eba1642bd179420cfad64bd2de89e19e6357e54"
+    },
+    {
+      "file": "drizzle/0022_manuscript_editorial_review.sql",
+      "sha256": "16e6701eb46dfa93376ca48ce94cd1ecf38666687007ce161858ce6be9cef8b7"
+    },
+    {
+      "file": "drizzle/0023_manuscript_prose_revisions.sql",
+      "sha256": "91ea296abfdad672909ce68307cd35afbafd32dfea066c349d9987122001e3e4"
+    },
+    {
+      "file": "drizzle/0024_manuscript_snapshots.sql",
+      "sha256": "9a36e08551c7e5b120d7f7b74bd5c3342c1ae9a61f59e4a5e44b9fea885a3ff1"
+    },
+    {
+      "file": "drizzle/0025_ai_extraction_suggestions.sql",
+      "sha256": "a4dbf8840b86473975d6c031ccf3f40d62d9e21771492529d8e414875e47f864"
+    },
+    {
+      "file": "drizzle/0026_bibliographic_intake.sql",
+      "sha256": "e1bab29a20b719a1706d6763df304e85374f56e57a53e485f1c28a315c03a6d5"
+    },
+    {
+      "file": "drizzle/0027_pdf_intake_metadata.sql",
+      "sha256": "cfca3973a962d3a1da00b08f8ee5937cb2c1081529e06de7a0ba13622bf460d9"
+    },
+    {
+      "file": "drizzle/0028_ai_synthesis_suggestions.sql",
+      "sha256": "a20d977e362912d3182a1242c6d1af746cb74c5bcfac0715ceb4222b27a536c7"
+    },
+    {
+      "file": "drizzle/0029_doi_metadata_lookup.sql",
+      "sha256": "e17c21d6773bf847b94f185a0bbea36336098b04ae039d33735d5d9bbac265e5"
+    },
+    {
+      "file": "drizzle/0030_ai_extraction_batches.sql",
+      "sha256": "4142dc84e58a67ecbbed14b9f93ccea8bd21e3f1d0dcdd4c5b1da0e7d0f9d218"
+    },
+    {
+      "file": "drizzle/0031_critical_appraisal.sql",
+      "sha256": "d168b61c07453a6a032aa974bb8d3ec28ed5109b21e183e417b25ae1821a2e44"
+    },
+    {
+      "file": "drizzle/0032_hot_path_hardening.sql",
+      "sha256": "7fb9879e6ffe22e50a63deffff2b0848abb26fa2f6ac4baafd740eae8e5854d3"
+    },
+    {
+      "file": "drizzle/meta/0000_snapshot.json",
+      "sha256": "9d7522f2d7f3bcca02ff062f558ac4292e61f04358265f4525c373329a522bfb"
+    },
+    {
+      "file": "drizzle/meta/0001_snapshot.json",
+      "sha256": "acb99b569dba8d48baf44bef9a43f1c855e839913bed2ead3efd55bef8e3f2ea"
+    },
+    {
+      "file": "drizzle/meta/0002_snapshot.json",
+      "sha256": "d4a2d02644c738d6790c10878e63936a25649ccd1d1282b55088ba17f83378a4"
+    },
+    {
+      "file": "drizzle/meta/0003_snapshot.json",
+      "sha256": "a05015732b544e213453e2e69a84ca2b323d5eb02634e76938050c303e32aba1"
+    },
+    {
+      "file": "drizzle/meta/0004_snapshot.json",
+      "sha256": "37b2247c8bf798f6d34e3101ffd0f97292eb1f38b9eb0ee0a614efbd2612c5e5"
+    },
+    {
+      "file": "drizzle/meta/0005_snapshot.json",
+      "sha256": "47ebfe01b945fe2aaa10acf4fbd3cd9ba7a56ec8973346f36c051fd89e322d5d"
+    },
+    {
+      "file": "drizzle/meta/0006_snapshot.json",
+      "sha256": "09ee9da6a21188b3d4e43c03efeb960f8e8724dbc1ca9d43c489f88ca73791af"
+    },
+    {
+      "file": "drizzle/meta/0007_snapshot.json",
+      "sha256": "a3754e313e9783799bb13043732f0ee9ee17be4ebaa631650eda0be309fa8f88"
+    },
+    {
+      "file": "drizzle/meta/0008_snapshot.json",
+      "sha256": "e1e27099ea600ada031da38e4b02d9695df49f53410e472eb509e0aeb75ea036"
+    },
+    {
+      "file": "drizzle/meta/0009_snapshot.json",
+      "sha256": "d1f02c6bab9ef0c238b8e0087f0b49db8d40ae7b9a807b04fce821cbd5f743ff"
+    },
+    {
+      "file": "drizzle/meta/0010_snapshot.json",
+      "sha256": "1961c854f52cc219cb2ed0aa94d068a1e6511dd474e4c5cc8c5cd0dc78000304"
+    },
+    {
+      "file": "drizzle/meta/0011_snapshot.json",
+      "sha256": "db1140cef5183fc8231fc29f24575a6f64457da3b07237b27531601bbc710fc5"
+    },
+    {
+      "file": "drizzle/meta/0014_snapshot.json",
+      "sha256": "eb90c7f3c5e6c3cb0188747275e347a39a0e73fba11e3998674d112864be8474"
+    },
+    {
+      "file": "drizzle/meta/0015_snapshot.json",
+      "sha256": "740364fdd3e66e74f0a71836f06b65c069843b40126876f143d825503fb0b35f"
+    },
+    {
+      "file": "drizzle/meta/0016_snapshot.json",
+      "sha256": "e57a3b73d5a50d90800967941d0ffacfa6b80021b76af97dc1edec463e8e18ce"
+    },
+    {
+      "file": "drizzle/meta/0017_snapshot.json",
+      "sha256": "a4ac6f772323f8f3a0c6021fd034cdba8ea6f0246e1a421c69a059730a8f1947"
+    },
+    {
+      "file": "drizzle/meta/0018_snapshot.json",
+      "sha256": "613dfbdd675a32fb99a693c316cc6f406d002044039daa549fdd50cd1540780d"
+    },
+    {
+      "file": "drizzle/meta/0019_snapshot.json",
+      "sha256": "7b13b3d48d1676638a7ddddbbd8e97fd8cbc86bab8f7359f89ceb22ba74403fc"
+    },
+    {
+      "file": "drizzle/meta/0020_snapshot.json",
+      "sha256": "f9d5dbfb40a0c40d88c0c62ead55e5804127711f346bd07d4636ca4125989f9a"
+    },
+    {
+      "file": "drizzle/meta/0021_snapshot.json",
+      "sha256": "873cd8a962ebd32feda9194b93e9878bac8261e17bcd9d157060bfce01787ee9"
+    },
+    {
+      "file": "drizzle/meta/0023_snapshot.json",
+      "sha256": "1b2825af63641252534fbca75e58e4d8bd0957b6c44df5f260790e2866cd1741"
+    },
+    {
+      "file": "drizzle/meta/0025_snapshot.json",
+      "sha256": "c4b031f4a66cf1cd89922e175f3cf35f6161c24701e7bb8f4facecad99124ce0"
+    },
+    {
+      "file": "drizzle/meta/0026_snapshot.json",
+      "sha256": "7ae80c133642d6eca84e700ca2a84e8f1e9746ddaedf280684f4b04328ff33d1"
+    },
+    {
+      "file": "drizzle/meta/0027_snapshot.json",
+      "sha256": "73f867d7e709383d2dd56162407f4ff52f066fb77fba453b0c4f02955176d5e2"
+    },
+    {
+      "file": "drizzle/meta/0028_snapshot.json",
+      "sha256": "2efc6176d96ca6740d4403e817aa8185552b0bfd1687c1b567bb2b48a12166cc"
+    },
+    {
+      "file": "drizzle/meta/0029_snapshot.json",
+      "sha256": "528514eb741419c640e1efdfdb896669e2c61125bc5f0fd055318a46a22ce25e"
+    },
+    {
+      "file": "drizzle/meta/0030_snapshot.json",
+      "sha256": "053bbf7ce13e8fe2fc4f1ed81747e236e9543b3044a8ba4aaab9a9257ceeb11c"
+    },
+    {
+      "file": "drizzle/meta/0031_snapshot.json",
+      "sha256": "402ea80321ce29e7ae5abc5c2b44f883285477fe4e8db39f6a85a6b82f8f3a59"
+    },
+    {
+      "file": "drizzle/meta/0032_snapshot.json",
+      "sha256": "8976b9ddd3b9661166f665fe51df3f49159da14022b33ec115a2407e3f4927c5"
+    }
+  ],
+  "configHashes": [
+    {
+      "file": "package.json",
+      "sha256": "3f18dd43ea88c979674826e8b0a6cc329e7d5713c4fbe91832ea328345b2cce1"
+    },
+    {
+      "file": "package-lock.json",
+      "sha256": "2b8e48a8275014cbc81a07fbe2fbb1091ecf7ac6773c36c5610d4a644cbb2a42"
+    },
+    {
+      "file": "tsconfig.json",
+      "sha256": "1e0d158cfe420e97192e850601586afbb5659727617764aa2f1afb52e52c8642"
+    },
+    {
+      "file": "vitest.config.ts",
+      "sha256": "e40d3ad9ca5d4c241c9ecc962ef03919725ad50a9e0a9ebfc79510cf908b9da1"
+    },
+    {
+      "file": "drizzle.config.ts",
+      "sha256": "3e446f337375b7e985a97101ad8b81ce318833fb1908b425da38f685c80189d6"
+    },
+    {
+      "file": "next.config.ts",
+      "sha256": "ff05dd29bce8c74f707681f3c5d62faf5ff945842eabf094d3678d69d756194a"
+    }
+  ]
+}
