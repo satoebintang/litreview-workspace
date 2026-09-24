@@ -1,1982 +1,430 @@
-"use server";
+'use server';
 
-import { randomUUID } from "node:crypto";
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import type { AppraisalWorksheetActionState } from "@/app/appraisal-form-state";
-import { DomainError } from "@/domain/errors";
-import { parseAiReasoningEffort } from "@/application/ai/reasoning-effort";
-import type { ManualPaperActionState, ManualPaperDraft, ManualPaperReviewCandidate } from "@/app/manual-paper-form-state";
-import type { FullTextRetrievalMethod, ConvergenceState, LimitationCategory } from "@/domain/types";
-import { aiExtractionBatchServices, aiExtractionServices, aiSynthesisServices, doiLookupServices, doiResolutionServices, reviewServices } from "./server";
+import * as actionsAiExtraction from "./actions/ai-extraction";
+import * as actionsAiSynthesis from "./actions/ai-synthesis";
+import * as actionsAppraisal from "./actions/appraisal";
+import * as actionsBibliographicIntake from "./actions/bibliographic-intake";
+import * as actionsClaims from "./actions/claims";
+import * as actionsDocumentsEvidence from "./actions/documents-evidence";
+import * as actionsDoiIntake from "./actions/doi-intake";
+import * as actionsEvidenceSets from "./actions/evidence-sets";
+import * as actionsExtraction from "./actions/extraction";
+import * as actionsManuscript from "./actions/manuscript";
+import * as actionsPdfIntake from "./actions/pdf-intake";
+import * as actionsProjectsPapers from "./actions/projects-papers";
+import * as actionsProtocolSearch from "./actions/protocol-search";
+import * as actionsResearchQuestion from "./actions/research-question";
+import * as actionsScreening from "./actions/screening";
+import * as actionsSynthesis from "./actions/synthesis";
 
-function text(form: FormData, key: string) {
-  const value = form.get(key);
-  return typeof value === "string" ? value.trim() : "";
+export async function beginAiExtractionSuggestionAction(  form: Parameters<typeof actionsAiExtraction.beginAiExtractionSuggestionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiExtraction.beginAiExtractionSuggestionAction>>> {
+  return actionsAiExtraction.beginAiExtractionSuggestionAction(form);
 }
-
-function expectedDraftRevisionFromForm(form: FormData): number {
-  const value = text(form, "expectedDraftRevision");
-  if (!/^(0|[1-9]\d*)$/.test(value)) {
-    throw new DomainError("VALIDATION_ERROR", "The current framework draft revision is required. Reload the definition before editing.");
-  }
-  const revision = Number(value);
-  if (!Number.isSafeInteger(revision)) {
-    throw new DomainError("VALIDATION_ERROR", "The current framework draft revision is invalid. Reload the definition before editing.");
-  }
-  return revision;
-}
-
-function verbatimText(form: FormData, key: string) {
-  const value = form.get(key);
-  return typeof value === "string" ? value : "";
-}
-
-function optional(form: FormData, key: string) {
-  const value = text(form, key);
-  return value || undefined;
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof DomainError ? error.message : "Something went wrong. Please try again.";
-}
-
-function fail(path: string, error: unknown): never {
-  redirect(`${path}${path.includes("?") ? "&" : "?"}error=${encodeURIComponent(errorMessage(error))}`);
-}
-
-export async function beginDoiLookupAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  if (!doiLookupServices) fail(`/projects/${projectId}/papers/doi-intake`, new DomainError("VALIDATION_ERROR", "DOI lookup is not configured"));
-  let requestId = "";
-  try {
-    const began = await doiLookupServices.beginDoiLookup({
-      projectId,
-      submittedDoi: text(form, "submittedDoi") || text(form, "doi"),
-      idempotencyKey: text(form, "idempotencyKey") || randomUUID(),
-    });
-    requestId = String(began.request.id);
-  } catch (error) {
-    fail(`/projects/${projectId}/papers/doi-intake`, error);
-  }
-  redirect(`/projects/${projectId}/papers/doi-intake/${requestId}`);
-}
-
-export async function executeDoiLookupAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const requestId = text(form, "requestId");
-  if (!doiLookupServices) fail(`/projects/${projectId}/papers/doi-intake`, new DomainError("VALIDATION_ERROR", "DOI lookup is not configured"));
-  try { await doiLookupServices.executeDoiLookup(requestId, projectId); }
-  catch (error) { fail(`/projects/${projectId}/papers/doi-intake/${requestId}`, error); }
-  redirect(`/projects/${projectId}/papers/doi-intake/${requestId}`);
-}
-
-function doiResolutionCreation(form: FormData) {
-  const rawAuthors = text(form, "authors");
-  return {
-    title: text(form, "title"),
-    authors: rawAuthors ? rawAuthors.split(",").map((value) => value.trim()).filter(Boolean) : [],
-    publicationYear: text(form, "publicationYear") ? Number(text(form, "publicationYear")) : null,
-    venue: text(form, "venue") || null,
-    doi: text(form, "doi") || null,
-    abstract: null,
-    bibliographicNote: text(form, "bibliographicNote") || null,
-  };
-}
-
-export async function createPaperFromDoiLookupAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const requestId = text(form, "requestId");
-  const resultId = text(form, "resultId");
-  try {
-    await doiResolutionServices.resolveResolution(projectId, requestId, {
-      action: "created_paper",
-      resultId,
-      expectedPreviousResolutionId: optional(form, "expectedPreviousResolutionId") ?? null,
-      previewFingerprint: text(form, "previewFingerprint"),
-      acknowledgedCandidateIds: form.getAll("candidatePaperIds").filter((value): value is string => typeof value === "string" && value.trim().length > 0),
-      creation: doiResolutionCreation(form),
-      note: optional(form, "note") ?? null,
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/papers/doi-intake/${requestId}`, error);
-  }
-  redirect(`/projects/${projectId}/papers/doi-intake/${requestId}?saved=created`);
-}
-
-export async function matchDoiLookupAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const requestId = text(form, "requestId");
-  const resultId = text(form, "resultId");
-  try {
-    await doiResolutionServices.resolveResolution(projectId, requestId, {
-      action: "matched_paper",
-      resultId,
-      paperId: text(form, "paperId"),
-      expectedPreviousResolutionId: optional(form, "expectedPreviousResolutionId") ?? null,
-      previewFingerprint: optional(form, "previewFingerprint") ?? null,
-      note: optional(form, "note") ?? null,
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/papers/doi-intake/${requestId}`, error);
-  }
-  redirect(`/projects/${projectId}/papers/doi-intake/${requestId}?saved=matched`);
-}
-
-export async function clearDoiLookupResolutionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const requestId = text(form, "requestId");
-  try {
-    await doiResolutionServices.resolveResolution(projectId, requestId, {
-      action: "cleared",
-      resultId: text(form, "resultId"),
-      expectedPreviousResolutionId: optional(form, "expectedPreviousResolutionId") ?? null,
-      note: optional(form, "note") ?? null,
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/papers/doi-intake/${requestId}`, error);
-  }
-  redirect(`/projects/${projectId}/papers/doi-intake/${requestId}?saved=cleared`);
-}
-
-export async function beginAiExtractionSuggestionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  let began: { requestId: string };
-  try {
-    began = await aiExtractionServices.beginAiExtractionSuggestion({
-      projectId,
-      paperId,
-      fieldId: text(form, "fieldId"),
-      fullTextDocumentId: text(form, "fullTextDocumentId"),
-      documentTextExtractionId: text(form, "documentTextExtractionId"),
-      pageNumbers: form.getAll("pageNumbers").map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0),
-      idempotencyKey: text(form, "idempotencyKey") || randomUUID(),
-      model: optional(form, "model"),
-      reasoningEffort: parseAiReasoningEffort(optional(form, "reasoningEffort")),
-      externalTransmissionAcknowledged: form.get("externalTransmissionAcknowledged") === "on",
-      disclosureVersion: text(form, "disclosureVersion") || "openai-extraction-transmission-v1",
-    }) as { requestId: string };
-  } catch (error) {
-    fail(`/projects/${projectId}/extraction/${paperId}`, error);
-  }
-  redirect(`/projects/${projectId}/extraction/${paperId}/suggestions/${began.requestId}`);
+export async function executeAiExtractionSuggestionAction(  form: Parameters<typeof actionsAiExtraction.executeAiExtractionSuggestionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiExtraction.executeAiExtractionSuggestionAction>>> {
+  return actionsAiExtraction.executeAiExtractionSuggestionAction(form);
 }
-
-export async function executeAiExtractionSuggestionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  const requestId = text(form, "requestId");
-  try { await aiExtractionServices.executeAiExtractionSuggestion(requestId, projectId); }
-  catch (error) { fail(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`, error); }
-  redirect(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`);
-}
-
-export async function expireAiExtractionSuggestionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  const requestId = text(form, "requestId");
-  try { await aiExtractionServices.expireAiExtractionSuggestion(requestId, projectId); }
-  catch (error) { fail(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`, error); }
-  redirect(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`);
-}
-
-export async function rejectAiExtractionSuggestionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  const requestId = text(form, "requestId");
-  try { await aiExtractionServices.rejectAiExtractionSuggestion(projectId, requestId); }
-  catch (error) { fail(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`, error); }
-  redirect(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}?saved=rejected`);
-}
-
-export async function acceptAiExtractionSuggestionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  const requestId = text(form, "requestId");
-  const mode = text(form, "mode") === "edit_and_accept" ? "edit_and_accept" : "accept";
-  const state = text(form, "state") as "present" | "not_reported" | "not_applicable" | "cleared" | "";
-  const kind = text(form, "valueKind");
-  const rawValue = form.get("value");
-  let value: string | boolean | undefined;
-  if (state === "present" && typeof rawValue === "string" && rawValue !== "") {
-    // Keep decimal input as text through the server boundary so numeric(30,10)
-    // validation never loses precision through a JavaScript Number conversion.
-    value = kind === "boolean"
-      ? rawValue === "true" ? true : rawValue === "false" ? false : rawValue
-      : rawValue;
-  }
-  let reusedEvidenceByGroundingId: Record<string, string> | undefined;
-  const reused = optional(form, "reusedEvidenceByGroundingId");
-  if (reused) {
-    try { reusedEvidenceByGroundingId = JSON.parse(reused) as Record<string, string>; } catch { reusedEvidenceByGroundingId = undefined; }
-  }
-  try {
-    await aiExtractionServices.acceptAiExtractionSuggestion({
-      projectId,
-      requestId,
-      mode,
-      expectedCurrentRevisionId: optional(form, "expectedCurrentRevisionId") ?? null,
-      state: state || undefined,
-      value,
-      researcherNote: optional(form, "researcherNote") ?? null,
-      groundingIds: form.getAll("groundingIds").filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0),
-      reusedEvidenceByGroundingId,
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}`, error);
-  }
-  redirect(`/projects/${projectId}/extraction/${paperId}/suggestions/${requestId}?saved=accepted`);
-}
-
-function batchItems(form: FormData) {
-  const raw = verbatimText(form, "itemsJson");
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) throw new Error("itemsJson must be an array");
-    return parsed.map((item) => {
-      if (!item || typeof item !== "object") throw new Error("Every batch item must be an object");
-      const value = item as Record<string, unknown>;
-      return {
-        paperId: String(value.paperId ?? ""),
-        fieldId: String(value.fieldId ?? ""),
-        fullTextDocumentId: value.fullTextDocumentId == null ? undefined : String(value.fullTextDocumentId),
-        documentTextExtractionId: value.documentTextExtractionId == null ? undefined : String(value.documentTextExtractionId),
-        idempotencyKey: value.idempotencyKey == null ? undefined : String(value.idempotencyKey),
-      };
-    });
-  } catch (error) {
-    throw new DomainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Batch item JSON is invalid");
-  }
-}
-
-export async function previewAiExtractionBatchAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  let preview: Awaited<ReturnType<typeof aiExtractionBatchServices.previewAiExtractionBatch>>;
-  try {
-    preview = await aiExtractionBatchServices.previewAiExtractionBatch({
-      projectId,
-      items: batchItems(form),
-      model: optional(form, "model"),
-      reasoningEffort: "low",
-      externalTransmissionAcknowledged: form.get("externalTransmissionAcknowledged") === "on",
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/extraction/batches/new`, error);
-  }
-  redirect(`/projects/${projectId}/extraction/batches/new?previewHash=${encodeURIComponent(preview.confirmationHash)}&cells=${preview.counts.cells}&executable=${preview.counts.executable}&reusable=${preview.counts.reusable}`);
-}
-
-export async function createAiExtractionBatchAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  let batch: Awaited<ReturnType<typeof aiExtractionBatchServices.createAiExtractionBatch>>;
-  try {
-    const confirmationHash = optional(form, "confirmationHash");
-    if (!confirmationHash) throw new DomainError("VALIDATION_ERROR", "Review the batch preview before creating it");
-    const preview = await aiExtractionBatchServices.previewAiExtractionBatch({
-      projectId,
-      items: batchItems(form),
-      model: optional(form, "model"),
-      reasoningEffort: "low",
-      externalTransmissionAcknowledged: form.get("externalTransmissionAcknowledged") === "on",
-    });
-    batch = await aiExtractionBatchServices.createAiExtractionBatch(preview, confirmationHash);
-  } catch (error) {
-    fail(`/projects/${projectId}/extraction/batches/new`, error);
-  }
-  redirect(`/projects/${projectId}/extraction/batches/${batch.batchId}`);
-}
-
-export async function processAiExtractionBatchAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const batchId = text(form, "batchId");
-  try { await aiExtractionBatchServices.executeAiExtractionBatch(projectId, batchId); }
-  catch (error) { fail(`/projects/${projectId}/extraction/batches/${batchId}`, error); }
-  redirect(`/projects/${projectId}/extraction/batches/${batchId}`);
+export async function expireAiExtractionSuggestionAction(  form: Parameters<typeof actionsAiExtraction.expireAiExtractionSuggestionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiExtraction.expireAiExtractionSuggestionAction>>> {
+  return actionsAiExtraction.expireAiExtractionSuggestionAction(form);
 }
-
-export async function cancelAiExtractionBatchAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const batchId = text(form, "batchId");
-  try { await aiExtractionBatchServices.cancelAiExtractionBatch(batchId, projectId); }
-  catch (error) { fail(`/projects/${projectId}/extraction/batches/${batchId}`, error); }
-  redirect(`/projects/${projectId}/extraction/batches/${batchId}`);
-}
-
-export async function beginAiSynthesisSuggestionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const preparationId = text(form, "preparationId");
-  try {
-    await aiSynthesisServices.beginAiSynthesisSuggestion({
-      projectId,
-      preparationId,
-      idempotencyKey: text(form, "idempotencyKey") || randomUUID(),
-      model: optional(form, "model"),
-      reasoningEffort: parseAiReasoningEffort(optional(form, "reasoningEffort")),
-      externalTransmissionAcknowledged: form.get("externalTransmissionAcknowledged") === "on",
-      disclosureVersion: text(form, "disclosureVersion") || "openai-synthesis-transmission-v1",
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
-  }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=ai-requested`);
+export async function rejectAiExtractionSuggestionAction(  form: Parameters<typeof actionsAiExtraction.rejectAiExtractionSuggestionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiExtraction.rejectAiExtractionSuggestionAction>>> {
+  return actionsAiExtraction.rejectAiExtractionSuggestionAction(form);
 }
-
-export async function executeAiSynthesisSuggestionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const preparationId = text(form, "preparationId");
-  const requestId = text(form, "requestId");
-  try { await aiSynthesisServices.executeAiSynthesisSuggestion(requestId, projectId); }
-  catch (error) { fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error); }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}`);
+export async function acceptAiExtractionSuggestionAction(  form: Parameters<typeof actionsAiExtraction.acceptAiExtractionSuggestionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiExtraction.acceptAiExtractionSuggestionAction>>> {
+  return actionsAiExtraction.acceptAiExtractionSuggestionAction(form);
 }
-
-export async function expireAiSynthesisSuggestionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const preparationId = text(form, "preparationId");
-  const requestId = text(form, "requestId");
-  try { await aiSynthesisServices.expireAiSynthesisSuggestion(requestId, projectId); }
-  catch (error) { fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error); }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}`);
+export async function previewAiExtractionBatchAction(  form: Parameters<typeof actionsAiExtraction.previewAiExtractionBatchAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiExtraction.previewAiExtractionBatchAction>>> {
+  return actionsAiExtraction.previewAiExtractionBatchAction(form);
 }
-
-export async function rejectAiSynthesisSuggestionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const preparationId = text(form, "preparationId");
-  const requestId = text(form, "requestId");
-  try { await aiSynthesisServices.rejectAiSynthesisSuggestion(projectId, requestId); }
-  catch (error) { fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error); }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=ai-rejected`);
+export async function createAiExtractionBatchAction(  form: Parameters<typeof actionsAiExtraction.createAiExtractionBatchAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiExtraction.createAiExtractionBatchAction>>> {
+  return actionsAiExtraction.createAiExtractionBatchAction(form);
 }
-
-export async function acceptAiSynthesisSuggestionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const preparationId = text(form, "preparationId");
-  const requestId = text(form, "requestId");
-  const mode = text(form, "mode") === "edit_and_accept" ? "edit_and_accept" : "accept";
-  try {
-    await aiSynthesisServices.acceptAiSynthesisSuggestion({
-      projectId,
-      requestId,
-      mode,
-      title: optional(form, "title") ?? null,
-      statementText: verbatimText(form, "statementText"),
-      researcherNote: optional(form, "researcherNote") ?? null,
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
-  }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=ai-accepted`);
+export async function processAiExtractionBatchAction(  form: Parameters<typeof actionsAiExtraction.processAiExtractionBatchAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiExtraction.processAiExtractionBatchAction>>> {
+  return actionsAiExtraction.processAiExtractionBatchAction(form);
 }
-
-export async function createProjectAction(form: FormData) {
-  let project;
-  try {
-    project = await reviewServices.createProject({
-      title: text(form, "title"),
-      description: optional(form, "description"),
-    });
-  } catch (error) {
-    fail("/", error);
-  }
-  redirect(`/projects/${project.id}`);
+export async function cancelAiExtractionBatchAction(  form: Parameters<typeof actionsAiExtraction.cancelAiExtractionBatchAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiExtraction.cancelAiExtractionBatchAction>>> {
+  return actionsAiExtraction.cancelAiExtractionBatchAction(form);
 }
-
-function manualPaperDraftFrom(form: FormData): ManualPaperDraft {
-  return {
-    title: verbatimText(form, "title"),
-    authors: verbatimText(form, "authors"),
-    publicationYear: verbatimText(form, "publicationYear"),
-    venue: verbatimText(form, "venue"),
-    doi: verbatimText(form, "doi"),
-    abstract: verbatimText(form, "abstract"),
-    bibliographicNote: verbatimText(form, "bibliographicNote"),
-  };
+export async function beginAiSynthesisSuggestionAction(  form: Parameters<typeof actionsAiSynthesis.beginAiSynthesisSuggestionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiSynthesis.beginAiSynthesisSuggestionAction>>> {
+  return actionsAiSynthesis.beginAiSynthesisSuggestionAction(form);
 }
-
-function manualPaperInputFrom(draft: ManualPaperDraft) {
-  const publicationYear = draft.publicationYear.trim();
-  const authors = draft.authors.split(",").map((author) => author.trim()).filter(Boolean);
-  return {
-    title: draft.title,
-    authors,
-    publicationYear: publicationYear ? Number(publicationYear) : undefined,
-    venue: draft.venue.trim() || undefined,
-    doi: draft.doi.trim() || undefined,
-    abstract: draft.abstract.trim() ? draft.abstract : undefined,
-    bibliographicNote: draft.bibliographicNote.trim() ? draft.bibliographicNote : undefined,
-  };
+export async function executeAiSynthesisSuggestionAction(  form: Parameters<typeof actionsAiSynthesis.executeAiSynthesisSuggestionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiSynthesis.executeAiSynthesisSuggestionAction>>> {
+  return actionsAiSynthesis.executeAiSynthesisSuggestionAction(form);
 }
-
-function manualPaperCandidateSummaries(candidates: Awaited<ReturnType<typeof reviewServices.findManualPaperCandidates>>): ManualPaperReviewCandidate[] {
-  return candidates.map((candidate) => ({
-    id: candidate.id,
-    title: candidate.title,
-    authors: candidate.authors,
-    publicationYear: candidate.publicationYear,
-    venue: candidate.venue,
-    doi: candidate.doi,
-    candidateReason: candidate.candidateReason,
-  }));
+export async function expireAiSynthesisSuggestionAction(  form: Parameters<typeof actionsAiSynthesis.expireAiSynthesisSuggestionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiSynthesis.expireAiSynthesisSuggestionAction>>> {
+  return actionsAiSynthesis.expireAiSynthesisSuggestionAction(form);
 }
-
-function manualPaperActionResult(
-  status: ManualPaperActionState["status"],
-  draft: ManualPaperDraft,
-  candidates: ManualPaperReviewCandidate[] = [],
-  error: string | null = null,
-): ManualPaperActionState {
-  return { version: randomUUID(), status, draft, candidates, error };
+export async function rejectAiSynthesisSuggestionAction(  form: Parameters<typeof actionsAiSynthesis.rejectAiSynthesisSuggestionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiSynthesis.rejectAiSynthesisSuggestionAction>>> {
+  return actionsAiSynthesis.rejectAiSynthesisSuggestionAction(form);
 }
-
-export async function addPaperAction(_previousState: ManualPaperActionState, form: FormData): Promise<ManualPaperActionState> {
-  const projectId = text(form, "projectId");
-  const draft = manualPaperDraftFrom(form);
-  const intent = text(form, "manualPaperIntent");
-  if (!projectId) return manualPaperActionResult("error", draft, [], "Select a project before adding a Paper.");
-  if (intent !== "review" && intent !== "confirm") return manualPaperActionResult("error", draft, [], "Review possible duplicates before adding a Paper.");
-
-  if (intent === "review") {
-    try {
-      const candidates = await reviewServices.findManualPaperCandidates(projectId, manualPaperInputFrom(draft));
-      return manualPaperActionResult("reviewed", draft, manualPaperCandidateSummaries(candidates));
-    } catch (error) {
-      return manualPaperActionResult("error", draft, [], errorMessage(error));
-    }
-  }
-
-  try {
-    const candidatePaperIds = form.getAll("candidatePaperIds").filter((value): value is string => typeof value === "string" && value.length > 0);
-    await reviewServices.addPaper(projectId, {
-      ...manualPaperInputFrom(draft),
-      distinctPaperAcknowledged: form.get("distinctPaperAcknowledged") === "on",
-      candidatePaperIds,
-    });
-  } catch (error) {
-    if (error instanceof DomainError && error.code === "DUPLICATE_REVIEW_REQUIRED") {
-      try {
-        const candidates = await reviewServices.findManualPaperCandidates(projectId, manualPaperInputFrom(draft));
-        return manualPaperActionResult("reviewed", draft, manualPaperCandidateSummaries(candidates), "The candidate list changed or still needs your acknowledgement. Review the current candidates before confirming.");
-      } catch (reviewError) {
-        return manualPaperActionResult("error", draft, [], errorMessage(reviewError));
-      }
-    }
-    return manualPaperActionResult("error", draft, [], errorMessage(error));
-  }
-
-  redirect(`/projects/${projectId}/papers`);
+export async function acceptAiSynthesisSuggestionAction(  form: Parameters<typeof actionsAiSynthesis.acceptAiSynthesisSuggestionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAiSynthesis.acceptAiSynthesisSuggestionAction>>> {
+  return actionsAiSynthesis.acceptAiSynthesisSuggestionAction(form);
 }
-
-export async function inspectPdfIntakeAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const intakeId = text(form, "intakeId");
-  try {
-    await reviewServices.ensureInitialPdfMetadataResult(projectId, intakeId);
-  } catch (error) {
-    fail(`/projects/${projectId}/papers/pdf-intake/${intakeId}`, error);
-  }
-  redirect(`/projects/${projectId}/papers/pdf-intake/${intakeId}?saved=inspected`);
+export async function createAppraisalFrameworkAction(  form: Parameters<typeof actionsAppraisal.createAppraisalFrameworkAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.createAppraisalFrameworkAction>>> {
+  return actionsAppraisal.createAppraisalFrameworkAction(form);
 }
-
-export async function resolvePdfIntakeAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const intakeId = text(form, "intakeId");
-  const kind = text(form, "resolutionKind") === "match_paper" ? "match_paper" as const : "create_paper" as const;
-  const authors = form.getAll("authors")
-    .flatMap((value) => String(value).split(/\r?\n/))
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const payload = {
-    title: text(form, "title"),
-    authors,
-    publicationYear: text(form, "publicationYear") ? Number(text(form, "publicationYear")) : null,
-    venue: optional(form, "venue") ?? null,
-    doi: optional(form, "doi") ?? null,
-    abstract: form.get("abstract") == null ? null : verbatimText(form, "abstract") || null,
-    bibliographicNote: optional(form, "bibliographicNote") ?? null,
-  };
-  let result;
-  try {
-    const preview = await reviewServices.previewPdfIntakeResolution(projectId, intakeId, kind === "create_paper"
-      ? { kind, payload, distinctPaperAcknowledged: form.get("distinctPaperAcknowledged") === "on" }
-      : { kind, paperId: text(form, "paperId") });
-    result = await reviewServices.resolvePdfIntake(projectId, intakeId, {
-      kind,
-      paperId: kind === "match_paper" ? text(form, "paperId") : null,
-      payload: kind === "create_paper" ? payload : undefined,
-      previewFingerprint: preview.fingerprint,
-      distinctPaperAcknowledged: form.get("distinctPaperAcknowledged") === "on",
-      acknowledgedCandidateIds: preview.candidates.map((candidate) => candidate.id),
-      metadataResultId: preview.metadataResultId,
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/papers/pdf-intake/${intakeId}`, error);
-  }
-  redirect(`/projects/${projectId}/papers/${result.paperId}/documents/${result.fullTextDocumentId}?saved=pdf-intake`);
+export async function updateFrameworkDraftMetadataAction(  form: Parameters<typeof actionsAppraisal.updateFrameworkDraftMetadataAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.updateFrameworkDraftMetadataAction>>> {
+  return actionsAppraisal.updateFrameworkDraftMetadataAction(form);
 }
-
-export async function recordEvidenceAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try {
-    await reviewServices.recordEvidence(projectId, {
-      paperId: text(form, "paperId"),
-      fullTextDocumentId: optional(form, "fullTextDocumentId") || null,
-      sourceText: verbatimText(form, "sourceText"),
-      pageNumber: Number(text(form, "pageNumber")),
-      note: optional(form, "note"),
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/evidence`, error);
-  }
-  redirect(`/projects/${projectId}/evidence?saved=evidence`);
+export async function addAppraisalFrameworkSectionAction(  form: Parameters<typeof actionsAppraisal.addAppraisalFrameworkSectionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.addAppraisalFrameworkSectionAction>>> {
+  return actionsAppraisal.addAppraisalFrameworkSectionAction(form);
 }
-
-export async function setPreferredFullTextDocumentAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  try { await reviewServices.setPreferredFullTextDocument(projectId, paperId, text(form, "documentId")); }
-  catch (error) { fail(`/projects/${projectId}/papers/${paperId}/documents`, error); }
-  redirect(`/projects/${projectId}/papers/${paperId}/documents?saved=preferred`);
+export async function updateAppraisalFrameworkSectionAction(  form: Parameters<typeof actionsAppraisal.updateAppraisalFrameworkSectionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.updateAppraisalFrameworkSectionAction>>> {
+  return actionsAppraisal.updateAppraisalFrameworkSectionAction(form);
 }
-
-export async function clearPreferredFullTextDocumentAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  try { await reviewServices.clearPreferredFullTextDocument(projectId, paperId); }
-  catch (error) { fail(`/projects/${projectId}/papers/${paperId}/documents`, error); }
-  redirect(`/projects/${projectId}/papers/${paperId}/documents?saved=preference-cleared`);
+export async function reorderAppraisalFrameworkSectionsAction(  form: Parameters<typeof actionsAppraisal.reorderAppraisalFrameworkSectionsAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.reorderAppraisalFrameworkSectionsAction>>> {
+  return actionsAppraisal.reorderAppraisalFrameworkSectionsAction(form);
 }
-
-export async function archiveFullTextDocumentAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  try { await reviewServices.archiveFullTextDocument(projectId, text(form, "documentId")); }
-  catch (error) { fail(`/projects/${projectId}/papers/${paperId}/documents`, error); }
-  redirect(`/projects/${projectId}/papers/${paperId}/documents?saved=archived`);
+export async function removeAppraisalFrameworkSectionAction(  form: Parameters<typeof actionsAppraisal.removeAppraisalFrameworkSectionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.removeAppraisalFrameworkSectionAction>>> {
+  return actionsAppraisal.removeAppraisalFrameworkSectionAction(form);
 }
-
-export async function extractDocumentTextAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  const documentId = text(form, "documentId");
-  let extraction;
-  try {
-    extraction = await reviewServices.extractDocumentText(projectId, documentId);
-  } catch (error) {
-    fail(`/projects/${projectId}/papers/${paperId}/documents/${documentId}`, error);
-  }
-  redirect(`/projects/${projectId}/papers/${paperId}/documents/${documentId}/extractions/${extraction.id}?saved=extracted`);
+export async function addAppraisalFrameworkItemAction(  form: Parameters<typeof actionsAppraisal.addAppraisalFrameworkItemAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.addAppraisalFrameworkItemAction>>> {
+  return actionsAppraisal.addAppraisalFrameworkItemAction(form);
 }
-
-export async function recordExtractedEvidenceAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  const documentId = text(form, "documentId");
-  const extractionId = text(form, "extractionId");
-  try {
-    await reviewServices.recordEvidenceFromExtractedPage(projectId, {
-      paperId,
-      fullTextDocumentId: documentId,
-      documentTextExtractionId: extractionId,
-      pageNumber: Number(text(form, "pageNumber")),
-      startOffset: Number(text(form, "startOffset")),
-      endOffset: Number(text(form, "endOffset")),
-      note: optional(form, "note"),
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/papers/${paperId}/documents/${documentId}/extractions/${extractionId}`, error);
-  }
-  redirect(`/projects/${projectId}/papers/${paperId}/documents/${documentId}/extractions/${extractionId}?saved=evidence`);
+export async function updateAppraisalFrameworkItemAction(  form: Parameters<typeof actionsAppraisal.updateAppraisalFrameworkItemAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.updateAppraisalFrameworkItemAction>>> {
+  return actionsAppraisal.updateAppraisalFrameworkItemAction(form);
 }
-
-export async function appendEvidenceReviewDecisionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const evidenceId = text(form, "evidenceId");
-  try {
-    await reviewServices.appendEvidenceReviewDecision(projectId, evidenceId, {
-      decision: text(form, "decision") as "needs_review" | "accepted" | "rejected",
-      note: optional(form, "note"),
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/evidence/${evidenceId}`, error);
-  }
-  redirect(`/projects/${projectId}/evidence/${evidenceId}?saved=review`);
+export async function reorderAppraisalFrameworkItemsAction(  form: Parameters<typeof actionsAppraisal.reorderAppraisalFrameworkItemsAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.reorderAppraisalFrameworkItemsAction>>> {
+  return actionsAppraisal.reorderAppraisalFrameworkItemsAction(form);
 }
-
-export async function appendEvidenceAnnotationAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const evidenceId = text(form, "evidenceId");
-  try { await reviewServices.appendEvidenceAnnotation(projectId, evidenceId, { body: verbatimText(form, "body") }); }
-  catch (error) { fail(`/projects/${projectId}/evidence/${evidenceId}`, error); }
-  redirect(`/projects/${projectId}/evidence/${evidenceId}?saved=annotation`);
+export async function removeAppraisalFrameworkItemAction(  form: Parameters<typeof actionsAppraisal.removeAppraisalFrameworkItemAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.removeAppraisalFrameworkItemAction>>> {
+  return actionsAppraisal.removeAppraisalFrameworkItemAction(form);
 }
-
-export async function createEvidenceLabelAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try { await reviewServices.createEvidenceLabel(projectId, { name: text(form, "name"), description: optional(form, "description") }); }
-  catch (error) { fail(`/projects/${projectId}/evidence`, error); }
-  redirect(`/projects/${projectId}/evidence?saved=label`);
+export async function addAppraisalFrameworkResponseOptionAction(  form: Parameters<typeof actionsAppraisal.addAppraisalFrameworkResponseOptionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.addAppraisalFrameworkResponseOptionAction>>> {
+  return actionsAppraisal.addAppraisalFrameworkResponseOptionAction(form);
 }
-
-export async function archiveEvidenceLabelAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try { await reviewServices.archiveEvidenceLabel(projectId, text(form, "labelId")); }
-  catch (error) { fail(`/projects/${projectId}/evidence`, error); }
-  redirect(`/projects/${projectId}/evidence?saved=label-archived`);
+export async function updateAppraisalFrameworkResponseOptionAction(  form: Parameters<typeof actionsAppraisal.updateAppraisalFrameworkResponseOptionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.updateAppraisalFrameworkResponseOptionAction>>> {
+  return actionsAppraisal.updateAppraisalFrameworkResponseOptionAction(form);
 }
-
-export async function assignEvidenceLabelAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const evidenceId = text(form, "evidenceId");
-  try { await reviewServices.assignEvidenceLabel(projectId, evidenceId, text(form, "labelId")); }
-  catch (error) { fail(`/projects/${projectId}/evidence/${evidenceId}`, error); }
-  redirect(`/projects/${projectId}/evidence/${evidenceId}?saved=label`);
+export async function reorderAppraisalFrameworkResponseOptionsAction(  form: Parameters<typeof actionsAppraisal.reorderAppraisalFrameworkResponseOptionsAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.reorderAppraisalFrameworkResponseOptionsAction>>> {
+  return actionsAppraisal.reorderAppraisalFrameworkResponseOptionsAction(form);
 }
-
-export async function removeEvidenceLabelAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const evidenceId = text(form, "evidenceId");
-  try { await reviewServices.removeEvidenceLabel(projectId, evidenceId, text(form, "labelId")); }
-  catch (error) { fail(`/projects/${projectId}/evidence/${evidenceId}`, error); }
-  redirect(`/projects/${projectId}/evidence/${evidenceId}?saved=label`);
+export async function removeAppraisalFrameworkResponseOptionAction(  form: Parameters<typeof actionsAppraisal.removeAppraisalFrameworkResponseOptionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.removeAppraisalFrameworkResponseOptionAction>>> {
+  return actionsAppraisal.removeAppraisalFrameworkResponseOptionAction(form);
 }
-
-export async function createEvidenceSetAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  let set;
-  try {
-    set = await reviewServices.createEvidenceSet(projectId, { name: text(form, "name"), description: optional(form, "description") });
-  } catch (error) {
-    fail(`/projects/${projectId}/evidence-sets`, error);
-  }
-  redirect(`/projects/${projectId}/evidence-sets/${set.set.id}?saved=created`);
+export async function setAppraisalFrameworkOverallOptionsAction(  form: Parameters<typeof actionsAppraisal.setAppraisalFrameworkOverallOptionsAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.setAppraisalFrameworkOverallOptionsAction>>> {
+  return actionsAppraisal.setAppraisalFrameworkOverallOptionsAction(form);
 }
-
-export async function updateEvidenceSetMetadataAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const evidenceSetId = text(form, "evidenceSetId");
-  const description = form.get("description");
-  try {
-    await reviewServices.updateEvidenceSetMetadata(projectId, evidenceSetId, { name: text(form, "name"), description: typeof description === "string" ? description : undefined });
-  } catch (error) {
-    fail(`/projects/${projectId}/evidence-sets/${evidenceSetId}`, error);
-  }
-  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=metadata`);
+export async function reorderAppraisalFrameworkOverallOptionsAction(  form: Parameters<typeof actionsAppraisal.reorderAppraisalFrameworkOverallOptionsAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.reorderAppraisalFrameworkOverallOptionsAction>>> {
+  return actionsAppraisal.reorderAppraisalFrameworkOverallOptionsAction(form);
 }
-
-export async function archiveEvidenceSetAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const evidenceSetId = text(form, "evidenceSetId");
-  try {
-    await reviewServices.archiveEvidenceSet(projectId, evidenceSetId);
-  } catch (error) {
-    fail(`/projects/${projectId}/evidence-sets/${evidenceSetId}`, error);
-  }
-  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=archived`);
+export async function finalizeAppraisalFrameworkVersionAction(  form: Parameters<typeof actionsAppraisal.finalizeAppraisalFrameworkVersionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.finalizeAppraisalFrameworkVersionAction>>> {
+  return actionsAppraisal.finalizeAppraisalFrameworkVersionAction(form);
 }
-
-export async function addEvidenceToSetAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const evidenceSetId = text(form, "evidenceSetId");
-  try {
-    await reviewServices.addEvidenceToSet(projectId, evidenceSetId, { evidenceId: text(form, "evidenceId") });
-  } catch (error) {
-    fail(`/projects/${projectId}/evidence-sets/${evidenceSetId}`, error);
-  }
-  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=member`);
+export async function createAppraisalFrameworkVersionAction(  form: Parameters<typeof actionsAppraisal.createAppraisalFrameworkVersionAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.createAppraisalFrameworkVersionAction>>> {
+  return actionsAppraisal.createAppraisalFrameworkVersionAction(form);
 }
-
-export async function removeEvidenceFromSetAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const evidenceSetId = text(form, "evidenceSetId");
-  try {
-    await reviewServices.removeEvidenceFromSet(projectId, evidenceSetId, text(form, "evidenceId"));
-  } catch (error) {
-    fail(`/projects/${projectId}/evidence-sets/${evidenceSetId}`, error);
-  }
-  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=member`);
+export async function archiveAppraisalFrameworkAction(  form: Parameters<typeof actionsAppraisal.archiveAppraisalFrameworkAction>[0]): Promise<Awaited<ReturnType<typeof actionsAppraisal.archiveAppraisalFrameworkAction>>> {
+  return actionsAppraisal.archiveAppraisalFrameworkAction(form);
 }
-
-export async function reorderEvidenceSetAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const evidenceSetId = text(form, "evidenceSetId");
-  try {
-    await reviewServices.reorderEvidenceSet(projectId, evidenceSetId, { evidenceIds: form.getAll("evidenceIds").filter((value): value is string => typeof value === "string").map((value) => value.trim()) });
-  } catch (error) {
-    fail(`/projects/${projectId}/evidence-sets/${evidenceSetId}`, error);
-  }
-  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=reordered`);
+export async function saveAppraisalRevisionAction(  _previousState: Parameters<typeof actionsAppraisal.saveAppraisalRevisionAction>[0],   form: Parameters<typeof actionsAppraisal.saveAppraisalRevisionAction>[1]): Promise<Awaited<ReturnType<typeof actionsAppraisal.saveAppraisalRevisionAction>>> {
+  return actionsAppraisal.saveAppraisalRevisionAction(_previousState, form);
 }
-
-export async function appendEvidenceSetAnnotationAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const evidenceSetId = text(form, "evidenceSetId");
-  try {
-    await reviewServices.appendEvidenceSetAnnotation(projectId, evidenceSetId, { body: verbatimText(form, "body") });
-  } catch (error) {
-    fail(`/projects/${projectId}/evidence-sets/${evidenceSetId}`, error);
-  }
-  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=annotation`);
+export async function uploadBibliographicImportAction(  form: Parameters<typeof actionsBibliographicIntake.uploadBibliographicImportAction>[0]): Promise<Awaited<ReturnType<typeof actionsBibliographicIntake.uploadBibliographicImportAction>>> {
+  return actionsBibliographicIntake.uploadBibliographicImportAction(form);
 }
-
-export async function createClaimAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  let claim;
-  try {
-    claim = await reviewServices.createClaim(projectId, { claimText: text(form, "claimText") });
-  } catch (error) {
-    fail(`/projects/${projectId}/claims`, error);
-  }
-  redirect(`/projects/${projectId}/claims/${claim.id}`);
+export async function resolveBibliographicImportRecordAction(  form: Parameters<typeof actionsBibliographicIntake.resolveBibliographicImportRecordAction>[0]): Promise<Awaited<ReturnType<typeof actionsBibliographicIntake.resolveBibliographicImportRecordAction>>> {
+  return actionsBibliographicIntake.resolveBibliographicImportRecordAction(form);
 }
-
-export async function linkEvidenceAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const claimId = text(form, "claimId");
-  try {
-    await reviewServices.linkEvidenceToClaim(projectId, { claimId, evidenceId: text(form, "evidenceId") });
-  } catch (error) {
-    fail(`/projects/${projectId}/claims/${claimId}`, error);
-  }
-  redirect(`/projects/${projectId}/claims/${claimId}`);
+export async function bulkCreateBibliographicImportRecordsAction(  form: Parameters<typeof actionsBibliographicIntake.bulkCreateBibliographicImportRecordsAction>[0]): Promise<Awaited<ReturnType<typeof actionsBibliographicIntake.bulkCreateBibliographicImportRecordsAction>>> {
+  return actionsBibliographicIntake.bulkCreateBibliographicImportRecordsAction(form);
 }
-
-export async function unlinkEvidenceAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const claimId = text(form, "claimId");
-  try {
-    await reviewServices.unlinkEvidenceFromClaim(projectId, { claimId, evidenceId: text(form, "evidenceId") });
-  } catch (error) {
-    fail(`/projects/${projectId}/claims/${claimId}`, error);
-  }
-  redirect(`/projects/${projectId}/claims/${claimId}`);
+export async function createClaimAction(  form: Parameters<typeof actionsClaims.createClaimAction>[0]): Promise<Awaited<ReturnType<typeof actionsClaims.createClaimAction>>> {
+  return actionsClaims.createClaimAction(form);
 }
-
-export async function createScreeningCriterionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try {
-    await reviewServices.createScreeningCriterion(projectId, {
-      type: text(form, "type") as "inclusion" | "exclusion",
-      text: text(form, "text"),
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/screening`, error);
-  }
-  redirect(`/projects/${projectId}/screening?saved=criterion`);
+export async function linkEvidenceAction(  form: Parameters<typeof actionsClaims.linkEvidenceAction>[0]): Promise<Awaited<ReturnType<typeof actionsClaims.linkEvidenceAction>>> {
+  return actionsClaims.linkEvidenceAction(form);
 }
-
-export async function archiveScreeningCriterionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try {
-    await reviewServices.archiveScreeningCriterion(projectId, text(form, "criterionId"));
-  } catch (error) {
-    fail(`/projects/${projectId}/screening`, error);
-  }
-  redirect(`/projects/${projectId}/screening?saved=criterion`);
+export async function unlinkEvidenceAction(  form: Parameters<typeof actionsClaims.unlinkEvidenceAction>[0]): Promise<Awaited<ReturnType<typeof actionsClaims.unlinkEvidenceAction>>> {
+  return actionsClaims.unlinkEvidenceAction(form);
 }
-
-export async function recordScreeningDecisionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  const decision = text(form, "decision");
-  try {
-    await reviewServices.recordScreeningDecision(projectId, paperId,
-      decision === "exclude"
-        ? { decision: "exclude", exclusionCriterionId: text(form, "exclusionCriterionId"), note: optional(form, "note") }
-        : { decision: decision as "include" | "maybe", note: optional(form, "note") },
-    );
-  } catch (error) {
-    fail(`/projects/${projectId}/screening/${paperId}`, error);
-  }
-  redirect(`/projects/${projectId}/screening/${paperId}?saved=decision`);
+export async function createClaimRevisionAction(  form: Parameters<typeof actionsClaims.createClaimRevisionAction>[0]): Promise<Awaited<ReturnType<typeof actionsClaims.createClaimRevisionAction>>> {
+  return actionsClaims.createClaimRevisionAction(form);
 }
-
-export async function createFullTextScreeningCriterionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try {
-    await reviewServices.createFullTextScreeningCriterion(projectId, { text: text(form, "text") });
-  } catch (error) {
-    fail(`/projects/${projectId}/screening/full-text`, error);
-  }
-  redirect(`/projects/${projectId}/screening/full-text?saved=criterion`);
+export async function reviseClaimAction(  form: Parameters<typeof actionsClaims.reviseClaimAction>[0]): Promise<Awaited<ReturnType<typeof actionsClaims.reviseClaimAction>>> {
+  return actionsClaims.reviseClaimAction(form);
 }
-
-export async function archiveFullTextScreeningCriterionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try {
-    await reviewServices.archiveFullTextScreeningCriterion(projectId, text(form, "criterionId"));
-  } catch (error) {
-    fail(`/projects/${projectId}/screening/full-text`, error);
-  }
-  redirect(`/projects/${projectId}/screening/full-text?saved=criterion`);
+export async function withdrawClaimAction(  form: Parameters<typeof actionsClaims.withdrawClaimAction>[0]): Promise<Awaited<ReturnType<typeof actionsClaims.withdrawClaimAction>>> {
+  return actionsClaims.withdrawClaimAction(form);
 }
-
-export async function recordFullTextScreeningDecisionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  const decision = text(form, "decision");
-  try {
-    await reviewServices.recordFullTextScreeningDecision(projectId, paperId,
-      decision === "exclude"
-        ? { decision: "exclude", exclusionCriterionId: text(form, "exclusionCriterionId"), note: optional(form, "note") }
-        : { decision: decision as "include" | "maybe", note: optional(form, "note") },
-    );
-  } catch (error) {
-    fail(`/projects/${projectId}/screening/full-text/${paperId}`, error);
-  }
-  redirect(`/projects/${projectId}/screening/full-text/${paperId}?saved=decision`);
+export async function reactivateClaimAction(  form: Parameters<typeof actionsClaims.reactivateClaimAction>[0]): Promise<Awaited<ReturnType<typeof actionsClaims.reactivateClaimAction>>> {
+  return actionsClaims.reactivateClaimAction(form);
 }
-
-export async function recordFullTextRetrievalAttemptAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  try {
-    await reviewServices.recordFullTextRetrievalAttempt(projectId, paperId, {
-      outcome: text(form, "outcome") as "pending" | "unavailable" | "retrieved",
-      method: (optional(form, "method") ?? null) as FullTextRetrievalMethod | null,
-      sourceReference: optional(form, "sourceReference"),
-      note: optional(form, "note"),
-      attemptedAt: text(form, "attemptedAt") || new Date().toISOString(),
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/screening/full-text/retrieval/${paperId}`, error);
-  }
-  redirect(`/projects/${projectId}/screening/full-text/retrieval/${paperId}?saved=attempt`);
+export async function createClaimFromInterpretationAction(  form: Parameters<typeof actionsClaims.createClaimFromInterpretationAction>[0]): Promise<Awaited<ReturnType<typeof actionsClaims.createClaimFromInterpretationAction>>> {
+  return actionsClaims.createClaimFromInterpretationAction(form);
 }
-
-export async function createExtractionFieldAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try {
-    await reviewServices.createExtractionField(projectId, {
-      name: text(form, "name"),
-      description: optional(form, "description"),
-      fieldType: text(form, "fieldType") as "short_text" | "long_text" | "number" | "boolean" | "single_select",
-      required: form.get("required") === "on",
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/extraction`, error);
-  }
-  redirect(`/projects/${projectId}/extraction?saved=field`);
+export async function recordEvidenceAction(  form: Parameters<typeof actionsDocumentsEvidence.recordEvidenceAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.recordEvidenceAction>>> {
+  return actionsDocumentsEvidence.recordEvidenceAction(form);
 }
-
-export async function archiveExtractionFieldAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try {
-    await reviewServices.archiveExtractionField(projectId, text(form, "fieldId"));
-  } catch (error) {
-    fail(`/projects/${projectId}/extraction`, error);
-  }
-  redirect(`/projects/${projectId}/extraction?saved=field`);
+export async function setPreferredFullTextDocumentAction(  form: Parameters<typeof actionsDocumentsEvidence.setPreferredFullTextDocumentAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.setPreferredFullTextDocumentAction>>> {
+  return actionsDocumentsEvidence.setPreferredFullTextDocumentAction(form);
 }
-
-export async function createExtractionOptionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try {
-    await reviewServices.createExtractionOption(projectId, { fieldId: text(form, "fieldId"), label: text(form, "label") });
-  } catch (error) {
-    fail(`/projects/${projectId}/extraction`, error);
-  }
-  redirect(`/projects/${projectId}/extraction?saved=option`);
+export async function clearPreferredFullTextDocumentAction(  form: Parameters<typeof actionsDocumentsEvidence.clearPreferredFullTextDocumentAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.clearPreferredFullTextDocumentAction>>> {
+  return actionsDocumentsEvidence.clearPreferredFullTextDocumentAction(form);
 }
-
-export async function archiveExtractionOptionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try {
-    await reviewServices.archiveExtractionOption(projectId, text(form, "optionId"));
-  } catch (error) {
-    fail(`/projects/${projectId}/extraction`, error);
-  }
-  redirect(`/projects/${projectId}/extraction?saved=option`);
+export async function archiveFullTextDocumentAction(  form: Parameters<typeof actionsDocumentsEvidence.archiveFullTextDocumentAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.archiveFullTextDocumentAction>>> {
+  return actionsDocumentsEvidence.archiveFullTextDocumentAction(form);
 }
-
-function extractionValue(form: FormData) {
-  const state = text(form, "state") || "present";
-  if (state !== "present") return { state: state as "not_reported" | "not_applicable" | "cleared", evidenceIds: form.getAll("evidenceIds").filter((id): id is string => typeof id === "string") };
-  const kind = text(form, "valueKind");
-  const raw = form.get("value");
-  let value: unknown = typeof raw === "string" ? raw : undefined;
-  if (kind === "number") value = typeof raw === "string" && raw !== "" ? Number(raw) : undefined;
-  if (kind === "boolean") value = raw === "true";
-  return {
-    state: "present" as const,
-    value,
-    researcherNote: optional(form, "researcherNote"),
-    evidenceIds: form.getAll("evidenceIds").filter((id): id is string => typeof id === "string"),
-  };
+export async function extractDocumentTextAction(  form: Parameters<typeof actionsDocumentsEvidence.extractDocumentTextAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.extractDocumentTextAction>>> {
+  return actionsDocumentsEvidence.extractDocumentTextAction(form);
 }
-
-export async function reviseExtractionValueAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  try {
-    await reviewServices.reviseExtractionValue(projectId, paperId, text(form, "fieldId"), extractionValue(form));
-  } catch (error) {
-    fail(`/projects/${projectId}/extraction/${paperId}`, error);
-  }
-  redirect(`/projects/${projectId}/extraction/${paperId}?saved=value`);
+export async function recordExtractedEvidenceAction(  form: Parameters<typeof actionsDocumentsEvidence.recordExtractedEvidenceAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.recordExtractedEvidenceAction>>> {
+  return actionsDocumentsEvidence.recordExtractedEvidenceAction(form);
 }
-
-export async function linkExtractionEvidenceAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  try {
-    await reviewServices.linkEvidenceToExtractionValue(projectId, { paperId, fieldId: text(form, "fieldId"), evidenceId: text(form, "evidenceId") });
-  } catch (error) {
-    fail(`/projects/${projectId}/extraction/${paperId}`, error);
-  }
-  redirect(`/projects/${projectId}/extraction/${paperId}?saved=evidence`);
+export async function appendEvidenceReviewDecisionAction(  form: Parameters<typeof actionsDocumentsEvidence.appendEvidenceReviewDecisionAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.appendEvidenceReviewDecisionAction>>> {
+  return actionsDocumentsEvidence.appendEvidenceReviewDecisionAction(form);
 }
-
-export async function unlinkExtractionEvidenceAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const paperId = text(form, "paperId");
-  try {
-    await reviewServices.unlinkEvidenceFromExtractionValue(projectId, { paperId, fieldId: text(form, "fieldId"), evidenceId: text(form, "evidenceId") });
-  } catch (error) {
-    fail(`/projects/${projectId}/extraction/${paperId}`, error);
-  }
-  redirect(`/projects/${projectId}/extraction/${paperId}?saved=evidence`);
+export async function appendEvidenceAnnotationAction(  form: Parameters<typeof actionsDocumentsEvidence.appendEvidenceAnnotationAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.appendEvidenceAnnotationAction>>> {
+  return actionsDocumentsEvidence.appendEvidenceAnnotationAction(form);
 }
-
-function synthesisRevisionInput(form: FormData) {
-  return {
-    title: optional(form, "title"),
-    statementText: text(form, "statementText"),
-    researcherNote: optional(form, "researcherNote"),
-    extractionRevisionIds: form.getAll("extractionRevisionIds").filter((id): id is string => typeof id === "string" && id.length > 0),
-  };
+export async function createEvidenceLabelAction(  form: Parameters<typeof actionsDocumentsEvidence.createEvidenceLabelAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.createEvidenceLabelAction>>> {
+  return actionsDocumentsEvidence.createEvidenceLabelAction(form);
 }
-
-export async function createSynthesisStatementAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  let result;
-  try {
-    result = await reviewServices.createSynthesisStatement(projectId, synthesisRevisionInput(form));
-  } catch (error) {
-    fail(`/projects/${projectId}/synthesis`, error);
-  }
-  redirect(`/projects/${projectId}/synthesis/${result.statement.id}?saved=created`);
+export async function archiveEvidenceLabelAction(  form: Parameters<typeof actionsDocumentsEvidence.archiveEvidenceLabelAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.archiveEvidenceLabelAction>>> {
+  return actionsDocumentsEvidence.archiveEvidenceLabelAction(form);
 }
-
-export async function reviseSynthesisStatementAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const statementId = text(form, "statementId");
-  let result;
-  try {
-    result = await reviewServices.reviseSynthesisStatement(projectId, statementId, synthesisRevisionInput(form));
-  } catch (error) {
-    fail(`/projects/${projectId}/synthesis/${statementId}`, error);
-  }
-  redirect(`/projects/${projectId}/synthesis/${statementId}?saved=revised&revision=${result.revision.id}`);
+export async function assignEvidenceLabelAction(  form: Parameters<typeof actionsDocumentsEvidence.assignEvidenceLabelAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.assignEvidenceLabelAction>>> {
+  return actionsDocumentsEvidence.assignEvidenceLabelAction(form);
 }
-
-export async function withdrawSynthesisStatementAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const statementId = text(form, "statementId");
-  try {
-    await reviewServices.withdrawSynthesisStatement(projectId, statementId, { researcherNote: optional(form, "researcherNote") });
-  } catch (error) {
-    fail(`/projects/${projectId}/synthesis/${statementId}`, error);
-  }
-  redirect(`/projects/${projectId}/synthesis/${statementId}?saved=withdrawn`);
+export async function removeEvidenceLabelAction(  form: Parameters<typeof actionsDocumentsEvidence.removeEvidenceLabelAction>[0]): Promise<Awaited<ReturnType<typeof actionsDocumentsEvidence.removeEvidenceLabelAction>>> {
+  return actionsDocumentsEvidence.removeEvidenceLabelAction(form);
 }
-
-// Slice 5 Claim actions keep the complete support snapshot in the form payload.
-// The service owns validation, locking, and immutable revision construction.
-type ClaimRevisionServices = {
-  createClaim: (projectId: string, input: Record<string, unknown>) => Promise<{ id: string }>;
-  createClaimRevision: (projectId: string, claimId: string, input: Record<string, unknown>) => Promise<unknown>;
-  withdrawClaim: (projectId: string, claimId: string, input: Record<string, unknown>) => Promise<unknown>;
-  reactivateClaim: (projectId: string, claimId: string, input: Record<string, unknown>) => Promise<unknown>;
-};
-
-const revisionClaimServices = reviewServices as unknown as ClaimRevisionServices;
-
-function ids(form: FormData, key: string) {
-  return form.getAll(key).filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+export async function beginDoiLookupAction(  form: Parameters<typeof actionsDoiIntake.beginDoiLookupAction>[0]): Promise<Awaited<ReturnType<typeof actionsDoiIntake.beginDoiLookupAction>>> {
+  return actionsDoiIntake.beginDoiLookupAction(form);
 }
-
-function claimSnapshot(form: FormData) {
-  const supports = [
-    ...ids(form, "evidenceIds").map((evidenceId) => ({ kind: "evidence" as const, evidenceId })),
-    ...ids(form, "extractionRevisionIds").map((extractionRevisionId) => ({ kind: "extractionRevision" as const, extractionRevisionId })),
-    ...ids(form, "synthesisRevisionIds").map((synthesisRevisionId) => ({ kind: "synthesisRevision" as const, synthesisRevisionId })),
-  ];
-  return {
-    claimText: text(form, "claimText"),
-    researcherNote: optional(form, "researcherNote"),
-    lifecycle: (text(form, "state") || "active") as "active" | "withdrawn",
-    supports,
-  };
+export async function executeDoiLookupAction(  form: Parameters<typeof actionsDoiIntake.executeDoiLookupAction>[0]): Promise<Awaited<ReturnType<typeof actionsDoiIntake.executeDoiLookupAction>>> {
+  return actionsDoiIntake.executeDoiLookupAction(form);
 }
-
-export async function createClaimRevisionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  let claim;
-  try {
-    claim = await revisionClaimServices.createClaim(projectId, claimSnapshot(form));
-  } catch (error) {
-    fail(`/projects/${projectId}/claims`, error);
-  }
-  redirect(`/projects/${projectId}/claims/${claim.id}?saved=created`);
+export async function createPaperFromDoiLookupAction(  form: Parameters<typeof actionsDoiIntake.createPaperFromDoiLookupAction>[0]): Promise<Awaited<ReturnType<typeof actionsDoiIntake.createPaperFromDoiLookupAction>>> {
+  return actionsDoiIntake.createPaperFromDoiLookupAction(form);
 }
-
-export async function reviseClaimAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const claimId = text(form, "claimId");
-  try {
-    await revisionClaimServices.createClaimRevision(projectId, claimId, {
-      ...claimSnapshot(form),
-      expectedCurrentRevisionId: optional(form, "expectedCurrentRevisionId"),
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/claims/${claimId}`, error);
-  }
-  redirect(`/projects/${projectId}/claims/${claimId}?saved=revised`);
+export async function matchDoiLookupAction(  form: Parameters<typeof actionsDoiIntake.matchDoiLookupAction>[0]): Promise<Awaited<ReturnType<typeof actionsDoiIntake.matchDoiLookupAction>>> {
+  return actionsDoiIntake.matchDoiLookupAction(form);
 }
-
-export async function withdrawClaimAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const claimId = text(form, "claimId");
-  try {
-    await revisionClaimServices.withdrawClaim(projectId, claimId, {
-      expectedCurrentRevisionId: optional(form, "expectedCurrentRevisionId"),
-      researcherNote: optional(form, "researcherNote"),
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/claims/${claimId}`, error);
-  }
-  redirect(`/projects/${projectId}/claims/${claimId}?saved=withdrawn`);
+export async function clearDoiLookupResolutionAction(  form: Parameters<typeof actionsDoiIntake.clearDoiLookupResolutionAction>[0]): Promise<Awaited<ReturnType<typeof actionsDoiIntake.clearDoiLookupResolutionAction>>> {
+  return actionsDoiIntake.clearDoiLookupResolutionAction(form);
 }
-
-export async function reactivateClaimAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const claimId = text(form, "claimId");
-  try {
-    await revisionClaimServices.reactivateClaim(projectId, claimId, {
-      ...claimSnapshot(form),
-      lifecycle: "active",
-      expectedCurrentRevisionId: optional(form, "expectedCurrentRevisionId"),
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/claims/${claimId}`, error);
-  }
-  redirect(`/projects/${projectId}/claims/${claimId}?saved=reactivated`);
+export async function createEvidenceSetAction(  form: Parameters<typeof actionsEvidenceSets.createEvidenceSetAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.createEvidenceSetAction>>> {
+  return actionsEvidenceSets.createEvidenceSetAction(form);
 }
-
-const manuscriptServices = reviewServices as typeof reviewServices & {
-  createDefaultManuscript: (projectId: string) => Promise<{ id: string }>;
-  createSection: (projectId: string, manuscriptId: string, input: { title: string; sectionType?: string }) => Promise<unknown>;
-  renameSection: (projectId: string, manuscriptId: string, sectionId: string, title: string) => Promise<unknown>;
-  reorderSections: (projectId: string, manuscriptId: string, ids: string[]) => Promise<unknown>;
-  archiveSection: (projectId: string, manuscriptId: string, sectionId: string) => Promise<unknown>;
-  placeClaimRevision: (projectId: string, manuscriptId: string, sectionId: string, revisionId: string, position?: number) => Promise<unknown>;
-  replacePlacedClaimRevision: (projectId: string, manuscriptId: string, placementId: string, revisionId: string, expected?: string) => Promise<unknown>;
-  removeClaimPlacement: (projectId: string, manuscriptId: string, placementId: string) => Promise<unknown>;
-  createProseBlock: (projectId: string, manuscriptId: string, sectionId: string, input: { text: string; position?: number }) => Promise<unknown>;
-  reviseProseBlock: (projectId: string, manuscriptId: string, proseBlockId: string, input: { text: string; expectedCurrentRevisionId: string }) => Promise<unknown>;
-  updateProseBlock: (projectId: string, manuscriptId: string, proseBlockId: string, input: { text: string; expectedCurrentRevisionId: string }) => Promise<unknown>;
-  removeProseBlock: (projectId: string, manuscriptId: string, proseBlockId: string) => Promise<unknown>;
-  reorderSectionItems: (projectId: string, manuscriptId: string, sectionId: string, ids: string[]) => Promise<unknown>;
-};
-
-const manuscriptReviewServices = reviewServices as typeof reviewServices & {
-  openManuscriptReviewThread: (projectId: string, manuscriptId: string, input: { sectionItemId: string; title: string; initialComment: string }) => Promise<unknown>;
-  commentOnManuscriptReviewThread: (projectId: string, manuscriptId: string, threadId: string, body: string) => Promise<unknown>;
-  resolveManuscriptReviewThread: (projectId: string, manuscriptId: string, threadId: string, note?: string | null) => Promise<unknown>;
-  reopenManuscriptReviewThread: (projectId: string, manuscriptId: string, threadId: string, note?: string | null) => Promise<unknown>;
-};
-
-const manuscriptSnapshotServices = reviewServices as typeof reviewServices & {
-  createManuscriptSnapshot: (projectId: string, manuscriptId: string) => Promise<{ id: string }>;
-};
-
-function many(form: FormData, key: string) { return form.getAll(key).filter((value): value is string => typeof value === "string" && value.trim().length > 0).map((value) => value.trim()); }
-
-export async function createDefaultManuscriptAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  let manuscript: { id: string };
-  try { manuscript = await manuscriptServices.createDefaultManuscript(projectId); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?created=${encodeURIComponent(manuscript.id)}`);
+export async function updateEvidenceSetMetadataAction(  form: Parameters<typeof actionsEvidenceSets.updateEvidenceSetMetadataAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.updateEvidenceSetMetadataAction>>> {
+  return actionsEvidenceSets.updateEvidenceSetMetadataAction(form);
 }
-
-export async function createManuscriptSectionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId");
-  try { await manuscriptServices.createSection(projectId, manuscriptId, { title: text(form, "title"), sectionType: optional(form, "sectionType") }); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=section`);
+export async function archiveEvidenceSetAction(  form: Parameters<typeof actionsEvidenceSets.archiveEvidenceSetAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.archiveEvidenceSetAction>>> {
+  return actionsEvidenceSets.archiveEvidenceSetAction(form);
 }
-
-export async function renameManuscriptSectionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const sectionId = text(form, "sectionId");
-  try { await manuscriptServices.renameSection(projectId, manuscriptId, sectionId, text(form, "title")); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=section`);
+export async function addEvidenceToSetAction(  form: Parameters<typeof actionsEvidenceSets.addEvidenceToSetAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.addEvidenceToSetAction>>> {
+  return actionsEvidenceSets.addEvidenceToSetAction(form);
 }
-
-export async function reorderManuscriptSectionsAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId");
-  try { await manuscriptServices.reorderSections(projectId, manuscriptId, many(form, "sectionIds")); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=reordered`);
+export async function removeEvidenceFromSetAction(  form: Parameters<typeof actionsEvidenceSets.removeEvidenceFromSetAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.removeEvidenceFromSetAction>>> {
+  return actionsEvidenceSets.removeEvidenceFromSetAction(form);
 }
-
-export async function archiveManuscriptSectionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const sectionId = text(form, "sectionId");
-  try { await manuscriptServices.archiveSection(projectId, manuscriptId, sectionId); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=archived`);
+export async function reorderEvidenceSetAction(  form: Parameters<typeof actionsEvidenceSets.reorderEvidenceSetAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.reorderEvidenceSetAction>>> {
+  return actionsEvidenceSets.reorderEvidenceSetAction(form);
 }
-
-export async function placeClaimRevisionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const sectionId = text(form, "sectionId");
-  const rawPosition = text(form, "position");
-  const position = rawPosition === "" ? undefined : Number(rawPosition);
-  try { await manuscriptServices.placeClaimRevision(projectId, manuscriptId, sectionId, text(form, "claimRevisionId"), position); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=placed`);
+export async function appendEvidenceSetAnnotationAction(  form: Parameters<typeof actionsEvidenceSets.appendEvidenceSetAnnotationAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.appendEvidenceSetAnnotationAction>>> {
+  return actionsEvidenceSets.appendEvidenceSetAnnotationAction(form);
 }
-
-export async function replacePlacedClaimRevisionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const placementId = text(form, "placementId");
-  try { await manuscriptServices.replacePlacedClaimRevision(projectId, manuscriptId, placementId, text(form, "claimRevisionId"), optional(form, "expectedCurrentClaimRevisionId")); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=replaced`);
+export async function createExtractionFieldAction(  form: Parameters<typeof actionsExtraction.createExtractionFieldAction>[0]): Promise<Awaited<ReturnType<typeof actionsExtraction.createExtractionFieldAction>>> {
+  return actionsExtraction.createExtractionFieldAction(form);
 }
-
-export async function removeClaimPlacementAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const placementId = text(form, "placementId");
-  try { await manuscriptServices.removeClaimPlacement(projectId, manuscriptId, placementId); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=removed`);
+export async function archiveExtractionFieldAction(  form: Parameters<typeof actionsExtraction.archiveExtractionFieldAction>[0]): Promise<Awaited<ReturnType<typeof actionsExtraction.archiveExtractionFieldAction>>> {
+  return actionsExtraction.archiveExtractionFieldAction(form);
 }
-
-export async function createManuscriptProseBlockAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const sectionId = text(form, "sectionId");
-  const rawPosition = text(form, "position");
-  const position = rawPosition === "" ? undefined : Number(rawPosition);
-  try { await manuscriptServices.createProseBlock(projectId, manuscriptId, sectionId, { text: verbatimText(form, "text"), position }); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=prose`);
+export async function createExtractionOptionAction(  form: Parameters<typeof actionsExtraction.createExtractionOptionAction>[0]): Promise<Awaited<ReturnType<typeof actionsExtraction.createExtractionOptionAction>>> {
+  return actionsExtraction.createExtractionOptionAction(form);
 }
-
-export async function updateManuscriptProseBlockAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const proseBlockId = text(form, "proseBlockId");
-  const expectedCurrentRevisionId = text(form, "expectedCurrentRevisionId");
-  try { await manuscriptServices.reviseProseBlock(projectId, manuscriptId, proseBlockId, { text: verbatimText(form, "text"), expectedCurrentRevisionId }); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=prose`);
+export async function archiveExtractionOptionAction(  form: Parameters<typeof actionsExtraction.archiveExtractionOptionAction>[0]): Promise<Awaited<ReturnType<typeof actionsExtraction.archiveExtractionOptionAction>>> {
+  return actionsExtraction.archiveExtractionOptionAction(form);
 }
-
-export async function removeManuscriptProseBlockAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const proseBlockId = text(form, "proseBlockId");
-  try { await manuscriptServices.removeProseBlock(projectId, manuscriptId, proseBlockId); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=removed-prose`);
+export async function reviseExtractionValueAction(  form: Parameters<typeof actionsExtraction.reviseExtractionValueAction>[0]): Promise<Awaited<ReturnType<typeof actionsExtraction.reviseExtractionValueAction>>> {
+  return actionsExtraction.reviseExtractionValueAction(form);
 }
-
-export async function reorderManuscriptSectionItemsAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const sectionId = text(form, "sectionId");
-  try { await manuscriptServices.reorderSectionItems(projectId, manuscriptId, sectionId, many(form, "itemIds")); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=reordered`);
+export async function linkExtractionEvidenceAction(  form: Parameters<typeof actionsExtraction.linkExtractionEvidenceAction>[0]): Promise<Awaited<ReturnType<typeof actionsExtraction.linkExtractionEvidenceAction>>> {
+  return actionsExtraction.linkExtractionEvidenceAction(form);
 }
-
-export async function setManuscriptCitationStyleAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId");
-  try { await manuscriptServices.setManuscriptCitationStyle(projectId, manuscriptId, text(form, "citationStyle")); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript?saved=citation-style`);
+export async function unlinkExtractionEvidenceAction(  form: Parameters<typeof actionsExtraction.unlinkExtractionEvidenceAction>[0]): Promise<Awaited<ReturnType<typeof actionsExtraction.unlinkExtractionEvidenceAction>>> {
+  return actionsExtraction.unlinkExtractionEvidenceAction(form);
 }
-
-type BibliographicActionServices = {
-  importFile: (projectId: string, input: { format: "bibtex" | "ris"; filename: string; bytes: Uint8Array }) => Promise<{ id: string }>;
-  resolveImportRecord: (input: { projectId: string; importRecordId: string; action: "created_paper" | "matched_paper" | "cleared"; paperId?: string | null; expectedResolutionId?: string | null; note?: string | null; creation?: Record<string, unknown>; distinctPaperAcknowledged?: boolean }) => Promise<unknown>;
-  bulkCreateImportRecords: (input: { projectId: string; importId: string; selection: Array<{ recordId: string; expectedResolutionId: string | null; fingerprint: string }> }) => Promise<unknown>;
-};
-
-function bibliographicActions(): BibliographicActionServices {
-  const services = reviewServices as typeof reviewServices & Partial<BibliographicActionServices>;
-  if (!services.importFile || !services.resolveImportRecord || !services.bulkCreateImportRecords) throw new DomainError("VALIDATION_ERROR", "Bibliographic import is not configured");
-  return services as typeof services & BibliographicActionServices;
+export async function createDefaultManuscriptAction(  form: Parameters<typeof actionsManuscript.createDefaultManuscriptAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.createDefaultManuscriptAction>>> {
+  return actionsManuscript.createDefaultManuscriptAction(form);
 }
-
-export async function uploadBibliographicImportAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const file = form.get("file");
-  const format = text(form, "format").toLowerCase();
-  if (!(file instanceof File) || !file.size) return fail(`/projects/${projectId}/papers/imports/upload`, new DomainError("VALIDATION_ERROR", "Choose a BibTeX or RIS file"));
-  if (format !== "bibtex" && format !== "ris") return fail(`/projects/${projectId}/papers/imports/upload`, new DomainError("VALIDATION_ERROR", "Choose BibTeX or RIS format"));
-  let imported: { id: string };
-  try { imported = await bibliographicActions().importFile(projectId, { format, filename: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }); }
-  catch (error) { fail(`/projects/${projectId}/papers/imports/upload`, error); }
-  redirect(`/projects/${projectId}/papers/imports/${imported.id}`);
+export async function createManuscriptSectionAction(  form: Parameters<typeof actionsManuscript.createManuscriptSectionAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.createManuscriptSectionAction>>> {
+  return actionsManuscript.createManuscriptSectionAction(form);
 }
-
-export async function resolveBibliographicImportRecordAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const importId = text(form, "importId");
-  const recordId = text(form, "recordId");
-  const action = text(form, "resolutionAction") as "created_paper" | "matched_paper" | "cleared";
-  try {
-    await bibliographicActions().resolveImportRecord({
-      projectId,
-      importRecordId: recordId,
-      action,
-      paperId: optional(form, "paperId") ?? null,
-      expectedResolutionId: optional(form, "expectedResolutionId") ?? null,
-      note: optional(form, "note") ?? null,
-      distinctPaperAcknowledged: form.get("distinctPaperAcknowledged") === "on",
-      creation: {
-        title: text(form, "title"),
-        authors: form.getAll("authors").map(String).map((value) => value.trim()).filter(Boolean),
-        publicationYear: optional(form, "publicationYear") ? Number(text(form, "publicationYear")) : null,
-        venue: optional(form, "venue") ?? null,
-        doi: optional(form, "doi") ?? null,
-        abstract: optional(form, "abstract") ?? null,
-        bibliographicNote: optional(form, "bibliographicNote") ?? null,
-      },
-    });
-  } catch (error) { fail(`/projects/${projectId}/papers/imports/${importId}`, error); }
-  redirect(`/projects/${projectId}/papers/imports/${importId}?saved=resolution`);
+export async function renameManuscriptSectionAction(  form: Parameters<typeof actionsManuscript.renameManuscriptSectionAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.renameManuscriptSectionAction>>> {
+  return actionsManuscript.renameManuscriptSectionAction(form);
 }
-
-export async function bulkCreateBibliographicImportRecordsAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const importId = text(form, "importId");
-  let selection: unknown;
-  try { selection = JSON.parse(verbatimText(form, "selection")); }
-  catch { return fail(`/projects/${projectId}/papers/imports/${importId}`, new DomainError("VALIDATION_ERROR", "Bulk selection is invalid")); }
-  try {
-    await bibliographicActions().bulkCreateImportRecords({ projectId, importId, selection: selection as Array<{ recordId: string; expectedResolutionId: string | null; fingerprint: string }> });
-  } catch (error) { fail(`/projects/${projectId}/papers/imports/${importId}`, error); }
-  redirect(`/projects/${projectId}/papers/imports/${importId}?saved=bulk-created`);
+export async function reorderManuscriptSectionsAction(  form: Parameters<typeof actionsManuscript.reorderManuscriptSectionsAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.reorderManuscriptSectionsAction>>> {
+  return actionsManuscript.reorderManuscriptSectionsAction(form);
 }
-
-export async function createManuscriptSnapshotAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId");
-  let snapshot: { id: string };
-  try { snapshot = await manuscriptSnapshotServices.createManuscriptSnapshot(projectId, manuscriptId); }
-  catch (error) { fail(`/projects/${projectId}/manuscript`, error); }
-  redirect(`/projects/${projectId}/manuscript/snapshots/${encodeURIComponent(snapshot.id)}?manuscriptId=${encodeURIComponent(manuscriptId)}&saved=created`);
+export async function archiveManuscriptSectionAction(  form: Parameters<typeof actionsManuscript.archiveManuscriptSectionAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.archiveManuscriptSectionAction>>> {
+  return actionsManuscript.archiveManuscriptSectionAction(form);
 }
-
-export async function openManuscriptReviewThreadAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId");
-  let thread: { id: string };
-  try {
-    thread = await manuscriptReviewServices.openManuscriptReviewThread(projectId, manuscriptId, {
-      sectionItemId: text(form, "sectionItemId"),
-      title: text(form, "title"),
-      initialComment: verbatimText(form, "initialComment"),
-    }) as { id: string };
-  } catch (error) { fail(`/projects/${projectId}/manuscript/review`, error); }
-  redirect(`/projects/${projectId}/manuscript/review?thread=${encodeURIComponent(thread.id)}`);
+export async function placeClaimRevisionAction(  form: Parameters<typeof actionsManuscript.placeClaimRevisionAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.placeClaimRevisionAction>>> {
+  return actionsManuscript.placeClaimRevisionAction(form);
 }
-
-export async function commentManuscriptReviewThreadAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const threadId = text(form, "threadId");
-  try { await manuscriptReviewServices.commentOnManuscriptReviewThread(projectId, manuscriptId, threadId, verbatimText(form, "body")); }
-  catch (error) { fail(`/projects/${projectId}/manuscript/review`, error); }
-  redirect(`/projects/${projectId}/manuscript/review?thread=${encodeURIComponent(threadId)}&saved=comment`);
+export async function replacePlacedClaimRevisionAction(  form: Parameters<typeof actionsManuscript.replacePlacedClaimRevisionAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.replacePlacedClaimRevisionAction>>> {
+  return actionsManuscript.replacePlacedClaimRevisionAction(form);
 }
-
-export async function resolveManuscriptReviewThreadAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const threadId = text(form, "threadId");
-  try { await manuscriptReviewServices.resolveManuscriptReviewThread(projectId, manuscriptId, threadId, optional(form, "note") ?? null); }
-  catch (error) { fail(`/projects/${projectId}/manuscript/review`, error); }
-  redirect(`/projects/${projectId}/manuscript/review?thread=${encodeURIComponent(threadId)}&saved=resolved`);
+export async function removeClaimPlacementAction(  form: Parameters<typeof actionsManuscript.removeClaimPlacementAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.removeClaimPlacementAction>>> {
+  return actionsManuscript.removeClaimPlacementAction(form);
 }
-
-export async function reopenManuscriptReviewThreadAction(form: FormData) {
-  const projectId = text(form, "projectId"); const manuscriptId = text(form, "manuscriptId"); const threadId = text(form, "threadId");
-  try { await manuscriptReviewServices.reopenManuscriptReviewThread(projectId, manuscriptId, threadId, optional(form, "note") ?? null); }
-  catch (error) { fail(`/projects/${projectId}/manuscript/review`, error); }
-  redirect(`/projects/${projectId}/manuscript/review?thread=${encodeURIComponent(threadId)}&saved=reopened`);
+export async function createManuscriptProseBlockAction(  form: Parameters<typeof actionsManuscript.createManuscriptProseBlockAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.createManuscriptProseBlockAction>>> {
+  return actionsManuscript.createManuscriptProseBlockAction(form);
 }
-
-// Slice 9 acquisition actions intentionally stay thin: validation, project
-// ownership, and immutable history are owned by reviewServices.
-export async function createResearchQuestionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try { await reviewServices.createResearchQuestion(projectId, { identifier: text(form, "identifier"), label: text(form, "label") }); }
-  catch (error) { fail(`/projects/${projectId}/protocol`, error); }
-  redirect(`/projects/${projectId}/protocol?saved=question`);
+export async function updateManuscriptProseBlockAction(  form: Parameters<typeof actionsManuscript.updateManuscriptProseBlockAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.updateManuscriptProseBlockAction>>> {
+  return actionsManuscript.updateManuscriptProseBlockAction(form);
 }
-
-export async function createSearchSourceAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try { await reviewServices.createSearchSource(projectId, { sourceKey: text(form, "sourceKey"), displayName: text(form, "displayName"), baseUrl: optional(form, "baseUrl"), notes: optional(form, "notes") }); }
-  catch (error) { fail(`/projects/${projectId}/protocol`, error); }
-  redirect(`/projects/${projectId}/protocol?saved=source`);
+export async function removeManuscriptProseBlockAction(  form: Parameters<typeof actionsManuscript.removeManuscriptProseBlockAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.removeManuscriptProseBlockAction>>> {
+  return actionsManuscript.removeManuscriptProseBlockAction(form);
 }
-
-export async function createSearchStrategyAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try { await reviewServices.createSearchStrategy(projectId, { searchSourceId: text(form, "searchSourceId"), name: text(form, "name"), queryText: verbatimText(form, "queryText"), filtersText: optional(form, "filtersText"), notes: optional(form, "notes") }); }
-  catch (error) { fail(`/projects/${projectId}/protocol`, error); }
-  redirect(`/projects/${projectId}/protocol?saved=strategy`);
+export async function reorderManuscriptSectionItemsAction(  form: Parameters<typeof actionsManuscript.reorderManuscriptSectionItemsAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.reorderManuscriptSectionItemsAction>>> {
+  return actionsManuscript.reorderManuscriptSectionItemsAction(form);
 }
-
-export async function createSearchRunAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try {
-    await reviewServices.createSearchRun(projectId, {
-      searchSourceId: text(form, "searchSourceId"), sourceKeySnapshot: text(form, "sourceKeySnapshot"), sourceDisplayNameSnapshot: text(form, "sourceDisplayNameSnapshot"), strategyId: text(form, "strategyId"),
-      queryText: verbatimText(form, "queryText"), filtersTextSnapshot: optional(form, "filtersTextSnapshot"), reportedResultCount: Number(text(form, "reportedResultCount")), executedAt: text(form, "executedAt"), notes: optional(form, "notes"),
-    });
-  } catch (error) { fail(`/projects/${projectId}/protocol`, error); }
-  redirect(`/projects/${projectId}/protocol?saved=run`);
+export async function setManuscriptCitationStyleAction(  form: Parameters<typeof actionsManuscript.setManuscriptCitationStyleAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.setManuscriptCitationStyleAction>>> {
+  return actionsManuscript.setManuscriptCitationStyleAction(form);
 }
-
-export async function createRetrievedRecordAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  try {
-    const authorText = text(form, "authors");
-    await reviewServices.createRetrievedRecord(projectId, {
-      searchRunId: text(form, "searchRunId"), searchSourceId: text(form, "searchSourceId"), sourceRecordId: optional(form, "sourceRecordId"), title: text(form, "title"),
-      authors: authorText ? authorText.split(",").map((author) => author.trim()).filter(Boolean) : [], abstract: optional(form, "abstract"), doi: optional(form, "doi"), url: optional(form, "url"), publicationYear: text(form, "publicationYear") ? Number(text(form, "publicationYear")) : undefined,
-      venue: optional(form, "venue"), rawCitation: optional(form, "rawCitation"), retrievedAt: text(form, "retrievedAt") || new Date().toISOString(),
-    });
-  } catch (error) { fail(`/projects/${projectId}/protocol`, error); }
-  redirect(`/projects/${projectId}/protocol?saved=record`);
+export async function createManuscriptSnapshotAction(  form: Parameters<typeof actionsManuscript.createManuscriptSnapshotAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.createManuscriptSnapshotAction>>> {
+  return actionsManuscript.createManuscriptSnapshotAction(form);
 }
-
-export async function createPaperFromRetrievedRecordAction(form: FormData) {
-  const projectId = text(form, "projectId"); const recordId = text(form, "recordId");
-  let result;
-  try { result = await reviewServices.createPaperFromRetrievedRecord(projectId, recordId, { title: optional(form, "title"), bibliographicNote: optional(form, "bibliographicNote") }); }
-  catch (error) { fail(`/projects/${projectId}/protocol/runs/${text(form, "runId")}`, error); }
-  redirect(`/projects/${projectId}/protocol/runs/${text(form, "runId")}?saved=paper&paperId=${encodeURIComponent(result.paper.id)}`);
+export async function openManuscriptReviewThreadAction(  form: Parameters<typeof actionsManuscript.openManuscriptReviewThreadAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.openManuscriptReviewThreadAction>>> {
+  return actionsManuscript.openManuscriptReviewThreadAction(form);
 }
-
-export async function linkRetrievedRecordToPaperAction(form: FormData) {
-  const projectId = text(form, "projectId"); const runId = text(form, "runId");
-  try { await reviewServices.linkRetrievedRecordToPaper(projectId, text(form, "recordId"), text(form, "paperId")); }
-  catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}`, error); }
-  redirect(`/projects/${projectId}/protocol/runs/${runId}?saved=linked`);
+export async function commentManuscriptReviewThreadAction(  form: Parameters<typeof actionsManuscript.commentManuscriptReviewThreadAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.commentManuscriptReviewThreadAction>>> {
+  return actionsManuscript.commentManuscriptReviewThreadAction(form);
 }
-
-export async function unlinkRetrievedRecordFromPaperAction(form: FormData) {
-  const projectId = text(form, "projectId"); const runId = text(form, "runId");
-  try { await reviewServices.unlinkRetrievedRecordFromPaper(projectId, text(form, "recordId"), text(form, "paperId")); }
-  catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}`, error); }
-  redirect(`/projects/${projectId}/protocol/runs/${runId}?saved=unlinked`);
+export async function resolveManuscriptReviewThreadAction(  form: Parameters<typeof actionsManuscript.resolveManuscriptReviewThreadAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.resolveManuscriptReviewThreadAction>>> {
+  return actionsManuscript.resolveManuscriptReviewThreadAction(form);
 }
-
-export async function relinkRetrievedRecordAction(form: FormData) {
-  const projectId = text(form, "projectId"); const runId = text(form, "runId");
-  try { await reviewServices.relinkRetrievedRecord(projectId, text(form, "recordId"), text(form, "fromPaperId"), text(form, "toPaperId")); }
-  catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}`, error); }
-  redirect(`/projects/${projectId}/protocol/runs/${runId}?saved=relinked`);
+export async function reopenManuscriptReviewThreadAction(  form: Parameters<typeof actionsManuscript.reopenManuscriptReviewThreadAction>[0]): Promise<Awaited<ReturnType<typeof actionsManuscript.reopenManuscriptReviewThreadAction>>> {
+  return actionsManuscript.reopenManuscriptReviewThreadAction(form);
 }
-
-function deduplicationPairPath(projectId: string, leftRecordId: string, rightRecordId: string) {
-  return `/projects/${projectId}/deduplication/${encodeURIComponent(leftRecordId)}/${encodeURIComponent(rightRecordId)}`;
+export async function inspectPdfIntakeAction(  form: Parameters<typeof actionsPdfIntake.inspectPdfIntakeAction>[0]): Promise<Awaited<ReturnType<typeof actionsPdfIntake.inspectPdfIntakeAction>>> {
+  return actionsPdfIntake.inspectPdfIntakeAction(form);
 }
-
-export async function confirmSameWorkAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const leftRecordId = text(form, "leftRecordId");
-  const rightRecordId = text(form, "rightRecordId");
-  const path = deduplicationPairPath(projectId, leftRecordId, rightRecordId);
-  try {
-    await reviewServices.confirmSameWork(projectId, leftRecordId, rightRecordId, optional(form, "note"));
-  } catch (error) { fail(path, error); }
-  redirect(`${path}?saved=same_work`);
+export async function resolvePdfIntakeAction(  form: Parameters<typeof actionsPdfIntake.resolvePdfIntakeAction>[0]): Promise<Awaited<ReturnType<typeof actionsPdfIntake.resolvePdfIntakeAction>>> {
+  return actionsPdfIntake.resolvePdfIntakeAction(form);
 }
-
-export async function confirmSameWorkAndResolveAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const leftRecordId = text(form, "leftRecordId");
-  const rightRecordId = text(form, "rightRecordId");
-  const path = deduplicationPairPath(projectId, leftRecordId, rightRecordId);
-  const resolutionType = text(form, "resolutionType");
-  const resolution = resolutionType === "existing"
-    ? { paperId: text(form, "paperId") }
-    : { createFromRecordId: text(form, "createFromRecordId"), overrides: { title: optional(form, "title") } };
-  try {
-    await reviewServices.confirmSameWorkAndResolve(projectId, leftRecordId, rightRecordId, resolution, optional(form, "note"));
-  } catch (error) { fail(path, error); }
-  redirect(`${path}?saved=same_work_resolved`);
+export async function createProjectAction(  form: Parameters<typeof actionsProjectsPapers.createProjectAction>[0]): Promise<Awaited<ReturnType<typeof actionsProjectsPapers.createProjectAction>>> {
+  return actionsProjectsPapers.createProjectAction(form);
 }
-
-export async function decideDifferentWorkAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const leftRecordId = text(form, "leftRecordId");
-  const rightRecordId = text(form, "rightRecordId");
-  const path = deduplicationPairPath(projectId, leftRecordId, rightRecordId);
-  try {
-    await reviewServices.decideDifferentWork(projectId, leftRecordId, rightRecordId, optional(form, "note"));
-  } catch (error) { fail(path, error); }
-  redirect(`${path}?saved=different_work`);
+export async function addPaperAction(  _previousState: Parameters<typeof actionsProjectsPapers.addPaperAction>[0],   form: Parameters<typeof actionsProjectsPapers.addPaperAction>[1]): Promise<Awaited<ReturnType<typeof actionsProjectsPapers.addPaperAction>>> {
+  return actionsProjectsPapers.addPaperAction(_previousState, form);
 }
-
-export async function correctDifferentWorkAndResolveAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const leftRecordId = text(form, "leftRecordId");
-  const rightRecordId = text(form, "rightRecordId");
-  const path = deduplicationPairPath(projectId, leftRecordId, rightRecordId);
-  try {
-    await reviewServices.correctDifferentWorkAndResolve(projectId, leftRecordId, rightRecordId, {
-      relinkRecordId: text(form, "relinkRecordId"),
-      toPaperId: text(form, "toPaperId"),
-    }, optional(form, "note"));
-  } catch (error) { fail(path, error); }
-  redirect(`${path}?saved=different_work_resolved`);
+export async function createResearchQuestionAction(  form: Parameters<typeof actionsProtocolSearch.createResearchQuestionAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.createResearchQuestionAction>>> {
+  return actionsProtocolSearch.createResearchQuestionAction(form);
 }
-
-export async function createSynthesisPreparationAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const evidenceSetId = text(form, "evidenceSetId");
-  const extractionFieldId = text(form, "extractionFieldId");
-  let preparation;
-  try {
-    preparation = await reviewServices.createSynthesisPreparation(projectId, {
-      evidenceSetId,
-      extractionFieldId,
-      workingTitle: optional(form, "workingTitle"),
-      workingNote: optional(form, "workingNote"),
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/evidence-sets/${evidenceSetId}`, error);
-  }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparation.id}`);
+export async function createSearchSourceAction(  form: Parameters<typeof actionsProtocolSearch.createSearchSourceAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.createSearchSourceAction>>> {
+  return actionsProtocolSearch.createSearchSourceAction(form);
 }
-
-export async function updateSynthesisPreparationAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const preparationId = text(form, "preparationId");
-  try {
-    const rawTarget = form.get("targetSynthesisStatementId");
-    await reviewServices.updateSynthesisPreparation(projectId, preparationId, {
-      workingTitle: optional(form, "workingTitle"),
-      workingNote: optional(form, "workingNote"),
-      targetSynthesisStatementId: rawTarget !== null ? (optional(form, "targetSynthesisStatementId") ?? null) : undefined,
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
-  }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=updated`);
+export async function createSearchStrategyAction(  form: Parameters<typeof actionsProtocolSearch.createSearchStrategyAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.createSearchStrategyAction>>> {
+  return actionsProtocolSearch.createSearchStrategyAction(form);
 }
-
-export async function replaceSynthesisPreparationSelectionsAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const preparationId = text(form, "preparationId");
-  try {
-    const extractionRevisionIds = form
-      .getAll("extractionRevisionIds")
-      .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
-      .map((v) => v.trim());
-    await reviewServices.replaceSynthesisPreparationSelections(projectId, preparationId, {
-      extractionRevisionIds,
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
-  }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=selections`);
+export async function createSearchRunAction(  form: Parameters<typeof actionsProtocolSearch.createSearchRunAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.createSearchRunAction>>> {
+  return actionsProtocolSearch.createSearchRunAction(form);
 }
-
-export async function abandonSynthesisPreparationAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const preparationId = text(form, "preparationId");
-  try {
-    await reviewServices.abandonSynthesisPreparation(projectId, preparationId);
-  } catch (error) {
-    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
-  }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=abandoned`);
+export async function createRetrievedRecordAction(  form: Parameters<typeof actionsProtocolSearch.createRetrievedRecordAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.createRetrievedRecordAction>>> {
+  return actionsProtocolSearch.createRetrievedRecordAction(form);
 }
-
-export async function finalizeSynthesisPreparationAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const preparationId = text(form, "preparationId");
-  let result;
-  try {
-    result = await reviewServices.finalizeSynthesisPreparation(projectId, preparationId, {
-      statementText: verbatimText(form, "statementText"),
-      title: optional(form, "title"),
-      researcherNote: optional(form, "researcherNote"),
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
-  }
-  redirect(`/projects/${projectId}/synthesis/${result.statement.id}?saved=finalized_from_preparation`);
+export async function createPaperFromRetrievedRecordAction(  form: Parameters<typeof actionsProtocolSearch.createPaperFromRetrievedRecordAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.createPaperFromRetrievedRecordAction>>> {
+  return actionsProtocolSearch.createPaperFromRetrievedRecordAction(form);
 }
-
-export async function appendSynthesisInterpretationAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const synthesisStatementId = text(form, "synthesisStatementId");
-  const synthesisRevisionId = text(form, "synthesisRevisionId");
-  try {
-    let limitations: { category: LimitationCategory; body: string }[] = [];
-    if (form.get("limitationsJson")) {
-      limitations = JSON.parse(text(form, "limitationsJson"));
-    } else {
-      const categories = form.getAll("limitationCategory").map((c) => String(c).trim());
-      const bodies = form.getAll("limitationBody").map((b) => String(b).trim());
-      limitations = categories
-        .map((category, index) => ({
-          category: category as LimitationCategory,
-          body: bodies[index] ?? "",
-        }))
-        .filter((item) => item.body.length > 0);
-    }
-
-    let questions: { body: string }[] = [];
-    if (form.get("questionsJson")) {
-      questions = JSON.parse(text(form, "questionsJson"));
-    } else {
-      const bodies = form.getAll("questionBody").map((b) => String(b).trim());
-      questions = bodies.map((body) => ({ body })).filter((item) => item.body.length > 0);
-    }
-
-    let contradictions: { leftExtractionRevisionId: string; rightExtractionRevisionId: string; note?: string | null }[] = [];
-    if (form.get("contradictionsJson")) {
-      contradictions = JSON.parse(text(form, "contradictionsJson"));
-    } else if (form.getAll("contradictionPairs").length > 0) {
-      contradictions = form
-        .getAll("contradictionPairs")
-        .map((pair) => String(pair).split(":"))
-        .filter((parts) => parts.length === 2)
-        .map(([left, right]) => ({
-          leftExtractionRevisionId: left.trim(),
-          rightExtractionRevisionId: right.trim(),
-        }));
-    } else {
-      const lefts = form.getAll("contradictionLeftId").map((id) => String(id).trim());
-      const rights = form.getAll("contradictionRightId").map((id) => String(id).trim());
-      const notes = form.getAll("contradictionNote").map((n) => String(n).trim());
-      contradictions = lefts
-        .map((left, index) => ({
-          leftExtractionRevisionId: left,
-          rightExtractionRevisionId: rights[index] ?? "",
-          note: notes[index] || null,
-        }))
-        .filter((item) => item.leftExtractionRevisionId && item.rightExtractionRevisionId);
-    }
-
-    await reviewServices.appendSynthesisInterpretation(
-      projectId,
-      synthesisStatementId,
-      synthesisRevisionId,
-      {
-        convergenceState: text(form, "convergenceState") as ConvergenceState,
-        summary: verbatimText(form, "summary"),
-        researcherNote: optional(form, "researcherNote"),
-        limitations,
-        questions,
-        contradictions,
-      },
-    );
-  } catch (error) {
-    fail(`/projects/${projectId}/synthesis/${synthesisStatementId}/revisions/${synthesisRevisionId}`, error);
-  }
-  redirect(`/projects/${projectId}/synthesis/${synthesisStatementId}/revisions/${synthesisRevisionId}?saved=interpretation`);
+export async function linkRetrievedRecordToPaperAction(  form: Parameters<typeof actionsProtocolSearch.linkRetrievedRecordToPaperAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.linkRetrievedRecordToPaperAction>>> {
+  return actionsProtocolSearch.linkRetrievedRecordToPaperAction(form);
 }
-
-export async function createClaimFromInterpretationAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const interpretationId = text(form, "interpretationId");
-  const synthesisRevisionId = optional(form, "synthesisRevisionId");
-  let claim;
-  try {
-    claim = await reviewServices.createClaimFromInterpretation(projectId, {
-      interpretationId,
-      synthesisRevisionId,
-      claimText: verbatimText(form, "claimText"),
-      researcherNote: optional(form, "researcherNote"),
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/claims?interpretationId=${interpretationId}${synthesisRevisionId ? `&synthesisRevisionId=${synthesisRevisionId}` : ""}`, error);
-  }
-  redirect(`/projects/${projectId}/claims/${claim.id}?saved=created_from_interpretation`);
+export async function unlinkRetrievedRecordFromPaperAction(  form: Parameters<typeof actionsProtocolSearch.unlinkRetrievedRecordFromPaperAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.unlinkRetrievedRecordFromPaperAction>>> {
+  return actionsProtocolSearch.unlinkRetrievedRecordFromPaperAction(form);
 }
-
-export async function linkExtractionFieldAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const questionId = text(form, "questionId");
-  const fieldId = text(form, "fieldId") || text(form, "extractionFieldId");
-  const note = optional(form, "note");
-  try {
-    await reviewServices.linkExtractionField({ projectId, questionId, fieldId, note });
-  } catch (error) {
-    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
-  }
-  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=field_linked`);
+export async function relinkRetrievedRecordAction(  form: Parameters<typeof actionsProtocolSearch.relinkRetrievedRecordAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.relinkRetrievedRecordAction>>> {
+  return actionsProtocolSearch.relinkRetrievedRecordAction(form);
 }
-
-export async function unlinkExtractionFieldAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const questionId = text(form, "questionId");
-  const fieldId = text(form, "fieldId") || text(form, "extractionFieldId");
-  const note = optional(form, "note");
-  try {
-    await reviewServices.unlinkExtractionField({ projectId, questionId, fieldId, note });
-  } catch (error) {
-    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
-  }
-  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=field_unlinked`);
+export async function confirmSameWorkAction(  form: Parameters<typeof actionsProtocolSearch.confirmSameWorkAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.confirmSameWorkAction>>> {
+  return actionsProtocolSearch.confirmSameWorkAction(form);
 }
-
-export async function linkEvidenceSetAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const questionId = text(form, "questionId");
-  const evidenceSetId = text(form, "evidenceSetId");
-  const note = optional(form, "note");
-  try {
-    await reviewServices.linkEvidenceSet({ projectId, questionId, evidenceSetId, note });
-  } catch (error) {
-    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
-  }
-  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=evidence_set_linked`);
+export async function confirmSameWorkAndResolveAction(  form: Parameters<typeof actionsProtocolSearch.confirmSameWorkAndResolveAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.confirmSameWorkAndResolveAction>>> {
+  return actionsProtocolSearch.confirmSameWorkAndResolveAction(form);
 }
-
-export async function unlinkEvidenceSetAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const questionId = text(form, "questionId");
-  const evidenceSetId = text(form, "evidenceSetId");
-  const note = optional(form, "note");
-  try {
-    await reviewServices.unlinkEvidenceSet({ projectId, questionId, evidenceSetId, note });
-  } catch (error) {
-    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
-  }
-  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=evidence_set_unlinked`);
+export async function decideDifferentWorkAction(  form: Parameters<typeof actionsProtocolSearch.decideDifferentWorkAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.decideDifferentWorkAction>>> {
+  return actionsProtocolSearch.decideDifferentWorkAction(form);
 }
-
-export async function linkSynthesisStatementAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const questionId = text(form, "questionId");
-  const statementId = text(form, "statementId") || text(form, "synthesisStatementId");
-  const note = optional(form, "note");
-  try {
-    await reviewServices.linkSynthesisStatement({ projectId, questionId, statementId, note });
-  } catch (error) {
-    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
-  }
-  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=synthesis_linked`);
+export async function correctDifferentWorkAndResolveAction(  form: Parameters<typeof actionsProtocolSearch.correctDifferentWorkAndResolveAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.correctDifferentWorkAndResolveAction>>> {
+  return actionsProtocolSearch.correctDifferentWorkAndResolveAction(form);
 }
-
-export async function unlinkSynthesisStatementAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const questionId = text(form, "questionId");
-  const statementId = text(form, "statementId") || text(form, "synthesisStatementId");
-  const note = optional(form, "note");
-  try {
-    await reviewServices.unlinkSynthesisStatement({ projectId, questionId, statementId, note });
-  } catch (error) {
-    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
-  }
-  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=synthesis_unlinked`);
+export async function linkExtractionFieldAction(  form: Parameters<typeof actionsResearchQuestion.linkExtractionFieldAction>[0]): Promise<Awaited<ReturnType<typeof actionsResearchQuestion.linkExtractionFieldAction>>> {
+  return actionsResearchQuestion.linkExtractionFieldAction(form);
 }
-
-export async function linkClaimAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const questionId = text(form, "questionId");
-  const claimId = text(form, "claimId");
-  const note = optional(form, "note");
-  try {
-    await reviewServices.linkClaim({ projectId, questionId, claimId, note });
-  } catch (error) {
-    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
-  }
-  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=claim_linked`);
+export async function unlinkExtractionFieldAction(  form: Parameters<typeof actionsResearchQuestion.unlinkExtractionFieldAction>[0]): Promise<Awaited<ReturnType<typeof actionsResearchQuestion.unlinkExtractionFieldAction>>> {
+  return actionsResearchQuestion.unlinkExtractionFieldAction(form);
 }
-
-export async function unlinkClaimAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const questionId = text(form, "questionId");
-  const claimId = text(form, "claimId");
-  const note = optional(form, "note");
-  try {
-    await reviewServices.unlinkClaim({ projectId, questionId, claimId, note });
-  } catch (error) {
-    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
-  }
-  redirect(`/projects/${projectId}/research-questions/${questionId}?saved=claim_unlinked`);
+export async function linkEvidenceSetAction(  form: Parameters<typeof actionsResearchQuestion.linkEvidenceSetAction>[0]): Promise<Awaited<ReturnType<typeof actionsResearchQuestion.linkEvidenceSetAction>>> {
+  return actionsResearchQuestion.linkEvidenceSetAction(form);
 }
-
-export async function appendResearchQuestionAnswerAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const questionId = text(form, "questionId");
-  const claimRevisionIds = form
-    .getAll("claimRevisionIds")
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    .map((value) => value.trim());
-  const synthesisRevisionIds = form
-    .getAll("synthesisRevisionIds")
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    .map((value) => value.trim());
-  let answer;
-  try {
-    answer = await reviewServices.appendResearchQuestionAnswer(projectId, questionId, {
-      answerText: verbatimText(form, "answerText"),
-      researcherNote: optional(form, "researcherNote"),
-      claimRevisionIds,
-      synthesisRevisionIds,
-    });
-  } catch (error) {
-    // The write service deliberately rejects exact revision conflicts instead
-    // of floating to a newer revision. Redirecting back to the detail page
-    // causes Server Components to refresh candidates before another attempt.
-    fail(`/projects/${projectId}/research-questions/${questionId}`, error);
-  }
-  redirect(`/projects/${projectId}/research-questions/${questionId}/answers/${answer.id}?saved=answer`);
+export async function unlinkEvidenceSetAction(  form: Parameters<typeof actionsResearchQuestion.unlinkEvidenceSetAction>[0]): Promise<Awaited<ReturnType<typeof actionsResearchQuestion.unlinkEvidenceSetAction>>> {
+  return actionsResearchQuestion.unlinkEvidenceSetAction(form);
 }
-
-const answerManuscriptServices = reviewServices as typeof reviewServices & {
-  applyResearchQuestionAnswerToSection: (
-    projectId: string,
-    questionId: string,
-    answerId: string,
-    input: {
-      manuscriptId: string;
-      sectionId: string;
-      proseText?: string | null;
-      claimRevisionIds: string[];
-      insertion: { kind: "append" } | { kind: "before"; sectionItemId: string };
-    },
-  ) => Promise<unknown>;
-};
-
-export async function applyResearchQuestionAnswerToSectionAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const questionId = text(form, "questionId");
-  const answerId = text(form, "answerId");
-  const manuscriptId = text(form, "manuscriptId");
-  const sectionId = text(form, "sectionId");
-  const claimRevisionIds = many(form, "claimRevisionIds");
-  const insertion = text(form, "insertionKind") === "before"
-    ? { kind: "before" as const, sectionItemId: text(form, "sectionItemId") }
-    : { kind: "append" as const };
-
-  try {
-    await answerManuscriptServices.applyResearchQuestionAnswerToSection(projectId, questionId, answerId, {
-      manuscriptId,
-      sectionId,
-      proseText: verbatimText(form, "proseText"),
-      claimRevisionIds,
-      insertion,
-    });
-  } catch (error) {
-    fail(`/projects/${projectId}/research-questions/${questionId}/answers/${answerId}/manuscript`, error);
-  }
-  redirect(`/projects/${projectId}/manuscript?saved=answer`);
+export async function linkSynthesisStatementAction(  form: Parameters<typeof actionsResearchQuestion.linkSynthesisStatementAction>[0]): Promise<Awaited<ReturnType<typeof actionsResearchQuestion.linkSynthesisStatementAction>>> {
+  return actionsResearchQuestion.linkSynthesisStatementAction(form);
 }
-
-function frameworkDraftRedirect(path: string, saved: string, form: FormData): never {
-  revalidatePath(path);
-  const focusTarget = text(form, "focusTarget");
-  const focusQuery = /^draft-(section|item|response-option|overall-option)-[0-9a-f-]{36}$/i.test(focusTarget)
-    ? `&focus=${encodeURIComponent(focusTarget)}`
-    : "";
-  redirect(`${path}?saved=${encodeURIComponent(saved)}${focusQuery}`);
+export async function unlinkSynthesisStatementAction(  form: Parameters<typeof actionsResearchQuestion.unlinkSynthesisStatementAction>[0]): Promise<Awaited<ReturnType<typeof actionsResearchQuestion.unlinkSynthesisStatementAction>>> {
+  return actionsResearchQuestion.unlinkSynthesisStatementAction(form);
 }
-
-export async function createAppraisalFrameworkAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  let result: Awaited<ReturnType<typeof reviewServices.createAppraisalFramework>>;
-  try { result = await reviewServices.createAppraisalFramework(projectId, { name: text(form, "name") }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/new`, error); }
-  redirect(`/projects/${projectId}/appraisal/frameworks/${result.framework.id}`);
+export async function linkClaimAction(  form: Parameters<typeof actionsResearchQuestion.linkClaimAction>[0]): Promise<Awaited<ReturnType<typeof actionsResearchQuestion.linkClaimAction>>> {
+  return actionsResearchQuestion.linkClaimAction(form);
 }
-
-export async function updateFrameworkDraftMetadataAction(form: FormData) {
-  const projectId = text(form, "projectId");
-  const versionId = text(form, "versionId");
-  try {
-    await reviewServices.updateFrameworkDraftMetadata(projectId, {
-      versionId,
-      expectedDraftRevision: expectedDraftRevisionFromForm(form),
-      versionLabel: text(form, "versionLabel"),
-      description: optional(form, "description") ?? null,
-      citation: optional(form, "citation") ?? null,
-      externalReferenceUrl: optional(form, "externalReferenceUrl") ?? null,
-      rightsNote: optional(form, "rightsNote") ?? null,
-      instructions: optional(form, "instructions") ?? null,
-      intendedStudyDesign: optional(form, "intendedStudyDesign") ?? null,
-      applicabilityNote: optional(form, "applicabilityNote") ?? null,
-      overallJudgementRequired: form.get("overallJudgementRequired") === "on",
-    });
-  } catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${text(form, "frameworkId")}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${text(form, "frameworkId")}/versions/${versionId}`, "metadata", form);
+export async function unlinkClaimAction(  form: Parameters<typeof actionsResearchQuestion.unlinkClaimAction>[0]): Promise<Awaited<ReturnType<typeof actionsResearchQuestion.unlinkClaimAction>>> {
+  return actionsResearchQuestion.unlinkClaimAction(form);
 }
-
-export async function addAppraisalFrameworkSectionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.addFrameworkSection(projectId, { versionId, expectedDraftRevision: expectedDraftRevisionFromForm(form), label: text(form, "label"), description: optional(form, "description") }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "section", form);
+export async function appendResearchQuestionAnswerAction(  form: Parameters<typeof actionsResearchQuestion.appendResearchQuestionAnswerAction>[0]): Promise<Awaited<ReturnType<typeof actionsResearchQuestion.appendResearchQuestionAnswerAction>>> {
+  return actionsResearchQuestion.appendResearchQuestionAnswerAction(form);
 }
-
-export async function updateAppraisalFrameworkSectionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.updateFrameworkSection(projectId, { versionId, expectedDraftRevision: expectedDraftRevisionFromForm(form), sectionId: text(form, "sectionId"), label: text(form, "label"), description: optional(form, "description") }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "section", form);
+export async function applyResearchQuestionAnswerToSectionAction(  form: Parameters<typeof actionsResearchQuestion.applyResearchQuestionAnswerToSectionAction>[0]): Promise<Awaited<ReturnType<typeof actionsResearchQuestion.applyResearchQuestionAnswerToSectionAction>>> {
+  return actionsResearchQuestion.applyResearchQuestionAnswerToSectionAction(form);
 }
-
-export async function reorderAppraisalFrameworkSectionsAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.reorderFrameworkSections(projectId, { versionId, expectedDraftRevision: expectedDraftRevisionFromForm(form), ids: many(form, "ids") }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "reordered", form);
+export async function createScreeningCriterionAction(  form: Parameters<typeof actionsScreening.createScreeningCriterionAction>[0]): Promise<Awaited<ReturnType<typeof actionsScreening.createScreeningCriterionAction>>> {
+  return actionsScreening.createScreeningCriterionAction(form);
 }
-
-export async function removeAppraisalFrameworkSectionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.removeFrameworkSection(projectId, { versionId, sectionId: text(form, "sectionId"), expectedDraftRevision: expectedDraftRevisionFromForm(form) }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "section-removed", form);
+export async function archiveScreeningCriterionAction(  form: Parameters<typeof actionsScreening.archiveScreeningCriterionAction>[0]): Promise<Awaited<ReturnType<typeof actionsScreening.archiveScreeningCriterionAction>>> {
+  return actionsScreening.archiveScreeningCriterionAction(form);
 }
-
-export async function addAppraisalFrameworkItemAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.addFrameworkItem(projectId, { versionId, expectedDraftRevision: expectedDraftRevisionFromForm(form), sectionId: text(form, "sectionId"), prompt: verbatimText(form, "prompt"), guidance: optional(form, "guidance"), required: form.get("required") === "on" }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "item", form);
+export async function recordScreeningDecisionAction(  form: Parameters<typeof actionsScreening.recordScreeningDecisionAction>[0]): Promise<Awaited<ReturnType<typeof actionsScreening.recordScreeningDecisionAction>>> {
+  return actionsScreening.recordScreeningDecisionAction(form);
 }
-
-export async function updateAppraisalFrameworkItemAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.updateFrameworkItem(projectId, { versionId, expectedDraftRevision: expectedDraftRevisionFromForm(form), itemId: text(form, "itemId"), sectionId: text(form, "sectionId"), prompt: verbatimText(form, "prompt"), guidance: optional(form, "guidance"), required: form.get("required") === "on" }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "item", form);
+export async function createFullTextScreeningCriterionAction(  form: Parameters<typeof actionsScreening.createFullTextScreeningCriterionAction>[0]): Promise<Awaited<ReturnType<typeof actionsScreening.createFullTextScreeningCriterionAction>>> {
+  return actionsScreening.createFullTextScreeningCriterionAction(form);
 }
-
-export async function reorderAppraisalFrameworkItemsAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.reorderFrameworkItems(projectId, { versionId, expectedDraftRevision: expectedDraftRevisionFromForm(form), sectionId: text(form, "sectionId"), ids: many(form, "ids") }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "reordered", form);
+export async function archiveFullTextScreeningCriterionAction(  form: Parameters<typeof actionsScreening.archiveFullTextScreeningCriterionAction>[0]): Promise<Awaited<ReturnType<typeof actionsScreening.archiveFullTextScreeningCriterionAction>>> {
+  return actionsScreening.archiveFullTextScreeningCriterionAction(form);
 }
-
-export async function removeAppraisalFrameworkItemAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.removeFrameworkItem(projectId, { versionId, itemId: text(form, "itemId"), expectedDraftRevision: expectedDraftRevisionFromForm(form) }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "item-removed", form);
+export async function recordFullTextScreeningDecisionAction(  form: Parameters<typeof actionsScreening.recordFullTextScreeningDecisionAction>[0]): Promise<Awaited<ReturnType<typeof actionsScreening.recordFullTextScreeningDecisionAction>>> {
+  return actionsScreening.recordFullTextScreeningDecisionAction(form);
 }
-
-export async function addAppraisalFrameworkResponseOptionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.addFrameworkResponseOption(projectId, { versionId, expectedDraftRevision: expectedDraftRevisionFromForm(form), itemId: text(form, "itemId"), optionKey: text(form, "optionKey"), label: text(form, "label") }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "option", form);
+export async function recordFullTextRetrievalAttemptAction(  form: Parameters<typeof actionsScreening.recordFullTextRetrievalAttemptAction>[0]): Promise<Awaited<ReturnType<typeof actionsScreening.recordFullTextRetrievalAttemptAction>>> {
+  return actionsScreening.recordFullTextRetrievalAttemptAction(form);
 }
-
-export async function updateAppraisalFrameworkResponseOptionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.updateFrameworkResponseOption(projectId, { versionId, expectedDraftRevision: expectedDraftRevisionFromForm(form), itemId: text(form, "itemId"), optionId: text(form, "optionId"), optionKey: text(form, "optionKey"), label: text(form, "label") }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "option", form);
+export async function createSynthesisStatementAction(  form: Parameters<typeof actionsSynthesis.createSynthesisStatementAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.createSynthesisStatementAction>>> {
+  return actionsSynthesis.createSynthesisStatementAction(form);
 }
-
-export async function reorderAppraisalFrameworkResponseOptionsAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.reorderFrameworkResponseOptions(projectId, { versionId, expectedDraftRevision: expectedDraftRevisionFromForm(form), itemId: text(form, "itemId"), ids: many(form, "ids") }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "reordered", form);
+export async function reviseSynthesisStatementAction(  form: Parameters<typeof actionsSynthesis.reviseSynthesisStatementAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.reviseSynthesisStatementAction>>> {
+  return actionsSynthesis.reviseSynthesisStatementAction(form);
 }
-
-export async function removeAppraisalFrameworkResponseOptionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.removeFrameworkResponseOption(projectId, { versionId, itemId: text(form, "itemId"), optionId: text(form, "optionId"), expectedDraftRevision: expectedDraftRevisionFromForm(form) }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "option-removed", form);
+export async function withdrawSynthesisStatementAction(  form: Parameters<typeof actionsSynthesis.withdrawSynthesisStatementAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.withdrawSynthesisStatementAction>>> {
+  return actionsSynthesis.withdrawSynthesisStatementAction(form);
 }
-
-export async function setAppraisalFrameworkOverallOptionsAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try {
-    const parsed = form.getAll("optionKey").map((key, index) => ({ optionKey: String(key), label: String(form.getAll("optionLabel")[index] ?? "") })).filter((option) => option.optionKey.trim() || option.label.trim());
-    await reviewServices.setFrameworkOverallJudgementOptions(projectId, { versionId, expectedDraftRevision: expectedDraftRevisionFromForm(form), required: form.get("required") === "on", options: parsed });
-  } catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "overall", form);
+export async function createSynthesisPreparationAction(  form: Parameters<typeof actionsSynthesis.createSynthesisPreparationAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.createSynthesisPreparationAction>>> {
+  return actionsSynthesis.createSynthesisPreparationAction(form);
 }
-
-export async function reorderAppraisalFrameworkOverallOptionsAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.reorderFrameworkOverallJudgementOptions(projectId, { versionId, expectedDraftRevision: expectedDraftRevisionFromForm(form), ids: many(form, "ids") }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "reordered", form);
+export async function updateSynthesisPreparationAction(  form: Parameters<typeof actionsSynthesis.updateSynthesisPreparationAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.updateSynthesisPreparationAction>>> {
+  return actionsSynthesis.updateSynthesisPreparationAction(form);
 }
-
-export async function finalizeAppraisalFrameworkVersionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const versionId = text(form, "versionId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.finalizeFrameworkVersion(projectId, versionId, expectedDraftRevisionFromForm(form)); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, error); }
-  frameworkDraftRedirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${versionId}`, "finalized", form);
+export async function replaceSynthesisPreparationSelectionsAction(  form: Parameters<typeof actionsSynthesis.replaceSynthesisPreparationSelectionsAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.replaceSynthesisPreparationSelectionsAction>>> {
+  return actionsSynthesis.replaceSynthesisPreparationSelectionsAction(form);
 }
-
-export async function createAppraisalFrameworkVersionAction(form: FormData) {
-  const projectId = text(form, "projectId"); const frameworkId = text(form, "frameworkId");
-  let version: Awaited<ReturnType<typeof reviewServices.createNewFrameworkVersion>>;
-  try { version = await reviewServices.createNewFrameworkVersion(projectId, frameworkId, { versionLabel: optional(form, "versionLabel") }); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}`, error); }
-  redirect(`/projects/${projectId}/appraisal/frameworks/${frameworkId}/versions/${version.version.id}`);
+export async function abandonSynthesisPreparationAction(  form: Parameters<typeof actionsSynthesis.abandonSynthesisPreparationAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.abandonSynthesisPreparationAction>>> {
+  return actionsSynthesis.abandonSynthesisPreparationAction(form);
 }
-
-export async function archiveAppraisalFrameworkAction(form: FormData) {
-  const projectId = text(form, "projectId"); const frameworkId = text(form, "frameworkId");
-  try { await reviewServices.archiveAppraisalFramework(projectId, frameworkId); }
-  catch (error) { fail(`/projects/${projectId}/appraisal/frameworks/${frameworkId}`, error); }
-  redirect(`/projects/${projectId}/appraisal/frameworks?archived=1`);
+export async function finalizeSynthesisPreparationAction(  form: Parameters<typeof actionsSynthesis.finalizeSynthesisPreparationAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.finalizeSynthesisPreparationAction>>> {
+  return actionsSynthesis.finalizeSynthesisPreparationAction(form);
 }
-
-export async function saveAppraisalRevisionAction(_previousState: AppraisalWorksheetActionState, form: FormData): Promise<AppraisalWorksheetActionState> {
-  const projectId = text(form, "projectId"); const paperId = text(form, "paperId"); const frameworkId = text(form, "frameworkId");
-  const submittedValues: Record<string, string[]> = {};
-  for (const [key, value] of form.entries()) {
-    if (typeof value === "string") (submittedValues[key] ??= []).push(value);
-  }
-  const failure = (formError: string | null, fieldErrors: AppraisalWorksheetActionState["fieldErrors"] = []): AppraisalWorksheetActionState => ({ formError, fieldErrors, submittedValues });
-  try {
-    const frameworkVersionId = text(form, "frameworkVersionId");
-    const detail = await reviewServices.readFrameworkVersion(projectId, frameworkVersionId);
-    if (detail.framework.id !== frameworkId) return failure("This custom framework version is no longer available. Reload the current worksheet before saving.");
-    const responses = many(form, "itemIds").map((itemId) => ({
-      itemId,
-      selectedOptionId: optional(form, `selectedOption_${itemId}`) ?? null,
-      rationale: verbatimText(form, `rationale_${itemId}`) || null,
-      evidenceIds: form.getAll(`evidenceIds_${itemId}`)
-        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-        .map((value) => value.trim()),
-    }));
-    const responseByItemId = new Map(responses.map((response) => [response.itemId, response]));
-    const fieldErrors: AppraisalWorksheetActionState["fieldErrors"] = detail.items
-      .filter((item) => item.required && !responseByItemId.get(item.id)?.selectedOptionId)
-      .map((item) => ({
-        controlName: `selectedOption_${item.id}`,
-        fieldId: `response-group-${item.id}`,
-        label: item.prompt,
-        message: `Item “${item.prompt}” requires a response.`,
-      }));
-    const overallJudgementOptionId = optional(form, "overallJudgementOptionId") ?? null;
-    if (detail.version.overallJudgementRequired && !overallJudgementOptionId) {
-      fieldErrors.push({ controlName: "overallJudgementOptionId", fieldId: "overall-judgement", label: "Overall judgement", message: "Overall judgement is required." });
-    }
-    if (fieldErrors.length) return failure(null, fieldErrors);
-
-    await reviewServices.saveAppraisalRevision(projectId, {
-      paperId,
-      frameworkId,
-      frameworkVersionId,
-      expectedCurrentRevisionId: optional(form, "expectedCurrentRevisionId") ?? null,
-      overallJudgementOptionId,
-      overallRationale: verbatimText(form, "overallRationale") || null,
-      responses,
-    });
-  } catch (error) {
-    if (error instanceof DomainError) {
-      if (error.code === "CONCURRENT_MODIFICATION") return failure("This appraisal changed in another session. Reload the current worksheet before saving again.");
-      if (error.code === "CROSS_PROJECT_REFERENCE" || error.code === "INELIGIBLE_REFERENCE") return failure("One or more selections are no longer available. Review the available choices and try again.");
-      if (error.code === "DATABASE_CONSTRAINT") return failure("The appraisal could not be saved with these selections. Review the available choices and try again.");
-      return failure(error.message);
-    }
-    return failure("The appraisal could not be saved. Review the form and try again.");
-  }
-  redirect(`/projects/${projectId}/appraisal/papers/${paperId}/frameworks/${frameworkId}?saved=revision`);
+export async function appendSynthesisInterpretationAction(  form: Parameters<typeof actionsSynthesis.appendSynthesisInterpretationAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.appendSynthesisInterpretationAction>>> {
+  return actionsSynthesis.appendSynthesisInterpretationAction(form);
 }
