@@ -147,6 +147,26 @@ input:focus, textarea:focus, select:focus { border-color: var(--forest); box-sha
 .support-picker { display: grid; gap: 15px; margin: 20px 0; }
 .support-picker fieldset { min-width: 0; margin: 0; padding: 11px 14px 4px; border: 1px solid var(--line); border-radius: 9px; }
 .support-picker legend { padding: 0 5px; font-size: 13px; font-weight: 700; }
+.support-picker-toolbar { display: grid; gap: 12px; }
+.support-kind-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.support-kind-tabs .button { display: inline-flex; align-items: center; gap: 7px; }
+.support-kind-tabs .button.active { border-color: var(--accent); color: var(--accent); }
+.claim-support-selected, .historical-support-context { padding: 10px 13px; border: 1px solid var(--line); border-radius: 9px; }
+.claim-support-selected > summary, .historical-support-context > summary { cursor: pointer; font-size: 13px; font-weight: 650; }
+.claim-support-selected-list { display: grid; gap: 7px; margin-top: 9px; }
+.claim-support-selected-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); }
+.claim-support-selected-item > span { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.historical-support-context ul { display: grid; gap: 8px; padding-left: 22px; color: var(--muted); font-size: 13px; }
+.claim-support-search { display: grid; gap: 6px; }
+.claim-support-search > label { font-size: 13px; font-weight: 650; }
+.claim-support-search-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.claim-support-search-row input { min-width: 180px; flex: 1; }
+.claim-support-result-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.claim-support-result-row > span { min-width: 0; font-size: 13px; font-weight: 600; }
+.claim-support-result-row small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.claim-support-result-row .button { flex: 0 0 auto; }
+.claim-support-pagination { margin: 4px 0 10px; }
+.support-selection-note { margin: 0; color: var(--accent); font-size: 13px; }
 .appraisal-response-group { min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 9px; }
 .appraisal-response-group legend { max-width: 100%; padding: 0 5px; font-weight: 700; line-height: 1.5; white-space: normal; }
 .appraisal-response-group[aria-invalid="true"] { border-color: #b94b40; box-shadow: 0 0 0 2px rgba(185, 75, 64, .12); }
@@ -643,6 +663,8 @@ body { overflow-x: hidden; }
 
 @media (max-width: 767px) {
   .project-main { padding: 24px 20px 64px; }
+  .claim-support-selected-item { align-items: flex-start; }
+  .claim-support-search-row > * { width: 100%; }
   .project-card-grid, .home-lower-grid, .overview-card-grid { grid-template-columns: 1fr; }
   .shortcut-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .intake-grid { grid-template-columns: 1fr; }

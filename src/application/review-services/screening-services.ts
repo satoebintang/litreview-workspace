@@ -62,18 +62,14 @@ export function createScreeningServices<TProject, TPaper, TCriterion extends { a
     async getPaperScreening(projectId: string, paperId: string) {
       const paper = await requirePaper(projectId, paperId);
       const [criteria, currentDecision, decisions] = await Promise.all([
-        criterionRepo.list(projectId), decisionRepo.currentForPaper(projectId, paperId), decisionRepo.listForPaper(projectId, paperId),
+        criterionRepo.list(projectId), decisionRepo.currentForPaper(projectId, paperId), decisionRepo.listForPaperWithCriteria(projectId, paperId),
       ]);
-      const history = await Promise.all(decisions.map(async (decision) => ({
-        ...decision,
-        exclusionCriterion: decision.exclusionCriterionId ? await criterionRepo.findById(projectId, decision.exclusionCriterionId) : null,
-      })));
       return {
         paper,
         criteria,
         currentState: currentDecision ? ({ include: "included", exclude: "excluded", maybe: "maybe" }[currentDecision.decision]) : "unscreened" as const,
         currentDecision,
-        history,
+        history: decisions,
         reviewStatus: await getPaperReviewStatusFor(projectId, paperId),
       };
     },
@@ -197,13 +193,9 @@ export function createScreeningServices<TProject, TPaper, TCriterion extends { a
     async getPaperFullTextScreening(projectId: string, paperId: string) {
       const paper = await requirePaper(projectId, paperId);
       const [criteria, currentDecision, decisions, reviewStatus, retrievalCurrent, retrievalHistory] = await Promise.all([
-        fullTextCriterionRepo.list(projectId), fullTextDecisionRepo.currentForPaper(projectId, paperId), fullTextDecisionRepo.listForPaper(projectId, paperId), getPaperReviewStatusFor(projectId, paperId), fullTextRetrievalRepo.currentForPaper(projectId, paperId), fullTextRetrievalRepo.listForPaper(projectId, paperId),
+        fullTextCriterionRepo.list(projectId), fullTextDecisionRepo.currentForPaper(projectId, paperId), fullTextDecisionRepo.listForPaperWithCriteria(projectId, paperId), getPaperReviewStatusFor(projectId, paperId), fullTextRetrievalRepo.currentForPaper(projectId, paperId), fullTextRetrievalRepo.listForPaper(projectId, paperId),
       ]);
-      const history = await Promise.all(decisions.map(async (decision) => ({
-        ...decision,
-        exclusionCriterion: decision.exclusionCriterionId ? await fullTextCriterionRepo.findById(projectId, decision.exclusionCriterionId) : null,
-      })));
-      return { paper, criteria, currentState: reviewStatus.fullTextState, currentDecision, history, reviewStatus, retrievalCurrent, retrievalHistory };
+      return { paper, criteria, currentState: reviewStatus.fullTextState, currentDecision, history: decisions, reviewStatus, retrievalCurrent, retrievalHistory };
     },
 
     async listFullTextScreeningQueue(projectId: string, state?: "awaiting" | "included" | "excluded" | "maybe" | "conflict") {

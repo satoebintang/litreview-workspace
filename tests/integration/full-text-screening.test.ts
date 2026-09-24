@@ -67,4 +67,19 @@ describe("Slice 12 full-text eligibility screening", () => {
     const claim = await services.createClaim(projectId, { claimText: "Direct evidence remains valid" });
     await expect(services.createClaimRevision(projectId, claim.id, { claimText: claim.claimText, supports: [{ kind: "evidence", evidenceId: evidence.id }], expectedCurrentRevisionId: claim.revision.id })).resolves.toBeTruthy();
   });
+
+  it("keeps archived full-text criteria attached to historical decisions", async () => {
+    const item = await paper("Archived criterion history");
+    const criterion = await services.createFullTextScreeningCriterion(projectId, { text: "No eligible outcome" });
+    await services.recordFullTextRetrievalAttempt(projectId, item.id, { outcome: "retrieved", attemptedAt: new Date() });
+    await services.recordFullTextScreeningDecision(projectId, item.id, { decision: "exclude", exclusionCriterionId: criterion.id });
+    await services.archiveFullTextScreeningCriterion(projectId, criterion.id);
+
+    const screening = await services.getPaperFullTextScreening(projectId, item.id);
+    expect(screening.history[0].exclusionCriterion).toMatchObject({
+      id: criterion.id,
+      text: "No eligible outcome",
+      archivedAt: expect.any(Date),
+    });
+  });
 });

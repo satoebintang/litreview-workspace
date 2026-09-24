@@ -218,3 +218,25 @@ Server Actions. See `docs/architecture/module-boundaries.md` and
 service composition order, accepted `createProject` precedence, and compiler-API
 architecture checks. This refactor preserves research behavior and does not
 change the data model or migrations.
+
+## Bounded read page
+
+A project-scoped, stable SQL page with database-derived counts and queue
+classification. Queue count and page reads share a read-only `REPEATABLE READ`
+snapshot; page rows alone are mapped to full review status. The retrieval `all`
+queue includes both currently title/abstract-included Papers and historical
+retrieval conflicts.
+
+## Claim support search page
+
+A compact, kind-specific page for eligible Evidence, ExtractionRevisions, or
+SynthesisRevisions. Search and pagination do not determine which support IDs
+remain selected in the Claim form. Canonical Claim writes continue to recheck
+eligibility.
+
+## Synthesis evidence path count
+
+For an exact SynthesisRevision, the count of ExtractionRevision-to-Evidence
+links reachable through its support rows. Each supporting ExtractionRevision
+contributes its links, including when multiple support paths reach the same
+Evidence identity.

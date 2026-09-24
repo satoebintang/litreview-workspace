@@ -44,6 +44,16 @@ export class SynthesisRevisionRepository {
     return row ?? null;
   }
 
+  async findFinalizedById(projectId: string, statementId: string, revisionId: string) {
+    const [row] = await this.db.select().from(synthesisRevisions).where(and(
+      eq(synthesisRevisions.projectId, projectId),
+      eq(synthesisRevisions.synthesisStatementId, statementId),
+      eq(synthesisRevisions.id, revisionId),
+      sql`${synthesisRevisions.finalizedAt} is not null`,
+    )).limit(1);
+    return row ?? null;
+  }
+
   async history(projectId: string, statementId: string) {
     return this.db.select().from(synthesisRevisions).where(and(eq(synthesisRevisions.projectId, projectId), eq(synthesisRevisions.synthesisStatementId, statementId), sql`${synthesisRevisions.finalizedAt} is not null`)).orderBy(synthesisRevisions.sequence);
   }
