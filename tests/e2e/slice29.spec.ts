@@ -159,7 +159,7 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
     const claimId = page.url().match(/claims\/([0-9a-f-]+)(?:\?|$)/)?.[1] as string;
     expect(claimId).toBeTruthy();
     await page.goto(`/projects/${projectId}/claims/${claimId}?synthesisRevisionId=${synthesisRevisionId}`);
-    await expect(page.locator('input[name="synthesisRevisionIds"][value="' + synthesisRevisionId + '"]')).toBeChecked();
+    await expect(page.locator('input[type="hidden"][name="synthesisRevisionIds"][value="' + synthesisRevisionId + '"]')).toHaveValue(synthesisRevisionId);
     await page.locator("#revision-claim-text").fill("The intervention improved the outcome.");
     await page.getByRole("button", { name: "Save new Claim revision" }).click();
     await expect(page.getByText("Supporting synthesis", { exact: true })).toBeVisible();

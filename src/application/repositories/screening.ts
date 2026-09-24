@@ -56,6 +56,21 @@ export class ScreeningDecisionRepository {
     )).orderBy(screeningDecisions.sequence);
   }
 
+  async listForPaperWithCriteria(projectId: string, paperId: string) {
+    const rows = await this.db.select({ decision: screeningDecisions, exclusionCriterion: screeningCriteria })
+      .from(screeningDecisions)
+      .leftJoin(screeningCriteria, and(
+        eq(screeningCriteria.projectId, screeningDecisions.projectId),
+        eq(screeningCriteria.id, screeningDecisions.exclusionCriterionId),
+      ))
+      .where(and(
+        eq(screeningDecisions.projectId, projectId), eq(screeningDecisions.paperId, paperId),
+        eq(screeningDecisions.stage, "title_abstract"),
+      ))
+      .orderBy(screeningDecisions.sequence);
+    return rows.map(({ decision, exclusionCriterion }) => ({ ...decision, exclusionCriterion }));
+  }
+
   async countForPaper(projectId: string, paperId: string) {
     const rows = await this.db.select({ id: screeningDecisions.id }).from(screeningDecisions).where(and(
       eq(screeningDecisions.projectId, projectId), eq(screeningDecisions.paperId, paperId),
@@ -152,6 +167,20 @@ export class FullTextScreeningDecisionRepository {
     return tx.select().from(fullTextScreeningDecisions).where(and(
       eq(fullTextScreeningDecisions.projectId, projectId), eq(fullTextScreeningDecisions.paperId, paperId),
     )).orderBy(fullTextScreeningDecisions.sequence);
+  }
+
+  async listForPaperWithCriteria(projectId: string, paperId: string) {
+    const rows = await this.db.select({ decision: fullTextScreeningDecisions, exclusionCriterion: fullTextScreeningCriteria })
+      .from(fullTextScreeningDecisions)
+      .leftJoin(fullTextScreeningCriteria, and(
+        eq(fullTextScreeningCriteria.projectId, fullTextScreeningDecisions.projectId),
+        eq(fullTextScreeningCriteria.id, fullTextScreeningDecisions.exclusionCriterionId),
+      ))
+      .where(and(
+        eq(fullTextScreeningDecisions.projectId, projectId), eq(fullTextScreeningDecisions.paperId, paperId),
+      ))
+      .orderBy(fullTextScreeningDecisions.sequence);
+    return rows.map(({ decision, exclusionCriterion }) => ({ ...decision, exclusionCriterion }));
   }
 }
 

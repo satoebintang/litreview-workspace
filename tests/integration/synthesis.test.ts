@@ -1,13 +1,25 @@
 import "dotenv/config";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import postgres from "postgres";
 import { createDb } from "@/db/client";
 import { createReviewServices } from "@/application/services";
-import { synthesisRevisionSupports, synthesisRevisions } from "@/db/schema";
+import { schema, synthesisRevisionSupports, synthesisRevisions } from "@/db/schema";
+import { SynthesisRevisionRepository } from "@/application/repositories/synthesis";
 
-const { db, client } = createDb(process.env.DATABASE_URL ?? "postgres://litreview:litreview@localhost:5432/litreview");
+const databaseUrl = process.env.DATABASE_URL ?? "postgres://litreview:litreview@127.0.0.1:5432/litreview";
+const { db, client } = createDb(databaseUrl);
 const services = createReviewServices(db);
+const historyQueryLog: string[] = [];
+const historyQueryClient = postgres(databaseUrl, {
+  max: 1,
+  prepare: false,
+  debug: (_connection, query) => { historyQueryLog.push(query); },
+});
+const historyDb = drizzle(historyQueryClient, { schema });
+const synthesisRevisionRepo = new SynthesisRevisionRepository(historyDb);
 let projectId = "";
 
 describe("Slice 4 evidence synthesis", () => {
@@ -15,7 +27,7 @@ describe("Slice 4 evidence synthesis", () => {
   beforeEach(async () => { projectId = (await services.createProject({ title: `Synthesis project ${crypto.randomUUID()}` })).id; });
   afterAll(async () => {
     await client.unsafe("TRUNCATE TABLE doi_lookup_resolutions, doi_lookup_dispatches, bibliographic_metadata_result_authors, bibliographic_metadata_http_attempts, bibliographic_metadata_fetch_results, bibliographic_metadata_fetches, doi_lookup_requests, pdf_intake_resolutions, pdf_intake_metadata_fields, pdf_intake_metadata_results, pdf_intakes, bibliographic_import_resolutions, bibliographic_import_records, bibliographic_imports, ai_synthesis_decisions, ai_synthesis_result_groundings, ai_synthesis_results, ai_synthesis_dispatches, ai_synthesis_request_sources, ai_synthesis_request_supports, ai_synthesis_requests, ai_extraction_batch_items, ai_extraction_batches, ai_extraction_decision_evidence, ai_extraction_decisions, ai_extraction_result_groundings, ai_extraction_results, ai_extraction_dispatches, ai_extraction_request_pages, ai_extraction_requests, manuscript_snapshot_warnings, manuscript_snapshot_claim_bibliography_members, manuscript_snapshot_bibliography_entries, manuscript_snapshot_claim_items, manuscript_snapshot_prose_items, manuscript_snapshot_items, manuscript_snapshot_sections, manuscript_snapshots, research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_revisions, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents, evidence_set_composition_members, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, appraisal_revision_response_evidence, appraisal_revision_responses, appraisal_revisions, appraisals, appraisal_framework_overall_judgement_options, appraisal_framework_response_options, appraisal_framework_items, appraisal_framework_sections, appraisal_framework_versions, appraisal_frameworks, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects");
-    await client.end();
+    await Promise.all([client.end(), historyQueryClient.end()]);
   });
 
   async function includedPaper(title: string) {
@@ -69,6 +81,65 @@ describe("Slice 4 evidence synthesis", () => {
     const updated = await services.reviseSynthesisStatement(projectId, statement.statement.id, { statementText: "The study reports a backdoor attack.", extractionRevisionIds: [newRevision.id] });
     expect(updated.revision.sequence).toBeGreaterThan(statement.revision.sequence);
     expect((await services.getSynthesisHistory(projectId, statement.statement.id)).map((revision) => revision.supports[0]?.extractionRevisionId)).toEqual([oldRevision.id, newRevision.id]);
+  });
+
+  it("looks up one exact finalized synthesis revision at 1, 100, and 1,000 revisions", async () => {
+    await historyQueryClient.unsafe("select 1");
+    historyQueryLog.length = 0;
+
+    for (const count of [1, 100, 1000]) {
+      const created = await services.createSynthesisStatement(projectId, {
+        statementText: "Revision 0",
+        extractionRevisionIds: [],
+      });
+      let exactRevisionId = created.revision.id;
+      let expectedText = created.revision.statementText;
+      let latestSeededId: string | null = null;
+
+      if (count > 1) {
+        const drafts = Array.from({ length: count - 1 }, (_, index) => ({
+          projectId,
+          synthesisStatementId: created.statement.id,
+          state: "active",
+          statementText: `Revision ${index + 1}`,
+        }));
+        const inserted = await db.insert(synthesisRevisions).values(drafts).returning({
+          id: synthesisRevisions.id,
+          statementText: synthesisRevisions.statementText,
+        });
+        const finalized = await db.update(synthesisRevisions)
+          .set({ finalizedAt: new Date() })
+          .where(and(
+            eq(synthesisRevisions.projectId, projectId),
+            eq(synthesisRevisions.synthesisStatementId, created.statement.id),
+            sql`${synthesisRevisions.finalizedAt} is null`,
+          ))
+          .returning({ id: synthesisRevisions.id });
+        expect(finalized).toHaveLength(count - 1);
+        exactRevisionId = inserted[0].id;
+        expectedText = inserted[0].statementText;
+        latestSeededId = inserted.at(-1)!.id;
+      }
+
+      historyQueryLog.length = 0;
+      const exact = await synthesisRevisionRepo.findFinalizedById(projectId, created.statement.id, exactRevisionId);
+      expect(historyQueryLog).toHaveLength(1);
+      expect(historyQueryLog[0]).toMatch(/synthesis_revisions/i);
+      expect(historyQueryLog[0]).toMatch(/synthesis_statement_id/i);
+      expect(historyQueryLog[0]).toMatch(/finalized_at/i);
+      expect(historyQueryLog[0]).toMatch(/synthesis_revisions"\."id"\s*=\s*\$3/i);
+      expect(exact?.id).toBe(exactRevisionId);
+      expect(exact?.statementText).toBe(expectedText);
+
+      const historical = await services.getSynthesisProvenance(projectId, created.statement.id, exactRevisionId);
+      expect(historical.id).toBe(exactRevisionId);
+      expect(historical.statementText).toBe(expectedText);
+      if (latestSeededId) expect(historical.id).not.toBe(latestSeededId);
+    }
+
+    const created = await services.createSynthesisStatement(projectId, { statementText: "Other statement", extractionRevisionIds: [] });
+    const other = await services.createSynthesisStatement(projectId, { statementText: "Target statement", extractionRevisionIds: [] });
+    await expect(services.getSynthesisProvenance(projectId, other.statement.id, created.revision.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("makes withdrawal genuinely idempotent and preserves history", async () => {

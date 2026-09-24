@@ -91,7 +91,9 @@ export function createSynthesisServices<TProject>(deps: {
       await requireProject(projectId); ensureId(statementId);
       const statement = await synthesisStatementRepo.findById(projectId, statementId);
       if (!statement) throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis statement does not belong to this project");
-      const revision = revisionId ? (ensureId(revisionId), (await synthesisRevisionRepo.history(projectId, statementId)).find((item) => item.id === revisionId) ?? null) : await synthesisRevisionRepo.current(projectId, statementId);
+      const revision = revisionId
+        ? (ensureId(revisionId), await synthesisRevisionRepo.findFinalizedById(projectId, statementId, revisionId))
+        : await synthesisRevisionRepo.current(projectId, statementId);
       if (!revision) throw new DomainError("NOT_FOUND", "Synthesis revision was not found");
       return synthesisView(projectId, statement, revision);
     },

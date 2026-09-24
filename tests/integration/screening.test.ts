@@ -1,13 +1,24 @@
 import "dotenv/config";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { and, eq } from "drizzle-orm";
+import postgres from "postgres";
 import { createDb } from "@/db/client";
 import { createReviewServices } from "@/application/services";
-import { screeningCriteria, screeningDecisions } from "@/db/schema";
+import { schema, screeningCriteria, screeningDecisions, fullTextScreeningDecisions } from "@/db/schema";
 
-const { db, client } = createDb(process.env.DATABASE_URL ?? "postgres://litreview:litreview@localhost:5432/litreview");
+const databaseUrl = process.env.DATABASE_URL ?? "postgres://litreview:litreview@127.0.0.1:5432/litreview";
+const { db, client } = createDb(databaseUrl);
 const services = createReviewServices(db);
+const historyQueryLog: string[] = [];
+const historyQueryClient = postgres(databaseUrl, {
+  max: 1,
+  prepare: false,
+  debug: (_connection, query) => { historyQueryLog.push(query); },
+});
+const historyDb = drizzle(historyQueryClient, { schema });
+const historyServices = createReviewServices(historyDb);
 let projectId = "";
 
 describe("Slice 2 screening invariants", () => {
@@ -15,7 +26,7 @@ describe("Slice 2 screening invariants", () => {
   beforeEach(async () => { projectId = (await services.createProject({ title: `Screening project ${crypto.randomUUID()}` })).id; });
   afterAll(async () => {
     await client.unsafe(`TRUNCATE TABLE doi_lookup_resolutions, doi_lookup_dispatches, bibliographic_metadata_result_authors, bibliographic_metadata_http_attempts, bibliographic_metadata_fetch_results, bibliographic_metadata_fetches, doi_lookup_requests, pdf_intake_resolutions, pdf_intake_metadata_fields, pdf_intake_metadata_results, pdf_intakes, bibliographic_import_resolutions, bibliographic_import_records, bibliographic_imports, ai_synthesis_decisions, ai_synthesis_result_groundings, ai_synthesis_results, ai_synthesis_dispatches, ai_synthesis_request_sources, ai_synthesis_request_supports, ai_synthesis_requests, ai_extraction_batch_items, ai_extraction_batches, ai_extraction_decision_evidence, ai_extraction_decisions, ai_extraction_result_groundings, ai_extraction_results, ai_extraction_dispatches, ai_extraction_request_pages, ai_extraction_requests, manuscript_snapshot_warnings, manuscript_snapshot_claim_bibliography_members, manuscript_snapshot_bibliography_entries, manuscript_snapshot_claim_items, manuscript_snapshot_prose_items, manuscript_snapshot_items, manuscript_snapshot_sections, manuscript_snapshots, research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_revisions, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents, evidence_set_composition_members, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, appraisal_revision_response_evidence, appraisal_revision_responses, appraisal_revisions, appraisals, appraisal_framework_overall_judgement_options, appraisal_framework_response_options, appraisal_framework_items, appraisal_framework_sections, appraisal_framework_versions, appraisal_frameworks, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects`);
-    await client.end();
+    await Promise.all([client.end(), historyQueryClient.end()]);
   });
 
   it("represents a new Paper as unscreened and derives each decision state", async () => {
@@ -25,6 +36,48 @@ describe("Slice 2 screening invariants", () => {
     expect((await services.getPaperScreening(projectId, paper.id)).currentState).toBe("maybe");
     await services.recordScreeningDecision(projectId, paper.id, { decision: "include" });
     expect((await services.getPaperScreening(projectId, paper.id)).currentState).toBe("included");
+  });
+
+  it("loads TA and FT histories in one joined statement at 1, 50, and 500 decisions", async () => {
+    await historyQueryClient.unsafe("select 1");
+    historyQueryLog.length = 0;
+    let taStatementCount: number | undefined;
+    let ftStatementCount: number | undefined;
+    for (const count of [1, 50, 500]) {
+      const taPaper = await services.addPaper(projectId, { title: `TA history ${count}` });
+      const taCriterion = await services.createScreeningCriterion(projectId, { type: "exclusion", text: `TA reason ${count}` });
+      await db.insert(screeningDecisions).values(Array.from({ length: count }, () => ({
+        projectId, paperId: taPaper.id, decision: "exclude" as const,
+        exclusionCriterionId: taCriterion.id, exclusionCriterionType: "exclusion" as const,
+      })));
+      await services.archiveScreeningCriterion(projectId, taCriterion.id);
+      historyQueryLog.length = 0;
+      const taScreening = await historyServices.getPaperScreening(projectId, taPaper.id);
+      expect(taScreening.history).toHaveLength(count);
+      expect(taScreening.history.every((decision) => decision.exclusionCriterion?.id === taCriterion.id)).toBe(true);
+      expect(taScreening.history.every((decision) => decision.exclusionCriterion?.archivedAt instanceof Date)).toBe(true);
+      taStatementCount ??= historyQueryLog.length;
+      expect(historyQueryLog.length).toBe(taStatementCount);
+      expect(historyQueryLog.filter((query) => /left join .*screening_criteria/i.test(query))).toHaveLength(1);
+
+      const ftPaper = await services.addPaper(projectId, { title: `FT history ${count}` });
+      const ftCriterion = await services.createFullTextScreeningCriterion(projectId, { text: `FT reason ${count}` });
+      await services.recordScreeningDecision(projectId, ftPaper.id, { decision: "include" });
+      await services.recordFullTextRetrievalAttempt(projectId, ftPaper.id, { outcome: "retrieved", attemptedAt: new Date() });
+      await db.insert(fullTextScreeningDecisions).values(Array.from({ length: count }, () => ({
+        projectId, paperId: ftPaper.id, decision: "exclude" as const,
+        exclusionCriterionId: ftCriterion.id,
+      })));
+      await services.archiveFullTextScreeningCriterion(projectId, ftCriterion.id);
+      historyQueryLog.length = 0;
+      const ftScreening = await historyServices.getPaperFullTextScreening(projectId, ftPaper.id);
+      expect(ftScreening.history).toHaveLength(count);
+      expect(ftScreening.history.every((decision) => decision.exclusionCriterion?.id === ftCriterion.id)).toBe(true);
+      expect(ftScreening.history.every((decision) => decision.exclusionCriterion?.archivedAt instanceof Date)).toBe(true);
+      ftStatementCount ??= historyQueryLog.length;
+      expect(historyQueryLog.length).toBe(ftStatementCount);
+      expect(historyQueryLog.filter((query) => /left join .*full_text_screening_criteria/i.test(query))).toHaveLength(1);
+    }
   });
 
   it("requires a project-owned exclusion criterion and preserves revisions", async () => {
@@ -59,7 +112,8 @@ describe("Slice 2 screening invariants", () => {
     await expect(services.recordScreeningDecision(projectId, paper.id, { decision: "exclude", exclusionCriterionId: criterion.id })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     await expect(db.insert(screeningDecisions).values({ projectId, paperId: paper.id, decision: "exclude", exclusionCriterionId: criterion.id, exclusionCriterionType: "exclusion" })).rejects.toThrow();
     await expect(db.delete(screeningCriteria).where(eq(screeningCriteria.id, criterion.id))).rejects.toThrow();
-    expect((await services.getPaperScreening(projectId, paper.id)).history[0].exclusionCriterion?.text).toBe("Editorial");
+    const historicalCriterion = (await services.getPaperScreening(projectId, paper.id)).history[0].exclusionCriterion;
+    expect(historicalCriterion).toMatchObject({ text: "Editorial", archivedAt: expect.any(Date) });
   });
 
   it("enforces project and decision-shape ownership in PostgreSQL", async () => {

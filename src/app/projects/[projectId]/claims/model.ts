@@ -5,7 +5,7 @@ export type ClaimSupportKind = "evidence" | "extraction" | "synthesis";
 
 export interface PaperView { id: string; title: string; doi?: string | null; authors?: string[]; publicationYear?: number | null; venue?: string | null; }
 export interface EvidenceDocumentView { id: string; originalFilename?: string; sha256?: string; archivedAt?: string | null; }
-export interface EvidenceView { id: string; sourceText: string; pageNumber: number; note?: string | null; fullTextDocumentId?: string | null; documentTextExtractionId?: string | null; extractionStartOffset?: number | null; extractionEndOffset?: number | null; document?: EvidenceDocumentView | null; paper?: PaperView; reviewState?: "unreviewed" | "needs_review" | "accepted" | "rejected"; curationWarning?: string | null; }
+export interface EvidenceView { id: string; sourceText: string; pageNumber: number; createdAt?: string; note?: string | null; fullTextDocumentId?: string | null; documentTextExtractionId?: string | null; extractionStartOffset?: number | null; extractionEndOffset?: number | null; document?: EvidenceDocumentView | null; paper?: PaperView; reviewState?: "unreviewed" | "needs_review" | "accepted" | "rejected"; curationWarning?: string | null; }
 export interface ExtractionView { id: string; sequence?: number; valueState?: string; textValue?: string | null; numberValue?: string | null; booleanValue?: boolean | null; optionId?: string | null; researcherNote?: string | null; evidence: EvidenceView[]; paper?: PaperView; field?: { id: string; name: string }; isCurrent?: boolean; paperScreeningState?: string; }
 export interface SynthesisView { id: string; sequence?: number; state?: ClaimLifecycle; title?: string | null; statementText?: string | null; researcherNote?: string | null; evidence: EvidenceView[]; extractions: ExtractionView[]; paperCount?: number; isCurrent?: boolean; }
 export interface ClaimSupportView { kind: ClaimSupportKind; id: string; evidence?: EvidenceView; extraction?: ExtractionView; synthesis?: SynthesisView; paper?: PaperView; }
@@ -23,7 +23,6 @@ export interface ClaimReadServices {
   listPapers?: (projectId: string) => Promise<unknown>;
   listExtractionComparison?: (projectId: string, fieldId?: string) => Promise<unknown>;
   listProjectSynthesis?: (projectId: string) => Promise<unknown>;
-  listClaimSupportOptions?: (projectId: string) => Promise<unknown>;
   listProjectExtractionRevisions?: (projectId: string) => Promise<unknown>;
   listProjectSynthesisRevisions?: (projectId: string) => Promise<unknown>;
 }
@@ -51,7 +50,8 @@ function evidence(value: unknown, fallbackPaper?: PaperView): EvidenceView {
   const documentId = typeof source.fullTextDocumentId === "string" ? source.fullTextDocumentId : typeof row.fullTextDocumentId === "string" ? row.fullTextDocumentId : null;
   const document = documentId ? { id: documentId, originalFilename: string(documentRow.originalFilename), sha256: string(documentRow.sha256), archivedAt: typeof documentRow.archivedAt === "string" ? documentRow.archivedAt : null } : null;
   const reviewState = source.reviewState === "needs_review" || source.reviewState === "accepted" || source.reviewState === "rejected" ? source.reviewState : "unreviewed";
-  return { id: string(source.id), sourceText: string(source.sourceText), pageNumber: number(source.pageNumber), note: typeof source.note === "string" ? source.note : null, fullTextDocumentId: documentId, documentTextExtractionId: typeof source.documentTextExtractionId === "string" ? source.documentTextExtractionId : null, extractionStartOffset: typeof source.extractionStartOffset === "number" ? source.extractionStartOffset : null, extractionEndOffset: typeof source.extractionEndOffset === "number" ? source.extractionEndOffset : null, document, paper: paper(row.paper) ?? paper(source.paper) ?? fallbackPaper, reviewState, curationWarning: typeof source.curationWarning === "string" ? source.curationWarning : null };
+  const createdAt = source.createdAt instanceof Date ? source.createdAt.toISOString() : typeof source.createdAt === "string" ? source.createdAt : undefined;
+  return { id: string(source.id), sourceText: string(source.sourceText), pageNumber: number(source.pageNumber), createdAt, note: typeof source.note === "string" ? source.note : null, fullTextDocumentId: documentId, documentTextExtractionId: typeof source.documentTextExtractionId === "string" ? source.documentTextExtractionId : null, extractionStartOffset: typeof source.extractionStartOffset === "number" ? source.extractionStartOffset : null, extractionEndOffset: typeof source.extractionEndOffset === "number" ? source.extractionEndOffset : null, document, paper: paper(row.paper) ?? paper(source.paper) ?? fallbackPaper, reviewState, curationWarning: typeof source.curationWarning === "string" ? source.curationWarning : null };
 }
 
 export function normalizeExtraction(value: unknown, fallbackPaper?: PaperView): ExtractionView {
