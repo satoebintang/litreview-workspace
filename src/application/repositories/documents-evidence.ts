@@ -22,6 +22,23 @@ export class EvidenceRepository {
       .where(eq(evidence.projectId, projectId)).orderBy(desc(evidence.createdAt));
   }
 
+  async listForPaper(projectId: string, paperId: string, tx: DbTransaction | Database = this.db) {
+    const rows = await tx.select({
+      item: evidence,
+      currentReviewDecision: sql<string | null>`(
+        select review.decision
+        from evidence_review_decisions as review
+        where review.project_id = evidence.project_id and review.evidence_id = evidence.id
+        order by review.sequence desc
+        limit 1
+      )`,
+    }).from(evidence)
+      .where(and(eq(evidence.projectId, projectId), eq(evidence.paperId, paperId)))
+      .orderBy(desc(evidence.createdAt));
+
+    return rows.map(({ item, currentReviewDecision }) => ({ ...item, currentReviewDecision }));
+  }
+
   async countForPaper(projectId: string, paperId: string) {
     const rows = await this.db.select({ id: evidence.id }).from(evidence)
       .where(and(eq(evidence.projectId, projectId), eq(evidence.paperId, paperId))).limit(1);

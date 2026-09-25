@@ -1,11 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
-import { derivePaperReviewStatus } from "@/domain/paper-review";
-import type {
-  FullTextRetrievalState,
-  PaperReviewStatus,
-  ScreeningDecisionValue,
-} from "@/domain/types";
+import { paperReviewFactsCtes, paperReviewStatusFromFacts } from "@/application/paper-review-read-model";
+import type { PaperReviewStatus } from "@/domain/types";
 import type { papers } from "@/db/schema";
 
 export const FULL_TEXT_QUEUE_DEFAULT_PAGE_SIZE = 50;
@@ -64,52 +60,6 @@ type QueueFactsRow = Record<string, unknown> & {
 
 type QueueCountRow = Record<string, unknown>;
 
-// Keep this facts projection identical in both count and page statements. SQL
-// queue predicates read only from `review_facts`; the domain reducer is run
-// only after the selected page has been returned.
-function reviewFactsCtes(projectId: string) {
-  return sql`
-    with latest_title_abstract as (
-      select distinct on (project_id, paper_id) project_id, paper_id, decision
-      from screening_decisions
-      where project_id=${projectId}::uuid and stage='title_abstract'
-      order by project_id, paper_id, sequence desc, id desc
-    ), latest_full_text as (
-      select distinct on (project_id, paper_id) project_id, paper_id, decision
-      from full_text_screening_decisions
-      where project_id=${projectId}::uuid
-      order by project_id, paper_id, sequence desc, id desc
-    ), retrieval_facts as (
-      select project_id, paper_id,
-        (array_agg(outcome order by sequence desc, id desc))[1] as current_retrieval_outcome,
-        true as has_retrieval_history,
-        bool_or(outcome='retrieved') as ever_retrieved
-      from full_text_retrieval_attempts
-      where project_id=${projectId}::uuid
-      group by project_id, paper_id
-    ), analytical_history as (
-      select distinct project_id, paper_id
-      from extraction_value_revisions
-      where project_id=${projectId}::uuid and finalized_at is not null
-    ), review_facts as (
-      select p.project_id, p.id as paper_id, p.created_at,
-        ta.decision as title_abstract_decision,
-        ft.decision as full_text_decision,
-        rf.current_retrieval_outcome as current_retrieval_outcome,
-        coalesce(rf.current_retrieval_outcome, 'not_sought') as full_text_retrieval_state,
-        coalesce(rf.has_retrieval_history, false) as has_retrieval_history,
-        coalesce(rf.ever_retrieved, false) as ever_retrieved,
-        (ah.paper_id is not null) as has_analytical_history
-      from papers p
-      left join latest_title_abstract ta on ta.project_id=p.project_id and ta.paper_id=p.id
-      left join latest_full_text ft on ft.project_id=p.project_id and ft.paper_id=p.id
-      left join retrieval_facts rf on rf.project_id=p.project_id and rf.paper_id=p.id
-      left join analytical_history ah on ah.project_id=p.project_id and ah.paper_id=p.id
-      where p.project_id=${projectId}::uuid
-    )
-  `;
-}
-
 function retrievalConflictPredicate() {
   return sql`f.has_retrieval_history and f.title_abstract_decision is distinct from 'include'`;
 }
@@ -167,7 +117,7 @@ function fullTextPredicate(state: FullTextScreeningQueueState) {
 }
 
 function countQuery(projectId: string, totalPredicate: ReturnType<typeof sql>, predicates: Array<[string, ReturnType<typeof sql>]>) {
-  return sql`${reviewFactsCtes(projectId)}
+  return sql`${paperReviewFactsCtes(projectId)}
     select
       count(*) filter (where ${totalPredicate}) as total_count,
       ${sql.join(predicates.map(([name, predicate]) => sql`count(*) filter (where ${predicate}) as ${sql.raw(`"${name}"`)}`), sql`,\n      `)}
@@ -175,7 +125,7 @@ function countQuery(projectId: string, totalPredicate: ReturnType<typeof sql>, p
 }
 
 function pageQuery(projectId: string, predicate: ReturnType<typeof sql>, pageSize: number, offset: number) {
-  return sql`${reviewFactsCtes(projectId)}
+  return sql`${paperReviewFactsCtes(projectId)}
     select p.*, f.title_abstract_decision, f.full_text_decision,
       f.current_retrieval_outcome, f.full_text_retrieval_state, f.has_retrieval_history,
       f.ever_retrieved, f.has_analytical_history
@@ -208,10 +158,6 @@ function countValue(row: QueueCountRow, key: string): number {
   return Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
-function decisionValue(value: unknown): ScreeningDecisionValue | null {
-  return value === "include" || value === "exclude" || value === "maybe" ? value : null;
-}
-
 function paperFromRow(row: Record<string, unknown>): Paper {
   return {
     id: String(row.id),
@@ -226,21 +172,6 @@ function paperFromRow(row: Record<string, unknown>): Paper {
     createdAt: row.created_at instanceof Date ? row.created_at : new Date(String(row.created_at)),
     updatedAt: row.updated_at instanceof Date ? row.updated_at : new Date(String(row.updated_at)),
   };
-}
-
-function reviewStatusFromRow(row: QueueFactsRow): PaperReviewStatus {
-  const retrievalState = row.full_text_retrieval_state;
-  const validRetrievalState: FullTextRetrievalState = retrievalState === "pending" || retrievalState === "unavailable" || retrievalState === "retrieved"
-    ? retrievalState
-    : "not_sought";
-  return derivePaperReviewStatus({
-    titleAbstractDecision: decisionValue(row.title_abstract_decision),
-    fullTextDecision: decisionValue(row.full_text_decision),
-    fullTextRetrievalState: validRetrievalState,
-    everRetrieved: Boolean(row.ever_retrieved),
-    hasFullTextRetrievalAttempts: Boolean(row.has_retrieval_history),
-    hasAnalyticalHistory: Boolean(row.has_analytical_history),
-  });
 }
 
 function pagination<TState extends string>(state: TState, pageRequest: number, pageSize: number, totalCount: number) {
@@ -280,7 +211,7 @@ export function createFullTextQueueReadServices(db: Database) {
       return {
         ...page,
         counts,
-        items: selectedRows.map((row) => ({ paper: paperFromRow(row), reviewStatus: reviewStatusFromRow(row) })),
+        items: selectedRows.map((row) => ({ paper: paperFromRow(row), reviewStatus: paperReviewStatusFromFacts(row) })),
       };
     }, { isolationLevel: "repeatable read", accessMode: "read only" });
   }

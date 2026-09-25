@@ -54,6 +54,7 @@ test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     await page.goto(`/projects/${projectId}/extraction`);
     await page.getByLabel("Field name").fill("Effect Size");
     await page.getByRole("button", { name: "Add extraction field" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Extraction field saved." })).toBeVisible();
 
     const extractionLink = await page.locator("a.extraction-progress-item").filter({ hasText: "Study Alpha" }).getAttribute("href");
     expect(extractionLink).toBeTruthy();

@@ -4,6 +4,27 @@
 
 The canonical downstream research identity used by screening, retrieval, full-text eligibility, extraction, synthesis, and manuscript work.
 
+## Extraction canonical-write lock order
+
+Within an Extraction canonical-write transaction, when multiple Extraction-
+domain rows need locks, acquire Project, Paper, ExtractionField,
+ExtractionOption, then Evidence rows in UUID ascending order. Field eligibility
+and Option activity are checked from their locked rows. AI request/result/
+dispatch/document locks belong to separate pre-existing workflow domains and
+must be reviewed separately for cycles with this Extraction order; this is not
+a universal database lock order.
+
+## Extraction workspace reads
+
+Progress pages preserve released Paper membership and review facts while
+reading one bounded page with a fixed count/page query pair. A Paper worksheet
+uses a read-only REPEATABLE READ snapshot and a fixed number of set-based reads
+for active Fields, archived and active Options, current revisions, finalized
+history, revision Evidence, and Paper-scoped Evidence with its current review
+state. Worksheet values include active Fields only; archived Options remain
+available for historical labels. Evidence scoping is applied in SQL by both
+Project and Paper.
+
 ## PDF intake
 
 An immutable project-owned staged PDF source artifact. It is not a Paper or a

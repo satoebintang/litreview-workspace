@@ -143,9 +143,9 @@ export function createReviewServices(db: Database, options: {
     requireProject, requirePaper, requireCriterion,
   });
   const extractionServices = createExtractionServices({
-    db, paperRepo, paperReviewRepo, decisionRepo, extractionFieldRepo, extractionOptionRepo, extractionValueRepo,
+    db, projectRepo, paperRepo, paperReviewRepo, decisionRepo, extractionFieldRepo, extractionOptionRepo, extractionValueRepo,
     extractionRevisionRepo, extractionEvidenceRepo, synthesisSupportRepo,
-    requireProject, requirePaper, requireEvidence, requireExtractionField,
+    requireProject, requirePaper, requireExtractionField,
   });
   const synthesisServices = createSynthesisServices({
     db, paperRepo, synthesisStatementRepo, synthesisRevisionRepo, synthesisSupportRepo, requireProject,
