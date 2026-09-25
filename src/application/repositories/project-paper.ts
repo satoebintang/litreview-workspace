@@ -15,6 +15,11 @@ export class ProjectRepository {
     const [project] = await this.db.select().from(projects).where(eq(projects.id, id)).limit(1);
     return project ?? null;
   }
+
+  async findForUpdate(tx: DbTransaction, id: string) {
+    const [project] = await tx.select().from(projects).where(eq(projects.id, id)).for("update").limit(1);
+    return project ?? null;
+  }
 }
 
 export class PaperRepository {

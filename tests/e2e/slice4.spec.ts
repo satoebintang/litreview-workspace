@@ -67,6 +67,7 @@ test.describe("Slice 4 evidence synthesis", () => {
     await page.goto(`/projects/${projectId}/extraction`);
     await page.getByLabel("Field name").fill("Attack technique");
     await page.getByRole("button", { name: "Add extraction field" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Extraction field saved." })).toBeVisible();
     const studyALink = await page.locator("a.extraction-progress-item").filter({ hasText: "Study A" }).getAttribute("href");
     const studyBLink = await page.locator("a.extraction-progress-item").filter({ hasText: "Study B" }).getAttribute("href");
     expect(studyALink).toBeTruthy();

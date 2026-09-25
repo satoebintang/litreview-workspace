@@ -14,6 +14,7 @@ import {
 import { resolveSuggestionGroundings } from "@/application/ai/extraction-suggestion-grounding";
 import { requireEvidenceUsableForNewDirectSupport } from "@/application/evidence-curation-services";
 import { writeExtractedExtractionRevision } from "@/application/extraction-value-writer";
+import { lockExtractionEvidenceRowsForUpdate } from "@/application/repositories/extraction";
 import { derivePaperReviewStatus, isFinallyIncluded } from "@/domain/paper-review";
 import { buildPinnedExtractionPageManifest, hashFieldSnapshot, hashOptionSnapshot, hashSourceSnapshot, hashSuggestionIntent, canonicalUuid, type BatchFieldSnapshot, type BatchPinnedSourceInput } from "@/application/ai-extraction-batch-domain";
 import { withSerializableRetry, type DatabaseTransaction } from "@/application/serializable-retry";
@@ -29,7 +30,7 @@ export type AiExtractionSuggestionServices = { beginAiExtractionSuggestion(input
 const REQUEST_EXPIRY_MS = 5 * 60_000;
 const PROVIDER_TIMEOUT_MS = 45_000;
 function rows(value: unknown): Record<string, unknown>[] { return value as Record<string, unknown>[]; }
-function id(value: string, label: string): string { const parsed = idSchema.safeParse(value); if (!parsed.success) throw new DomainError("VALIDATION_ERROR", `${label} must be a UUID`); return parsed.data; }
+function id(value: string, label: string): string { const parsed = idSchema.safeParse(value); if (!parsed.success) throw new DomainError("VALIDATION_ERROR", `${label} must be a UUID`); return parsed.data.toLowerCase(); }
 function asDate(value: unknown): Date | null { if (value == null) return null; const date = value instanceof Date ? value : new Date(String(value)); return Number.isNaN(date.getTime()) ? null : date; }
 function hash(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 function textHash(value: string): string { return createHash("sha256").update(Buffer.from(value, "utf8")).digest("hex"); }
@@ -99,8 +100,11 @@ export function createAiExtractionSuggestionServices(
     const invalidPage = rows(await executor.execute(sql`select 1 from ai_extraction_request_pages rp join document_text_extraction_pages p on p.project_id=rp.project_id and p.id=rp.page_id where rp.project_id=${String(req.project_id)}::uuid and rp.request_id=${String(req.id)}::uuid and (p.status <> 'succeeded' or p.character_count <= 0) limit 1`))[0];
     if (invalidPage) throw new DomainError("VALIDATION_ERROR", "A frozen AI source page is no longer eligible");
   }
-  async function requireRequestFieldEligible(req: Record<string, unknown>, executor: Executor) {
-    const field = rows(await executor.execute(sql`select name, description, field_type, archived_at from extraction_fields where project_id=${String(req.project_id)}::uuid and id=${String(req.extraction_field_id)}::uuid limit 1`))[0];
+  async function requireRequestFieldEligible(req: Record<string, unknown>, executor: Executor, lock = false) {
+    const fieldQuery = lock
+      ? sql`select name, description, field_type, archived_at from extraction_fields where project_id=${String(req.project_id)}::uuid and id=${String(req.extraction_field_id)}::uuid limit 1 for update`
+      : sql`select name, description, field_type, archived_at from extraction_fields where project_id=${String(req.project_id)}::uuid and id=${String(req.extraction_field_id)}::uuid limit 1`;
+    const field = rows(await executor.execute(fieldQuery))[0];
     if (!field || field.archived_at) throw new DomainError("VALIDATION_ERROR", "The frozen extraction field is no longer active");
     if (String(field.field_type) !== String(req.field_type)) throw new DomainError("VALIDATION_ERROR", "The extraction field type changed after this AI request was created");
     const currentDescription = field.description == null ? null : String(field.description);
@@ -517,7 +521,7 @@ export function createAiExtractionSuggestionServices(
         const currentId = current == null ? null : String(current.id);
         if (currentId !== expectedRevisionId) throw new DomainError("VALIDATION_ERROR", "The extraction value changed after this AI request was created");
         await requireRequestSourceEligible(req, tx);
-        await requireRequestFieldEligible(req, tx);
+        await requireRequestFieldEligible(req, tx, true);
 
         const allGroundings = rows(await tx.execute(sql`
           select * from ai_extraction_result_groundings
@@ -569,12 +573,25 @@ export function createAiExtractionSuggestionServices(
           } else {
             if (typeof proposedValue !== "string" || !optionSnapshot.some((option) => option.id === proposedValue)) throw new DomainError("VALIDATION_ERROR", "Selected option is not part of the frozen field definition");
             const frozenOption = optionSnapshot.find((option) => option.id === proposedValue);
-            const active = rows(await tx.execute(sql`select id,label from extraction_options where project_id=${projectId}::uuid and field_id=${String(req.extraction_field_id)}::uuid and id=${proposedValue}::uuid and archived_at is null limit 1`))[0];
-            if (!active) throw new DomainError("VALIDATION_ERROR", "Selected option is no longer active");
+            const active = rows(await tx.execute(sql`select id,label,archived_at from extraction_options where project_id=${projectId}::uuid and field_id=${String(req.extraction_field_id)}::uuid and id=${proposedValue}::uuid limit 1 for update`))[0];
+            if (!active || active.archived_at) throw new DomainError("VALIDATION_ERROR", "Selected option is no longer active");
             if (!frozenOption || String(active.label) !== String(frozenOption.label)) throw new DomainError("VALIDATION_ERROR", "Selected option definition changed after this AI request was created");
             optionId = proposedValue;
           }
         }
+
+        const reusedEvidenceByGroundingId = new Map<string, string>();
+        for (const groundingId of acceptedIds) {
+          const reusedEvidenceId = input.reusedEvidenceByGroundingId?.[groundingId];
+          if (reusedEvidenceId) reusedEvidenceByGroundingId.set(groundingId, id(reusedEvidenceId, "Evidence"));
+        }
+        const reusedEvidenceIds = [...new Set(reusedEvidenceByGroundingId.values())].sort();
+        const lockedReusedEvidence = await lockExtractionEvidenceRowsForUpdate(tx, projectId, reusedEvidenceIds);
+        if (lockedReusedEvidence.length !== reusedEvidenceIds.length || lockedReusedEvidence.some((evidence) => evidence.paperId !== paperId)) {
+          throw new DomainError("VALIDATION_ERROR", "Reused Evidence is not the exact persisted grounding");
+        }
+        for (const evidenceId of reusedEvidenceIds) await requireEvidenceUsableForNewDirectSupport(tx, projectId, evidenceId);
+        const reusedEvidenceById = new Map(lockedReusedEvidence.map((evidence) => [evidence.id, evidence]));
 
         const evidenceIds: string[] = [];
         const evidenceModes = new Map<string, "fresh" | "reused">();
@@ -584,10 +601,9 @@ export function createAiExtractionSuggestionServices(
           const reused = input.reusedEvidenceByGroundingId?.[groundingId];
           let evidenceId: string;
           if (reused) {
-            evidenceId = id(reused, "Evidence");
-            const evidence = rows(await tx.execute(sql`select * from evidence where project_id=${projectId}::uuid and id=${evidenceId}::uuid for update`))[0];
-            if (!evidence || String(evidence.paper_id) !== paperId || String(evidence.full_text_document_id) !== String(req.full_text_document_id) || String(evidence.document_text_extraction_id) !== String(req.document_text_extraction_id) || Number(evidence.page_number) !== Number(grounding.page_number) || Number(evidence.extraction_start_offset) !== Number(grounding.start_offset) || Number(evidence.extraction_end_offset) !== Number(grounding.end_offset) || String(evidence.source_text) !== String(grounding.source_text)) throw new DomainError("VALIDATION_ERROR", "Reused Evidence is not the exact persisted grounding");
-            await requireEvidenceUsableForNewDirectSupport(tx, projectId, evidenceId);
+            evidenceId = reusedEvidenceByGroundingId.get(groundingId)!;
+            const evidence = reusedEvidenceById.get(evidenceId);
+            if (!evidence || evidence.paperId !== paperId || evidence.fullTextDocumentId !== String(req.full_text_document_id) || evidence.documentTextExtractionId !== String(req.document_text_extraction_id) || Number(evidence.pageNumber) !== Number(grounding.page_number) || Number(evidence.extractionStartOffset) !== Number(grounding.start_offset) || Number(evidence.extractionEndOffset) !== Number(grounding.end_offset) || String(evidence.sourceText) !== String(grounding.source_text)) throw new DomainError("VALIDATION_ERROR", "Reused Evidence is not the exact persisted grounding");
             evidenceModes.set(groundingId, "reused");
           } else {
             const inserted = rows(await tx.execute(sql`insert into evidence (project_id,paper_id,full_text_document_id,document_text_extraction_id,extraction_start_offset,extraction_end_offset,source_text,page_number) values (${projectId}::uuid,${paperId}::uuid,${String(req.full_text_document_id)}::uuid,${String(req.document_text_extraction_id)}::uuid,${Number(grounding.start_offset)},${Number(grounding.end_offset)},${String(grounding.source_text)},${Number(grounding.page_number)}) returning id`))[0];

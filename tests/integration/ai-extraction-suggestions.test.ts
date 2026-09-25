@@ -8,12 +8,19 @@ import { createReviewServices } from "@/application/services";
 import { createAiExtractionSuggestionServices } from "@/application/ai-extraction-suggestion-services";
 import { createAiExtractionBatchServices } from "@/application/ai-extraction-batch-services";
 import type { ExtractionSuggestionProvider, ProviderSuggestionResult } from "@/application/ai/extraction-suggestion-provider";
+import {
+  createLockRaceCoordinator,
+  holdTransaction,
+  lockTimeoutUrl,
+  waitForBlockedSessions,
+  type LockRaceCoordinator,
+} from "./extraction-lock-race-helpers";
 
 const BASE_URL = process.env.DATABASE_URL ?? "postgres://litreview:litreview@127.0.0.1:5432/litreview";
 const DATABASE_NAME = `slice26_ai_${Date.now()}_${randomUUID().slice(0, 8)}`;
 const DATABASE_URL = `${BASE_URL.replace(/\/[^/]+$/, "")}/${DATABASE_NAME}`;
 
-function candidateResult(pageId: string, value: string): ProviderSuggestionResult {
+function candidateResult(pageId: string, value: string, quotes = ["42 participants"]): ProviderSuggestionResult {
   return {
     kind: "success",
     suggestion: {
@@ -21,7 +28,7 @@ function candidateResult(pageId: string, value: string): ProviderSuggestionResul
       state: "present",
       value,
       explanation: "The value is explicitly reported in the page.",
-      groundings: [{ pageId, quote: "42 participants" }],
+      groundings: quotes.map((quote) => ({ pageId, quote })),
     },
     metadata: {
       provider: "fake",
@@ -53,6 +60,8 @@ describe("Slice 26 AI extraction suggestion persistence boundary", () => {
   let client: postgres.Sql;
   let db: ReturnType<typeof createDb>["db"];
   let services: ReturnType<typeof createReviewServices>;
+  let raceConnection: ReturnType<typeof createDb>;
+  let locks: LockRaceCoordinator;
 
   beforeAll(async () => {
     admin = postgres(BASE_URL, { max: 1 });
@@ -62,15 +71,19 @@ describe("Slice 26 AI extraction suggestion persistence boundary", () => {
     client = created.client;
     services = createReviewServices(db);
     await migrate(db, { migrationsFolder: "./drizzle" });
+    raceConnection = createDb(lockTimeoutUrl(DATABASE_URL));
+    locks = createLockRaceCoordinator(DATABASE_URL);
   }, 120_000);
 
   afterAll(async () => {
+    await raceConnection?.client.end();
+    await locks?.close();
     await client.end();
     await admin.unsafe(`drop database if exists "${DATABASE_NAME}" with (force)`);
     await admin.end();
   }, 120_000);
 
-  async function fixture(fieldType: "short_text" | "number" = "number") {
+  async function fixture(fieldType: "short_text" | "number" | "single_select" = "number") {
     const project = await services.createProject({ title: `Slice 26 project ${randomUUID()}` });
     const paper = await services.addPaper(project.id, { title: "AI extraction study" });
     await services.recordScreeningDecision(project.id, paper.id, { decision: "include" });
@@ -104,6 +117,11 @@ describe("Slice 26 AI extraction suggestion persistence boundary", () => {
       disclosureVersion: "openai-extraction-transmission-v1",
     });
     return { ai, requestId: String(request.requestId) };
+  }
+
+  async function finishHeld(held: Awaited<ReturnType<typeof holdTransaction>>) {
+    held.release();
+    await held.transaction;
   }
 
   it("replays one normalized provider result after transient result persistence failure", async () => {
@@ -303,6 +321,131 @@ describe("Slice 26 AI extraction suggestion persistence boundary", () => {
     expect(String(second.requestId)).not.toBe(String(first.requestId));
     await expect(ai.beginAiExtractionSuggestion({ ...base, idempotencyKey: randomUUID() })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     expect(provider.invocationCount).toBe(1);
+  });
+
+  it("waits for the Field lock before rejecting AI acceptance after Field archive", async () => {
+    const value = await fixture("short_text");
+    const provider = new CountingProvider(candidateResult(value.pageId, "42 participants"));
+    const { ai, requestId } = await begin(value, provider);
+    await ai.executeAiExtractionSuggestion(requestId);
+    const snapshot = await ai.getAiExtractionSuggestion(requestId, value.project.id);
+    const grounding = (snapshot.groundings as Record<string, unknown>[])[0];
+    const held = await holdTransaction(locks.blocker, (tx) => tx`update extraction_fields set archived_at=now() where project_id=${value.project.id}::uuid and id=${value.field.id}::uuid returning id`.then(() => undefined));
+    try {
+      const accepting = createAiExtractionSuggestionServices(raceConnection.db, provider).acceptAiExtractionSuggestion({
+        projectId: value.project.id,
+        requestId,
+        mode: "edit_and_accept",
+        expectedCurrentRevisionId: null,
+        state: "present",
+        value: "42 participants",
+        groundingIds: [String(grounding.id)],
+      });
+      await waitForBlockedSessions(locks.observer, held.pid, 1, "extraction_fields");
+      await finishHeld(held);
+      await expect(accepting).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+      expect(await client`select count(*)::int as count from ai_extraction_decisions where request_id=${requestId}::uuid`).toEqual([{ count: 0 }]);
+      expect(await client`select count(*)::int as count from extraction_value_revisions where project_id=${value.project.id}::uuid and paper_id=${value.paper.id}::uuid and field_id=${value.field.id}::uuid`).toEqual([{ count: 0 }]);
+    } finally {
+      await finishHeld(held);
+    }
+  });
+
+  it("waits for the Option lock before rejecting AI acceptance after Option archive", async () => {
+    const value = await fixture("single_select");
+    const option = await services.createExtractionOption(value.project.id, { fieldId: value.field.id, label: "Frozen active choice" });
+    const provider = new CountingProvider(candidateResult(value.pageId, option.id));
+    const { ai, requestId } = await begin(value, provider);
+    await ai.executeAiExtractionSuggestion(requestId);
+    const held = await holdTransaction(locks.blocker, (tx) => tx`update extraction_options set archived_at=now() where project_id=${value.project.id}::uuid and id=${option.id}::uuid returning id`.then(() => undefined));
+    try {
+      const accepting = createAiExtractionSuggestionServices(raceConnection.db, provider).acceptAiExtractionSuggestion({
+        projectId: value.project.id,
+        requestId,
+        mode: "accept",
+        expectedCurrentRevisionId: null,
+        groundingIds: [],
+      });
+      await waitForBlockedSessions(locks.observer, held.pid, 1, "extraction_options");
+      await finishHeld(held);
+      await expect(accepting).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+      expect(await client`select count(*)::int as count from ai_extraction_decisions where request_id=${requestId}::uuid`).toEqual([{ count: 0 }]);
+      expect(await client`select count(*)::int as count from extraction_value_revisions where project_id=${value.project.id}::uuid and paper_id=${value.paper.id}::uuid and field_id=${value.field.id}::uuid`).toEqual([{ count: 0 }]);
+    } finally {
+      await finishHeld(held);
+    }
+  });
+
+  it("locks reused Evidence in UUID order while preserving grounding mapping order", async () => {
+    const value = await fixture("short_text");
+    const provider = new CountingProvider(candidateResult(value.pageId, "Study summary", ["No adverse events", "42 participants"]));
+    const { ai, requestId } = await begin(value, provider);
+    await ai.executeAiExtractionSuggestion(requestId);
+    const snapshot = await ai.getAiExtractionSuggestion(requestId, value.project.id);
+    const groundings = snapshot.groundings as Record<string, unknown>[];
+    expect(groundings).toHaveLength(2);
+    const first = groundings[0];
+    const second = groundings[1];
+    const highEvidenceId = "b0000000-0000-4000-8000-000000000001";
+    const lowEvidenceId = "a0000000-0000-4000-8000-000000000001";
+    const insertReusedEvidence = (evidenceId: string, grounding: Record<string, unknown>) => client`
+      insert into evidence (
+        id, project_id, paper_id, full_text_document_id, document_text_extraction_id,
+        extraction_start_offset, extraction_end_offset, source_text, page_number
+      ) values (
+        ${evidenceId}::uuid, ${value.project.id}::uuid, ${value.paper.id}::uuid,
+        ${value.documentId}::uuid, ${value.extractionId}::uuid,
+        ${Number(grounding.start_offset)}, ${Number(grounding.end_offset)},
+        ${String(grounding.source_text)}, ${Number(grounding.page_number)}
+      )
+    `;
+    await insertReusedEvidence(highEvidenceId, first);
+    await insertReusedEvidence(lowEvidenceId, second);
+
+    const held = await holdTransaction(locks.blocker, (tx) => tx`select id from evidence where project_id=${value.project.id}::uuid and id=${highEvidenceId}::uuid for update`.then(() => undefined));
+    let probeRelease!: () => void;
+    let probeReady!: (pid: number) => void;
+    let probeAcquired!: () => void;
+    const probeGate = new Promise<void>((resolve) => { probeRelease = resolve; });
+    const probePidPromise = new Promise<number>((resolve) => { probeReady = resolve; });
+    const probeAcquiredPromise = new Promise<void>((resolve) => { probeAcquired = resolve; });
+    let probeTransaction: Promise<unknown> | undefined;
+    try {
+      const accepting = createAiExtractionSuggestionServices(raceConnection.db, provider).acceptAiExtractionSuggestion({
+        projectId: value.project.id,
+        requestId,
+        mode: "edit_and_accept",
+        expectedCurrentRevisionId: null,
+        state: "present",
+        value: "Study summary",
+        groundingIds: [String(first.id), String(second.id)],
+        reusedEvidenceByGroundingId: { [String(first.id)]: highEvidenceId.toUpperCase(), [String(second.id)]: lowEvidenceId },
+      });
+      const acceptingPid = (await waitForBlockedSessions(locks.observer, held.pid, 1, "evidence"))[0];
+      probeTransaction = locks.blocker.begin(async (tx) => {
+        const [{ pid }] = await tx`select pg_backend_pid() as pid`;
+        probeReady(Number(pid));
+        await tx`select id from evidence where project_id=${value.project.id}::uuid and id=${lowEvidenceId}::uuid for update`;
+        probeAcquired();
+        await probeGate;
+      });
+      const probePid = await probePidPromise;
+      await waitForBlockedSessions(locks.observer, acceptingPid, 1, "evidence");
+      await finishHeld(held);
+      const accepted = await accepting;
+      await probeAcquiredPromise;
+      expect(accepted.evidenceIds).toEqual([highEvidenceId, lowEvidenceId]);
+      const decision = accepted.decision as Record<string, unknown>;
+      const mappingRows = await client`select grounding_id,evidence_id from ai_extraction_decision_evidence where project_id=${value.project.id}::uuid and decision_id=${String(decision.id)}::uuid`;
+      const mapping = new Map(mappingRows.map((row) => [String(row.grounding_id), String(row.evidence_id)]));
+      expect(mapping.get(String(first.id))).toBe(highEvidenceId);
+      expect(mapping.get(String(second.id))).toBe(lowEvidenceId);
+      expect(probePid).toBeGreaterThan(0);
+    } finally {
+      await finishHeld(held);
+      probeRelease();
+      await probeTransaction;
+    }
   });
 
   it("creates an immutable batch, claims through Slice 26, and leaves acceptance researcher-controlled", async () => {
