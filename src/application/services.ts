@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { DomainError } from "@/domain/errors";
-import type { DocumentStorage } from "@/infrastructure/document-storage";
+import type { DocumentStorage, PdfIntakeStorage } from "@/infrastructure/document-storage";
 import {
   createProjectPaperServices,
 } from "./review-services/project-paper-services";
@@ -82,7 +82,8 @@ import {
   type ResearchQuestionAnswerManuscriptServices,
 } from "./research-question-answer-manuscript-services";
 import { createBibliographicImportServices, type BibliographicParser, type BibliographicImportServices } from "./bibliographic-import-services";
-import { createPdfIntakeServices, type PdfIntakeStorage, type PdfMetadataInspector } from "./pdf-intake-services";
+import { createPdfIntakeServices, type PdfMetadataInspector } from "./pdf-intake-services";
+import type { StorageCheckpoint } from "./storage-materialization";
 import { createCriticalAppraisalServices } from "./critical-appraisal-services";
 
 export function createReviewServices(db: Database, options: {
@@ -90,6 +91,7 @@ export function createReviewServices(db: Database, options: {
   pdfIntakeStorage?: PdfIntakeStorage;
   pdfMetadataInspector?: PdfMetadataInspector;
   maxDocumentBytes?: number;
+  onStorageCheckpoint?: StorageCheckpoint;
   documentTextExtractor?: DocumentTextExtractionParser;
   bibliographicParser?: BibliographicParser;
 } = {}) {
@@ -178,7 +180,7 @@ export function createReviewServices(db: Database, options: {
   const manuscriptSnapshotServices = createManuscriptSnapshotServices(db, manuscriptServices.loadManuscriptProjection);
   const acquisitionServices = createAcquisitionServices(db);
   const projectWorkspaceReadServices = createProjectWorkspaceReadServices(db);
-  const documentServices: FullTextDocumentServices = createFullTextDocumentServices(db, options.documentStorage, options.maxDocumentBytes);
+  const documentServices: FullTextDocumentServices = createFullTextDocumentServices(db, options.documentStorage, options.maxDocumentBytes, options.onStorageCheckpoint);
   const baseServices = Object.assign(services, manuscriptServices, manuscriptProseHistoryServices, manuscriptReviewServices, manuscriptSnapshotServices, acquisitionServices, deduplicationServices, documentServices as unknown as Record<string, unknown>) as typeof services & typeof manuscriptServices & typeof manuscriptProseHistoryServices & typeof manuscriptReviewServices & typeof manuscriptSnapshotServices & typeof acquisitionServices & typeof deduplicationServices & FullTextDocumentServices;
   const textExtractionParser: DocumentTextExtractionParser = options.documentTextExtractor ?? {
     extractorKey: "unconfigured",
@@ -198,6 +200,7 @@ export function createReviewServices(db: Database, options: {
     documentStorage: options.documentStorage,
     metadataInspector: options.pdfMetadataInspector,
     maxBytes: options.maxDocumentBytes,
+    onCheckpoint: options.onStorageCheckpoint,
   });
   const reportingServices = createReviewReportingServices(db, deduplicationServices);
   const curationServices = createEvidenceCurationServices(db, { requireProject, requireEvidence });

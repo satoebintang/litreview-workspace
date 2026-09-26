@@ -13,6 +13,7 @@ import type { PdfMetadataInspection } from "@/application/pdf-intake-services";
 import { LocalDocumentStorage, LocalPdfIntakeStorage } from "@/infrastructure/document-storage";
 import { findPaperCandidates } from "@/application/paper-writer";
 import { normalizePdfDoiCandidate } from "@/infrastructure/pdf-metadata-inspector";
+import { auditStorageReadOnly } from "@/application/storage-operations";
 
 const BASE_URL = process.env.DATABASE_URL ?? "postgres://litreview:litreview@127.0.0.1:5432/litreview";
 const TEST_DB_NAME = `slice28_pdf_intake_${Date.now()}`;
@@ -60,11 +61,13 @@ describe("Slice 28 PDF-first intake", () => {
     const staged = await intakeStorage.stage(Readable.from([bytes]));
     const intakeId = randomUUID();
     const storageKey = intakeStorageKey(projectId, intakeId);
-    await intakeStorage.promote(staged.temporaryKey, storageKey);
+    await intakeStorage.install(staged.temporaryKey, storageKey);
+    await intakeStorage.ensureDurable(storageKey);
     await appClient!`
-      insert into pdf_intakes (id, project_id, original_filename, media_type, byte_size, sha256, storage_key)
-      values (${intakeId}, ${projectId}, ${filename}, 'application/pdf', ${staged.byteSize}, ${createHash("sha256").update(bytes).digest("hex")}, ${storageKey})
+      insert into pdf_intakes (id, project_id, original_filename, media_type, byte_size, sha256, storage_key, storage_state, staged_storage_key)
+      values (${intakeId}, ${projectId}, ${filename}, 'application/pdf', ${staged.byteSize}, ${createHash("sha256").update(bytes).digest("hex")}, ${storageKey}, 'ready', null)
     `;
+    await intakeStorage.remove(staged.temporaryKey);
     return intakeId;
   }
 
@@ -123,47 +126,266 @@ describe("Slice 28 PDF-first intake", () => {
     expect((await services.auditFullTextDocumentStorage(project.id)).orphanFiles).toEqual([]);
   });
 
-  it("re-stages from retained intake bytes after a forced post-promotion serialization failure", async () => {
+  it.each([
+    "after_staging",
+    "after_pending_commit",
+    "after_final_installation",
+    "after_final_verification",
+    "after_ready_transition",
+  ] as const)("recovers direct PDF intake upload after the %s crash boundary", async (phase) => {
     if (!ready) return;
-    const project = await services.createProject({ title: `PDF retry ${crypto.randomUUID()}` });
-    const bytes = Buffer.from("%PDF-1.7\nretryable canonical materialization");
-    const intake = await services.uploadPdfIntake(project.id, { originalFilename: "retry.pdf", mediaType: "application/pdf" }, Readable.from([bytes]));
+    const isolatedRoot = await mkdtemp(path.join(os.tmpdir(), "litreview_slice28_intake_crash_"));
+    const documentStorage = new LocalDocumentStorage(isolatedRoot);
+    const intakeStorage = new LocalPdfIntakeStorage(isolatedRoot);
+    const options = {
+      documentStorage,
+      pdfIntakeStorage: intakeStorage,
+      pdfMetadataInspector: { inspect: async () => failedInspection() },
+    };
+    const fixtureServices = createReviewServices(databaseHandle, options);
+    const project = await fixtureServices.createProject({ title: `PDF intake crash ${phase} ${randomUUID()}` });
+    const bytes = Buffer.from(`%PDF-1.7\ndirect intake crash ${phase}`);
+    const keysBefore = new Set(await intakeStorage.listKeys());
+    let crashed = false;
+    let orphanStageKey: string | undefined;
+    const crashingServices = createReviewServices(databaseHandle, {
+      ...options,
+      onStorageCheckpoint: async (observedPhase, context) => {
+        if (!crashed && observedPhase === phase && context.flow === "pdf_intake") {
+          crashed = true;
+          if (phase === "after_staging") orphanStageKey = context.storageKey;
+          throw new Error(`simulated intake crash: ${phase}`);
+        }
+      },
+    });
+
+    await expect(crashingServices.uploadPdfIntake(
+      project.id,
+      { originalFilename: `${phase}.pdf`, mediaType: "application/pdf" },
+      Readable.from([bytes]),
+    )).rejects.toThrow(`simulated intake crash: ${phase}`);
+    expect(crashed).toBe(true);
+
+    let intakeId: string;
+    if (phase === "after_staging") {
+      expect(orphanStageKey).toMatch(/^\.pdf-intake\/\.tmp\//);
+      const before = await auditStorageReadOnly(databaseHandle, { documentStorage, intakeStorage, projectId: project.id });
+      expect(before.counts.unknownStaged).toBe(1);
+      expect(before.counts.pending).toBe(0);
+      await expect(intakeStorage.exists(orphanStageKey!)).resolves.toBe(true);
+      const restarted = createReviewServices(databaseHandle, options);
+      const reuploaded = await restarted.uploadPdfIntake(project.id, { originalFilename: "retry.pdf", mediaType: "application/pdf" }, Readable.from([bytes]));
+      if (!reuploaded) throw new Error("PDF intake retry was not returned");
+      intakeId = reuploaded.id;
+      const rows = await appClient!`select id, storage_state from pdf_intakes where project_id=${project.id}`;
+      expect(rows).toHaveLength(1);
+      expect(String(rows[0].id)).toBe(intakeId);
+      expect(rows[0].storage_state).toBe("ready");
+      await intakeStorage.remove(orphanStageKey!);
+    } else {
+      const [owner] = await appClient!`
+        select id, storage_state, staged_storage_key, storage_key
+        from pdf_intakes where project_id=${project.id}
+      `;
+      intakeId = String(owner.id);
+      expect(owner.storage_state).toBe(phase === "after_ready_transition" ? "ready" : "pending");
+      if (phase === "after_ready_transition") {
+        orphanStageKey = (await intakeStorage.listKeys()).find((key) => key.startsWith(".pdf-intake/.tmp/") && !keysBefore.has(key));
+      }
+      const before = await auditStorageReadOnly(databaseHandle, { documentStorage, intakeStorage, projectId: project.id });
+      if (owner.storage_state === "pending") expect(before.counts.pending).toBe(1);
+      if (phase === "after_ready_transition") expect(before.counts.unknownStaged).toBe(1);
+
+      const restarted = createReviewServices(databaseHandle, options);
+      const recovered = await restarted.uploadPdfIntake(project.id, { originalFilename: `${phase}.pdf`, mediaType: "application/pdf" }, Readable.from([bytes]));
+      if (!recovered) throw new Error("PDF intake recovery was not returned");
+      expect(recovered.id).toBe(intakeId);
+      const [readyRow] = await appClient!`select storage_state, staged_storage_key from pdf_intakes where id=${intakeId}`;
+      expect(readyRow).toEqual({ storage_state: "ready", staged_storage_key: null });
+      if (phase === "after_ready_transition") {
+        expect(orphanStageKey).toBeTruthy();
+        expect(await intakeStorage.exists(orphanStageKey!)).toBe(true);
+        expect((await auditStorageReadOnly(databaseHandle, { documentStorage, intakeStorage, projectId: project.id })).counts.unknownStaged).toBe(1);
+        await intakeStorage.remove(orphanStageKey!);
+      } else {
+        expect((await auditStorageReadOnly(databaseHandle, { documentStorage, intakeStorage, projectId: project.id })).counts.unknownStaged).toBe(0);
+      }
+    }
+    await rm(isolatedRoot, { recursive: true, force: true });
+  }, 30_000);
+
+  it.each([
+    "after_staging",
+    "after_resolution_commit",
+    "after_final_installation",
+    "after_final_verification",
+    "after_ready_transition",
+  ] as const)("recovers the exact %s PDF resolution for create-Paper and match-Paper decisions", async (phase) => {
+    if (!ready) return;
+    const resolutionRoot = await mkdtemp(path.join(os.tmpdir(), "litreview_slice28_resolution_crash_"));
+    const documentStorage = new LocalDocumentStorage(resolutionRoot);
+    const intakeStorage = new LocalPdfIntakeStorage(resolutionRoot);
+    const isolatedServices = createReviewServices(databaseHandle, {
+      documentStorage,
+      pdfIntakeStorage: intakeStorage,
+      pdfMetadataInspector: { inspect: async () => failedInspection() },
+    });
+    const priorKeys = new Set(await documentStorage.listKeys());
+
+    for (const resolutionKind of ["create_paper", "match_paper"] as const) {
+      const project = await isolatedServices.createProject({ title: `PDF resolution ${phase} ${resolutionKind} ${randomUUID()}` });
+      const targetPaper = resolutionKind === "match_paper"
+        ? await isolatedServices.addPaper(project.id, { title: "Preselected match Paper" })
+        : null;
+      const bytes = Buffer.from(`%PDF-1.7\n${phase} ${resolutionKind} resolution bytes`);
+      const intake = await isolatedServices.uploadPdfIntake(project.id, { originalFilename: "resolution.pdf", mediaType: "application/pdf" }, Readable.from([bytes]));
+      if (!intake) throw new Error("PDF intake was not returned");
+      const preview = await isolatedServices.previewPdfIntakeResolution(project.id, intake.id, resolutionKind === "create_paper"
+        ? {
+            kind: "create_paper",
+            payload: { title: "Resolved from retained PDF", authors: ["Ada Lovelace"], publicationYear: 1843, venue: null, doi: null, abstract: null, bibliographicNote: null },
+            distinctPaperAcknowledged: false,
+          }
+        : { kind: "match_paper", paperId: targetPaper!.id });
+      const request = resolutionKind === "create_paper"
+        ? {
+            kind: "create_paper" as const,
+            payload: preview.payload,
+            distinctPaperAcknowledged: false,
+            previewFingerprint: preview.fingerprint,
+            metadataResultId: preview.metadataResultId,
+          }
+        : {
+            kind: "match_paper" as const,
+            paperId: targetPaper!.id,
+            previewFingerprint: preview.fingerprint,
+            metadataResultId: preview.metadataResultId,
+          };
+
+      let crashed = false;
+      let orphanStageKey: string | undefined;
+      const crashingServices = createReviewServices(databaseHandle, {
+        documentStorage,
+        pdfIntakeStorage: intakeStorage,
+        pdfMetadataInspector: { inspect: async () => failedInspection() },
+        onStorageCheckpoint: async (observedPhase, context) => {
+          if (!crashed && observedPhase === phase && context.flow === "pdf_intake_resolution") {
+            crashed = true;
+            if (phase === "after_staging") orphanStageKey = context.storageKey;
+            throw new Error(`simulated resolution crash: ${phase}`);
+          }
+        },
+      });
+
+      await expect(crashingServices.resolvePdfIntake(project.id, intake.id, request))
+        .rejects.toThrow(`simulated resolution crash: ${phase}`);
+      expect(crashed).toBe(true);
+
+      const committedRows = await appClient!`
+        select id, paper_id, full_text_document_id, materialization_kind
+        from pdf_intake_resolutions where project_id=${project.id} and intake_id=${intake.id}
+      `;
+      if (phase === "after_staging") {
+        expect(committedRows).toHaveLength(0);
+        expect(orphanStageKey).toMatch(/^\.tmp\//);
+      } else {
+        expect(committedRows).toHaveLength(1);
+        expect(committedRows[0].materialization_kind).toBe("created_document");
+      }
+
+      if (phase === "after_resolution_commit" && resolutionKind === "create_paper") {
+        // Change candidate context after commit. A retry must finish the
+        // stored exact Paper/document decision without recalculating it.
+        const changedCandidate = await isolatedServices.addPaper(project.id, { title: "New candidate after commit", publicationYear: 1843 });
+        await appClient!`update papers set title='Resolved from retained PDF' where project_id=${project.id} and id=${changedCandidate.id}`;
+      }
+
+      const restarted = createReviewServices(databaseHandle, {
+        documentStorage,
+        pdfIntakeStorage: intakeStorage,
+        pdfMetadataInspector: { inspect: async () => failedInspection() },
+      });
+      const recovered = await restarted.resolvePdfIntake(project.id, intake.id, request);
+      expect(recovered.materializationKind).toBe("created_document");
+      if (committedRows[0]) {
+        expect(recovered.id).toBe(String(committedRows[0].id));
+        expect(recovered.paperId).toBe(String(committedRows[0].paper_id));
+        expect(recovered.fullTextDocumentId).toBe(String(committedRows[0].full_text_document_id));
+      }
+      const resolutions = await appClient!`
+        select id, paper_id, full_text_document_id
+        from pdf_intake_resolutions where project_id=${project.id} and intake_id=${intake.id}
+      `;
+      expect(resolutions).toHaveLength(1);
+      expect(recovered.id).toBe(String(resolutions[0].id));
+      expect(recovered.paperId).toBe(String(resolutions[0].paper_id));
+      expect(recovered.fullTextDocumentId).toBe(String(resolutions[0].full_text_document_id));
+      expect((await restarted.listPapers(project.id)).length).toBe(resolutionKind === "match_paper" ? 1 : phase === "after_resolution_commit" ? 2 : 1);
+      expect((await restarted.listFullTextDocuments(project.id, recovered.paperId)).map((document) => document.id)).toEqual([recovered.fullTextDocumentId]);
+
+      if (phase === "after_staging") {
+        expect(await documentStorage.exists(orphanStageKey!)).toBe(true);
+        expect((await isolatedServices.auditFullTextDocumentStorage(project.id)).stagedFiles).toContain(orphanStageKey);
+        await documentStorage.remove(orphanStageKey!);
+      } else if (phase === "after_ready_transition") {
+        const stageKey = (await documentStorage.listKeys()).find((key) => key.startsWith(".tmp/") && !priorKeys.has(key));
+        expect(stageKey).toBeTruthy();
+        expect(await documentStorage.exists(stageKey!)).toBe(true);
+        expect((await isolatedServices.auditFullTextDocumentStorage(project.id)).stagedFiles).toContain(stageKey);
+        await documentStorage.remove(stageKey!);
+      } else {
+        expect(await isolatedServices.auditFullTextDocumentStorage(project.id)).toEqual({ missingFiles: [], orphanFiles: [], stagedFiles: [] });
+      }
+    }
+    await rm(resolutionRoot, { recursive: true, force: true });
+  }, 60_000);
+
+  it("preserves and completes a committed resolution when PostgreSQL loses the commit response", async () => {
+    if (!ready) return;
+    const project = await services.createProject({ title: `PDF uncertain commit ${randomUUID()}` });
+    const bytes = Buffer.from("%PDF-1.7\nuncertain resolution commit");
+    const intake = await services.uploadPdfIntake(project.id, { originalFilename: "uncertain.pdf", mediaType: "application/pdf" }, Readable.from([bytes]));
     if (!intake) throw new Error("PDF intake was not returned");
     const preview = await services.previewPdfIntakeResolution(project.id, intake.id, {
       kind: "create_paper",
-      payload: { title: "Retry Paper", authors: ["Ada Lovelace"], publicationYear: 1843, venue: null, doi: null, abstract: null, bibliographicNote: null },
+      payload: { title: "Uncertain commit Paper", authors: ["Grace Hopper"], publicationYear: 1952, venue: null, doi: null, abstract: null, bibliographicNote: null },
       distinctPaperAcknowledged: false,
     });
-
-    const originalTransaction = (databaseHandle as unknown as { transaction: (...args: unknown[]) => Promise<unknown> }).transaction.bind(databaseHandle);
-    let failAfterPromotion = true;
-    (databaseHandle as unknown as { transaction: (...args: unknown[]) => Promise<unknown> }).transaction = async (callback: unknown, config?: unknown) => {
-      return originalTransaction(async (tx: unknown) => {
-        const result = await (callback as (transaction: unknown) => Promise<unknown>)(tx);
-        if (failAfterPromotion && (config as { isolationLevel?: string } | undefined)?.isolationLevel === "serializable") {
-          failAfterPromotion = false;
-          const error = new Error("forced serialization failure after promotion") as Error & { code: string };
-          error.code = "40001";
-          throw error;
-        }
-        return result;
-      }, config);
+    const mutableDb = databaseHandle as unknown as { transaction: (callback: unknown, config?: unknown) => Promise<unknown> };
+    const originalTransaction = mutableDb.transaction.bind(databaseHandle);
+    let dropCommitResponse = true;
+    mutableDb.transaction = async (callback, config) => {
+      const committed = await originalTransaction(callback, config);
+      if (dropCommitResponse && (config as { isolationLevel?: string } | undefined)?.isolationLevel === "serializable") {
+        dropCommitResponse = false;
+        throw new Error("simulated lost serializable commit response");
+      }
+      return committed;
     };
-    const documentStorage = new LocalDocumentStorage(storageRoot);
-    const created = await services.resolvePdfIntake(project.id, intake.id, {
-      kind: "create_paper",
-      payload: preview.payload,
-      previewFingerprint: preview.fingerprint,
-      metadataResultId: preview.metadataResultId,
-    });
-    expect(created.materializationKind).toBe("created_document");
-    expect(failAfterPromotion).toBe(false);
-    expect((await services.listPapers(project.id)).length).toBe(1);
-    expect((await services.listFullTextDocuments(project.id, created.paperId)).length).toBe(1);
-    expect(await services.getPreferredFullTextDocument(project.id, created.paperId)).toBeNull();
+    let resolved;
+    try {
+      resolved = await services.resolvePdfIntake(project.id, intake.id, {
+        kind: "create_paper",
+        payload: preview.payload,
+        previewFingerprint: preview.fingerprint,
+        metadataResultId: preview.metadataResultId,
+        distinctPaperAcknowledged: false,
+      });
+    } finally {
+      mutableDb.transaction = originalTransaction;
+    }
+    expect(dropCommitResponse).toBe(false);
+    expect(resolved.materializationKind).toBe("created_document");
+    const [stored] = await appClient!`
+      select id, paper_id, full_text_document_id, materialization_kind
+      from pdf_intake_resolutions where project_id=${project.id} and intake_id=${intake.id}
+    `;
+    expect(resolved.id).toBe(String(stored.id));
+    expect(resolved.paperId).toBe(String(stored.paper_id));
+    expect(resolved.fullTextDocumentId).toBe(String(stored.full_text_document_id));
+    expect((await services.listPapers(project.id)).map((paper) => paper.id)).toEqual([resolved.paperId]);
     expect(await services.auditFullTextDocumentStorage(project.id)).toEqual({ missingFiles: [], orphanFiles: [], stagedFiles: [] });
-    expect(await documentStorage.exists((await services.listFullTextDocuments(project.id, created.paperId))[0].storageKey)).toBe(true);
-  });
+  }, 30_000);
 
   it("recovers a durable intake with no metadata result and persists an oversized parser error within the diagnostic bound", async () => {
     if (!ready) return;

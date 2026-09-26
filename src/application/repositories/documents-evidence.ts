@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { evidence, fullTextDocuments, paperFullTextPreferences, documentTextExtractions, documentTextExtractionPages } from "@/db/schema";
 import type { DbTransaction } from "./types";
@@ -56,19 +56,67 @@ export class FullTextDocumentRepository {
 
   async findById(projectId: string, id: string) {
     const [item] = await this.db.select().from(fullTextDocuments)
+      .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.id, id), eq(fullTextDocuments.storageState, "ready"))).limit(1);
+    return item ?? null;
+  }
+
+  async findAnyById(projectId: string, id: string) {
+    const [item] = await this.db.select().from(fullTextDocuments)
       .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.id, id))).limit(1);
     return item ?? null;
   }
 
   async listForPaper(projectId: string, paperId: string) {
     return this.db.select().from(fullTextDocuments)
-      .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.paperId, paperId)))
+      .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.paperId, paperId), eq(fullTextDocuments.storageState, "ready")))
       .orderBy(desc(fullTextDocuments.createdAt));
   }
 
   async activeBySha(tx: DbTransaction, projectId: string, paperId: string, sha256: string) {
     const [item] = await tx.select().from(fullTextDocuments)
       .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.paperId, paperId), eq(fullTextDocuments.sha256, sha256), isNull(fullTextDocuments.archivedAt))).limit(1);
+    return item ?? null;
+  }
+
+  async findActiveBySha(projectId: string, paperId: string, sha256: string) {
+    const [item] = await this.db.select().from(fullTextDocuments)
+      .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.paperId, paperId), eq(fullTextDocuments.sha256, sha256), isNull(fullTextDocuments.archivedAt))).limit(1);
+    return item ?? null;
+  }
+
+  async listPending(projectId: string | undefined, after: { createdAt: Date; id: string } | undefined, limit: number) {
+    const filters = [eq(fullTextDocuments.storageState, "pending")];
+    if (projectId) filters.push(eq(fullTextDocuments.projectId, projectId));
+    if (after) filters.push(or(gt(fullTextDocuments.createdAt, after.createdAt), and(eq(fullTextDocuments.createdAt, after.createdAt), gt(fullTextDocuments.id, after.id)))!);
+    return this.db.select().from(fullTextDocuments)
+      .where(and(...filters))
+      .orderBy(asc(fullTextDocuments.createdAt), asc(fullTextDocuments.id))
+      .limit(limit);
+  }
+
+  async replacePendingStage(projectId: string, id: string, expectedStageKey: string, replacementStageKey: string) {
+    const [item] = await this.db.update(fullTextDocuments)
+      .set({ stagedStorageKey: replacementStageKey })
+      .where(and(
+        eq(fullTextDocuments.projectId, projectId),
+        eq(fullTextDocuments.id, id),
+        eq(fullTextDocuments.storageState, "pending"),
+        eq(fullTextDocuments.stagedStorageKey, expectedStageKey),
+      ))
+      .returning();
+    return item ?? null;
+  }
+
+  async markPendingReady(projectId: string, id: string, expectedStageKey: string) {
+    const [item] = await this.db.update(fullTextDocuments)
+      .set({ storageState: "ready", stagedStorageKey: null })
+      .where(and(
+        eq(fullTextDocuments.projectId, projectId),
+        eq(fullTextDocuments.id, id),
+        eq(fullTextDocuments.storageState, "pending"),
+        eq(fullTextDocuments.stagedStorageKey, expectedStageKey),
+      ))
+      .returning();
     return item ?? null;
   }
 
@@ -80,7 +128,7 @@ export class FullTextDocumentRepository {
   async archive(projectId: string, id: string) {
     return this.db.update(fullTextDocuments)
       .set({ archivedAt: new Date() })
-      .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.id, id)))
+      .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.id, id), eq(fullTextDocuments.storageState, "ready")))
       .returning();
   }
 

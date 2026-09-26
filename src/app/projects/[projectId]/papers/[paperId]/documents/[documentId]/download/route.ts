@@ -24,7 +24,7 @@ export async function GET(_request: Request, context: { params: Promise<{ projec
       },
     });
   } catch (error) {
-    const status = error instanceof DomainError && error.code === "DOCUMENT_NOT_FOUND" ? 404 : error instanceof DomainError && error.code === "STORAGE_ERROR" ? 503 : 400;
+    const status = error instanceof DomainError && error.code === "DOCUMENT_NOT_FOUND" ? 404 : error instanceof DomainError && ["STORAGE_ERROR", "STORAGE_PENDING", "STORAGE_INTEGRITY"].includes(error.code) ? 503 : 400;
     return NextResponse.json({ error: error instanceof DomainError ? error.message : "Document download failed" }, { status });
   }
 }

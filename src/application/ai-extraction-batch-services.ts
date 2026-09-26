@@ -113,11 +113,12 @@ async function lockBatchEntities(tx: DatabaseTransaction, projectId: string, inp
   const preferenceRows = paperIds.length === 0 ? [] : rows(await tx.execute(sql`select paper_id,full_text_document_id from paper_full_text_preferences where project_id=${projectId}::uuid and paper_id in (${uuidList(paperIds)}) order by paper_id for update`));
   const requestedDocumentIds = inputs.map((item) => item.fullTextDocumentId).filter((value): value is string => Boolean(value)).map((value) => uuid(value, "Document"));
   const documentIds = [...new Set([...requestedDocumentIds, ...preferenceRows.map((row) => String(row.full_text_document_id))])].sort();
-  const documents = documentIds.length === 0 ? [] : rows(await tx.execute(sql`select id,paper_id from full_text_documents where project_id=${projectId}::uuid and id in (${uuidList(documentIds)}) order by id for update`));
+  const documents = documentIds.length === 0 ? [] : rows(await tx.execute(sql`select id,paper_id,storage_state from full_text_documents where project_id=${projectId}::uuid and id in (${uuidList(documentIds)}) order by id for update`));
   for (const item of inputs) {
     if (!item.fullTextDocumentId) continue;
     const document = documents.find((candidate) => String(candidate.id) === uuid(item.fullTextDocumentId!, "Document"));
     if (!document || String(document.paper_id) !== uuid(item.paperId, "Paper")) throw new DomainError("CROSS_PROJECT_REFERENCE", "The selected document does not belong to the selected Paper");
+    if (document.storage_state !== "ready") throw new DomainError("STORAGE_PENDING", "The selected document bytes are still being materialized");
   }
   const explicitExtractionIds = inputs.map((item) => item.documentTextExtractionId).filter((value): value is string => Boolean(value)).map((value) => uuid(value, "Extraction"));
   const extractionRows = rows(await tx.execute(sql`select id,paper_id,full_text_document_id from document_text_extractions where project_id=${projectId}::uuid and paper_id in (${uuidList(paperIds)}) order by id for update`));
@@ -144,7 +145,7 @@ async function loadPreviewContext(tx: DatabaseTransaction, projectId: string, it
   const optionRows = fieldIds.length === 0 ? [] : rows(await tx.execute(sql`select field_id,id,label,sort_order from extraction_options where project_id=${projectId}::uuid and field_id in (${uuidList(fieldIds)}) and archived_at is null order by field_id,sort_order,id`));
   const currentRows = canonical.length === 0 ? [] : rows(await tx.execute(sql`select v.paper_id,v.field_id,r.id,r.sequence,r.value_state from extraction_values v join extraction_value_revisions r on r.project_id=v.project_id and r.extraction_value_id=v.id where v.project_id=${projectId}::uuid and v.paper_id in (${uuidList(paperIds)}) and v.field_id in (${uuidList(fieldIds)}) and r.finalized_at is not null order by v.paper_id,v.field_id,r.sequence desc,r.id desc`));
   const preferenceRows = paperIds.length === 0 ? [] : rows(await tx.execute(sql`select paper_id,full_text_document_id from paper_full_text_preferences where project_id=${projectId}::uuid and paper_id in (${uuidList(paperIds)})`));
-  const documentRows = paperIds.length === 0 ? [] : rows(await tx.execute(sql`select id,paper_id,original_filename,archived_at from full_text_documents where project_id=${projectId}::uuid and paper_id in (${uuidList(paperIds)}) order by paper_id,id`));
+  const documentRows = paperIds.length === 0 ? [] : rows(await tx.execute(sql`select id,paper_id,original_filename,archived_at from full_text_documents where project_id=${projectId}::uuid and paper_id in (${uuidList(paperIds)}) and storage_state='ready' order by paper_id,id`));
   const documentIds = documentRows.map((row) => String(row.id));
   const extractionRows = documentIds.length === 0 ? [] : rows(await tx.execute(sql`select id,paper_id,full_text_document_id,sequence,status from document_text_extractions where project_id=${projectId}::uuid and full_text_document_id in (${uuidList(documentIds)}) order by paper_id,full_text_document_id,sequence,id`));
   const extractionIds = extractionRows.map((row) => String(row.id));

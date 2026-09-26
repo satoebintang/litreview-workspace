@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Readable } from "node:stream";
 import { sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { DomainError, isConstraintError } from "@/domain/errors";
@@ -10,7 +9,8 @@ import {
   attachStagedFullTextDocumentInTransaction,
   type FullTextDocumentUploadMetadata,
 } from "./full-text-document-services";
-import { isPdfIntakeStorageKey, type DocumentByteSource, type DocumentStorage, type StagedDocument } from "@/infrastructure/document-storage";
+import { DocumentStorageError, isPdfIntakeStorageKey, type DocumentByteSource, type DocumentStorage, type PdfIntakeStorage, type StagedDocument } from "@/infrastructure/document-storage";
+import { materializePendingStorageRecord, type StorageCheckpoint, type StorageMaterializationAccess, type StorageMaterializationRecord } from "./storage-materialization";
 
 export const PDF_INTAKE_EXTRACTOR_KEY = "pdf-intake-metadata" as const;
 export const PDF_INTAKE_EXTRACTOR_VERSION = "1" as const;
@@ -34,15 +34,6 @@ function sanitizePdfMetadataInspection(inspection: PdfMetadataInspection): PdfMe
     fields: inspection.fields.map((field) => ({ ...field, diagnostic: boundPdfIntakeDiagnostic(field.diagnostic) })),
   };
 }
-
-export type PdfIntakeStorage = {
-  stage(source: DocumentByteSource, options?: { maxBytes?: number; signal?: AbortSignal }): Promise<StagedDocument>;
-  promote(temporaryKey: string, storageKey: string): Promise<void>;
-  open(storageKey: string): Promise<Readable>;
-  remove(key: string): Promise<void>;
-  exists(key: string): Promise<boolean>;
-  listKeys(): Promise<string[]>;
-};
 
 export type PdfMetadataProposal = {
   field: "title" | "authors" | "publicationYear" | "venue" | "doi" | "abstract";
@@ -167,6 +158,18 @@ export type PdfResolution = {
 
 function rows(value: unknown): Record<string, unknown>[] {
   return value as Record<string, unknown>[];
+}
+
+function asIntakeStorageRecord(row: Record<string, unknown>): StorageMaterializationRecord {
+  return {
+    id: String(row.id),
+    projectId: String(row.project_id),
+    storageKey: String(row.storage_key),
+    stagedStorageKey: row.staged_storage_key == null ? null : String(row.staged_storage_key),
+    byteSize: Number(row.byte_size),
+    sha256: String(row.sha256),
+    storageState: String(row.storage_state) as "pending" | "ready",
+  };
 }
 
 function stringValue(value: unknown): string | null {
@@ -316,7 +319,7 @@ function storedFieldName(field: PdfMetadataProposal["field"]): string {
   return field === "publicationYear" ? "publication_year" : field;
 }
 
-async function readBytes(storage: PdfIntakeStorage, storageKey: string, maxBytes: number): Promise<Uint8Array> {
+async function readBytes(storage: PdfIntakeStorage, storageKey: string, maxBytes: number, expected?: { byteSize: number; sha256: string }): Promise<Uint8Array> {
   const stream = await storage.open(storageKey);
   const chunks: Buffer[] = [];
   let size = 0;
@@ -330,7 +333,11 @@ async function readBytes(storage: PdfIntakeStorage, storageKey: string, maxBytes
   } finally {
     stream.destroy();
   }
-  return new Uint8Array(Buffer.concat(chunks, size));
+  const result = Buffer.concat(chunks, size);
+  if (expected && (size !== expected.byteSize || createHash("sha256").update(result).digest("hex") !== expected.sha256)) {
+    throw new DomainError("STORAGE_INTEGRITY", "Retained PDF bytes do not match immutable intake metadata");
+  }
+  return new Uint8Array(result);
 }
 
 function jsonHash(value: unknown): string {
@@ -369,6 +376,7 @@ export function createPdfIntakeServices(db: Database, options: {
   documentStorage?: DocumentStorage;
   metadataInspector?: PdfMetadataInspector;
   maxBytes?: number;
+  onCheckpoint?: StorageCheckpoint;
 } = {}) {
   const maxBytes = options.maxBytes ?? PDF_INTAKE_MAX_BYTES;
 
@@ -376,6 +384,38 @@ export function createPdfIntakeServices(db: Database, options: {
     parseId(projectId, "Project");
     const found = rows(await db.execute(sql`select id from projects where id=${projectId}::uuid limit 1`))[0];
     if (!found) throw new DomainError("PROJECT_NOT_FOUND", "Project was not found");
+  }
+
+  async function loadIntakeStorageRecord(projectId: string, intakeId: string) {
+    const found = rows(await db.execute(sql`
+      select id, project_id, storage_key, staged_storage_key, byte_size, sha256, storage_state
+      from pdf_intakes where project_id=${projectId}::uuid and id=${intakeId}::uuid limit 1
+    `))[0];
+    return found ? asIntakeStorageRecord(found) : null;
+  }
+
+  function intakeMaterializationAccess(projectId: string): StorageMaterializationAccess {
+    return {
+      load: (id) => loadIntakeStorageRecord(projectId, id),
+      replaceStage: async (id, expectedStageKey, replacementStageKey) => {
+        const updated = rows(await db.execute(sql`
+          update pdf_intakes set staged_storage_key=${replacementStageKey}
+          where project_id=${projectId}::uuid and id=${id}::uuid
+            and storage_state='pending' and staged_storage_key=${expectedStageKey}
+          returning id, project_id, storage_key, staged_storage_key, byte_size, sha256, storage_state
+        `))[0];
+        return updated ? asIntakeStorageRecord(updated) : null;
+      },
+      markReady: async (id, expectedStageKey) => {
+        const updated = rows(await db.execute(sql`
+          update pdf_intakes set storage_state='ready', staged_storage_key=null
+          where project_id=${projectId}::uuid and id=${id}::uuid
+            and storage_state='pending' and staged_storage_key=${expectedStageKey}
+          returning id, project_id, storage_key, staged_storage_key, byte_size, sha256, storage_state
+        `))[0];
+        return updated ? asIntakeStorageRecord(updated) : null;
+      },
+    };
   }
 
   function requireIntakeStorage() {
@@ -391,7 +431,7 @@ export function createPdfIntakeServices(db: Database, options: {
   async function loadIntake(projectId: string, intakeId: string, executor: Pick<Database, "execute"> = db) {
     const result = rows(await executor.execute(sql`
       select i.id, i.project_id, i.original_filename, i.media_type, i.byte_size,
-        i.sha256, i.storage_key, i.created_at,
+        i.sha256, i.storage_key, i.storage_state, i.created_at,
         mr.status as metadata_status,
         r.paper_id as resolution_paper_id,
         r.full_text_document_id as resolution_document_id
@@ -405,6 +445,7 @@ export function createPdfIntakeServices(db: Database, options: {
       where i.project_id=${projectId}::uuid and i.id=${intakeId}::uuid
       limit 1
     `))[0];
+    if (result?.storage_state === "pending") throw new DomainError("STORAGE_PENDING", "PDF intake bytes are still being materialized");
     return result ? asSummary(result) : null;
   }
 
@@ -439,7 +480,7 @@ export function createPdfIntakeServices(db: Database, options: {
       select d.id, d.paper_id, p.title as paper_title, d.sha256, d.archived_at
       from full_text_documents d
       join papers p on p.project_id=d.project_id and p.id=d.paper_id
-      where d.project_id=${projectId}::uuid and d.sha256=${sha256}
+      where d.project_id=${projectId}::uuid and d.sha256=${sha256} and d.storage_state='ready'
       order by d.archived_at nulls first, d.created_at, d.id
     `);
     return rows(found).map(asDocumentMatch);
@@ -469,8 +510,16 @@ export function createPdfIntakeServices(db: Database, options: {
     let inspection: PdfMetadataInspection;
     try {
       if (!options.metadataInspector) throw new DomainError("STORAGE_ERROR", "PDF metadata inspection is not configured");
-      inspection = await options.metadataInspector.inspect(await readBytes(storage, intake.storageKey, maxBytes));
+      const stored = await storage.inspect(intake.storageKey);
+      if (!stored || stored.byteSize !== intake.byteSize || stored.sha256 !== intake.sha256) {
+        throw new DomainError("STORAGE_INTEGRITY", "Retained PDF bytes do not match immutable intake metadata");
+      }
+      inspection = await options.metadataInspector.inspect(await readBytes(storage, intake.storageKey, maxBytes, intake));
     } catch (error) {
+      if (error instanceof DomainError && ["STORAGE_PENDING", "STORAGE_INTEGRITY"].includes(error.code)) throw error;
+      if (error instanceof DocumentStorageError) {
+        throw new DomainError(error.code === "STORAGE_INTEGRITY" ? "STORAGE_INTEGRITY" : "STORAGE_ERROR", error.message);
+      }
       inspection = mapInspectionError(error);
     }
     inspection = sanitizePdfMetadataInspection(inspection);
@@ -555,49 +604,80 @@ export function createPdfIntakeServices(db: Database, options: {
     }
     const storage = requireIntakeStorage();
     const staged = await storage.stage(source, { maxBytes });
-    let promotedKey: string | undefined;
-    let intakeId: string | undefined;
+    await options.onCheckpoint?.("after_staging", { flow: "pdf_intake", projectId, storageKey: staged.temporaryKey });
+    const newIntakeId = randomUUID();
+    const newStorageKey = intakeKey(projectId, newIntakeId);
+    let reservation: { id: string; created: boolean; storageState: "pending" | "ready"; stagedStorageKey: string | null };
     try {
-      const result = await db.transaction(async (tx) => {
+      reservation = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`${projectId}:${staged.sha256}`}, 0))`);
         const existing = rows(await tx.execute(sql`
-          select id from pdf_intakes
+          select id, byte_size, storage_state, staged_storage_key from pdf_intakes
           where project_id=${projectId}::uuid and sha256=${staged.sha256}
           limit 1
         `))[0];
-        if (existing) return { id: String(existing.id), created: false };
-        intakeId = randomUUID();
-        promotedKey = intakeKey(projectId, intakeId);
+        if (existing) {
+          if (Number(existing.byte_size) !== staged.byteSize) throw new DomainError("STORAGE_INTEGRITY", "A PDF SHA-256 owner has a conflicting expected byte size");
+          return {
+            id: String(existing.id),
+            created: false,
+            storageState: String(existing.storage_state) as "pending" | "ready",
+            stagedStorageKey: existing.staged_storage_key == null ? null : String(existing.staged_storage_key),
+          };
+        }
         const inserted = rows(await tx.execute(sql`
           insert into pdf_intakes
-            (id, project_id, original_filename, media_type, byte_size, sha256, storage_key)
+            (id, project_id, original_filename, media_type, byte_size, sha256, storage_key, storage_state, staged_storage_key)
           values
-            (${intakeId}::uuid, ${projectId}::uuid, ${validatedMetadata.originalFilename}, ${validatedMetadata.mediaType},
-             ${staged.byteSize}, ${staged.sha256}, ${promotedKey})
-          returning id
+            (${newIntakeId}::uuid, ${projectId}::uuid, ${validatedMetadata.originalFilename}, ${validatedMetadata.mediaType},
+             ${staged.byteSize}, ${staged.sha256}, ${newStorageKey}, 'pending', ${staged.temporaryKey})
+          returning id, storage_state, staged_storage_key
         `))[0];
         if (!inserted) throw new DomainError("DATABASE_CONSTRAINT", "PDF intake could not be created");
-        await storage.promote(staged.temporaryKey, promotedKey);
-        return { id: String(inserted.id), created: true };
+        return { id: String(inserted.id), created: true, storageState: "pending" as const, stagedStorageKey: String(inserted.staged_storage_key) };
       });
-      if (!result.created) {
+    } catch (error) {
+      // Unexpected transaction errors can race a commit still being resolved;
+      // keep those stages for audit instead of risking recovery bytes.
+      if (error instanceof DomainError || isConstraintError(error)) {
         await storage.remove(staged.temporaryKey).catch(() => undefined);
       }
-      const created = await detail(projectId, result.id);
-      if (!created) throw new DomainError("DATABASE_CONSTRAINT", "Created PDF intake could not be read");
-      if (result.created && !created.metadataResult) {
-        // Completion is deliberately outside the staging transaction. If the
-        // process dies here, the detail-page Inspect metadata action resumes it.
-        try { await ensureInitialPdfMetadataResult(projectId, result.id); } catch { /* durable intake remains recoverable */ }
-      }
-      return await detail(projectId, result.id);
-    } catch (error) {
-      await storage.remove(staged.temporaryKey).catch(() => undefined);
-      if (promotedKey) await storage.remove(promotedKey).catch(() => undefined);
       if (isConstraintError(error)) throw new DomainError("DATABASE_CONSTRAINT", "PDF intake could not be created");
       if (error instanceof DomainError) throw error;
       throw new DomainError("STORAGE_ERROR", error instanceof Error ? error.message : "PDF intake upload failed");
     }
+
+    if (reservation.storageState === "ready") {
+      await storage.remove(staged.temporaryKey).catch(() => undefined);
+    } else {
+      await options.onCheckpoint?.("after_pending_commit", { flow: "pdf_intake", projectId, id: reservation.id, storageKey: intakeKey(projectId, reservation.id) });
+      try {
+        await materializePendingStorageRecord({
+          access: intakeMaterializationAccess(projectId),
+          storage,
+          id: reservation.id,
+          projectId,
+          flow: "pdf_intake",
+          checkpoint: options.onCheckpoint,
+          replacementStage: async () => staged,
+        });
+        await storage.remove(staged.temporaryKey).catch(() => undefined);
+      } catch (error) {
+        if (error instanceof DocumentStorageError) {
+          throw new DomainError(error.code === "STORAGE_INTEGRITY" ? "STORAGE_INTEGRITY" : "STORAGE_ERROR", error.message);
+        }
+        throw error;
+      }
+    }
+
+    const created = await detail(projectId, reservation.id);
+    if (!created) throw new DomainError("DATABASE_CONSTRAINT", "Created PDF intake could not be read");
+    if (!created.metadataResult && options.metadataInspector) {
+      // Metadata inspection is a separate, resumable operation after the
+      // retained source has reached ready state.
+      await ensureInitialPdfMetadataResult(projectId, reservation.id);
+    }
+    return await detail(projectId, reservation.id);
   }
 
   async function previewPdfIntakeResolution(projectId: string, intakeId: string, input: Omit<PdfResolutionInput, "previewFingerprint">) {
@@ -624,30 +704,148 @@ export function createPdfIntakeServices(db: Database, options: {
       if (!parsed.success) throw new DomainError("VALIDATION_ERROR", "Canonical Paper payload is invalid", parsed.error.issues);
       return { ...input, payload: parsed.data };
     })();
+    const requestFingerprint = jsonHash({ intakeId, kind: requested.kind, paperId: requested.paperId ?? null, payload: requested.payload ?? null, previewFingerprint: requested.previewFingerprint });
+
+    const toResolution = (row: Record<string, unknown>): PdfResolution => ({
+      id: String(row.id),
+      intakeId,
+      kind: String(row.resolution_kind) as PdfResolutionInput["kind"],
+      paperId: String(row.paper_id),
+      fullTextDocumentId: String(row.full_text_document_id),
+      materializationKind: String(row.materialization_kind) as PdfResolution["materializationKind"],
+      createdAt: dateValue(row.created_at),
+    });
+
+    const documentAccess = (ownerProjectId: string): StorageMaterializationAccess => ({
+      load: async (id) => {
+        const row = rows(await db.execute(sql`
+          select id, project_id, storage_key, staged_storage_key, byte_size, sha256, storage_state
+          from full_text_documents where project_id=${ownerProjectId}::uuid and id=${id}::uuid limit 1
+        `))[0];
+        return row ? asIntakeStorageRecord(row) : null;
+      },
+      replaceStage: async (id, expectedStageKey, replacementStageKey) => {
+        const row = rows(await db.execute(sql`
+          update full_text_documents set staged_storage_key=${replacementStageKey}
+          where project_id=${ownerProjectId}::uuid and id=${id}::uuid
+            and storage_state='pending' and staged_storage_key=${expectedStageKey}
+          returning id, project_id, storage_key, staged_storage_key, byte_size, sha256, storage_state
+        `))[0];
+        return row ? asIntakeStorageRecord(row) : null;
+      },
+      markReady: async (id, expectedStageKey) => {
+        const row = rows(await db.execute(sql`
+          update full_text_documents set storage_state='ready', staged_storage_key=null
+          where project_id=${ownerProjectId}::uuid and id=${id}::uuid
+            and storage_state='pending' and staged_storage_key=${expectedStageKey}
+          returning id, project_id, storage_key, staged_storage_key, byte_size, sha256, storage_state
+        `))[0];
+        return row ? asIntakeStorageRecord(row) : null;
+      },
+    });
+
+    const findResolution = async () => rows(await db.execute(sql`
+      select r.id, r.paper_id, r.full_text_document_id, r.resolution_kind,
+        r.materialization_kind, r.created_at, r.request_fingerprint
+      from pdf_intake_resolutions r
+      where r.project_id=${projectId}::uuid and r.intake_id=${intakeId}::uuid limit 1
+    `))[0] ?? null;
+
+    const finishExistingResolution = async (row: Record<string, unknown>): Promise<PdfResolution> => {
+      const resolution = toResolution(row);
+      const intake = await loadIntakeStorageRecord(projectId, intakeId);
+      if (!intake) throw new DomainError("NOT_FOUND", "PDF intake was not found");
+      if (intake.storageState !== "ready") throw new DomainError("STORAGE_PENDING", "PDF intake bytes are still being materialized");
+      const storedIntake = await intakeStorage.inspect(intake.storageKey);
+      if (!storedIntake || storedIntake.byteSize !== intake.byteSize || storedIntake.sha256 !== intake.sha256) {
+        throw new DomainError("STORAGE_INTEGRITY", "Ready PDF intake bytes do not match immutable metadata");
+      }
+
+      if (resolution.materializationKind === "reused_document") {
+        const document = await documentAccess(projectId).load(resolution.fullTextDocumentId);
+        if (!document || document.storageState !== "ready") throw new DomainError("STORAGE_INTEGRITY", "A reused PDF resolution must reference a ready document");
+        const final = await documentStorage.inspect(document.storageKey);
+        if (!final || final.byteSize !== document.byteSize || final.sha256 !== document.sha256) {
+          throw new DomainError("STORAGE_INTEGRITY", "A reused document has missing or mismatched final bytes");
+        }
+        await documentStorage.ensureDurable(document.storageKey);
+      } else {
+        await materializePendingStorageRecord({
+          access: documentAccess(projectId),
+          storage: documentStorage,
+          id: resolution.fullTextDocumentId,
+          projectId,
+          flow: "pdf_intake_resolution",
+          checkpoint: options.onCheckpoint,
+          replacementStage: async () => {
+            const source = await intakeStorage.open(intake.storageKey);
+            const replacement = await documentStorage.stage(source as unknown as DocumentByteSource, { maxBytes });
+            await options.onCheckpoint?.("after_staging", { flow: "pdf_intake_resolution", projectId, id: resolution.fullTextDocumentId, storageKey: replacement.temporaryKey });
+            if (replacement.sha256 !== intake.sha256 || replacement.byteSize !== intake.byteSize) {
+              await documentStorage.remove(replacement.temporaryKey).catch(() => undefined);
+              throw new DomainError("STORAGE_INTEGRITY", "Retained intake bytes changed while repairing canonical staging");
+            }
+            return replacement;
+          },
+        });
+      }
+      return resolution;
+    };
+
+    // A matching retry resumes the exact stored decision before loading any
+    // candidate preview. Recovery never replays researcher intent.
+    const committedResolution = await findResolution();
+    if (committedResolution) {
+      if (String(committedResolution.request_fingerprint) !== requestFingerprint) {
+        throw new DomainError("CONCURRENT_MODIFICATION", "This PDF intake has already been resolved");
+      }
+      return finishExistingResolution(committedResolution);
+    }
+
     const attempts = 3;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const current = await detail(projectId, intakeId);
       if (!current) throw new DomainError("NOT_FOUND", "PDF intake was not found");
-      const existing = await db.execute(sql`select id, paper_id, full_text_document_id, resolution_kind, materialization_kind, created_at, request_fingerprint from pdf_intake_resolutions where project_id=${projectId}::uuid and intake_id=${intakeId}::uuid limit 1`);
-      const existingRow = rows(existing)[0];
-      if (existingRow) {
-        const requestFingerprint = jsonHash({ intakeId, kind: requested.kind, paperId: requested.paperId ?? null, payload: requested.payload ?? null, previewFingerprint: requested.previewFingerprint });
-        if (String(existingRow.request_fingerprint) === requestFingerprint) return {
-          id: String(existingRow.id), intakeId, kind: String(existingRow.resolution_kind) as PdfResolutionInput["kind"], paperId: String(existingRow.paper_id), fullTextDocumentId: String(existingRow.full_text_document_id), materializationKind: String(existingRow.materialization_kind) as PdfResolution["materializationKind"], createdAt: dateValue(existingRow.created_at),
-        };
-        throw new DomainError("CONCURRENT_MODIFICATION", "This PDF intake has already been resolved");
+
+      if (requested.kind === "match_paper") {
+        const targetPaperId = parseId(String(requested.paperId ?? ""), "Paper");
+        const pending = rows(await db.execute(sql`
+          select id from full_text_documents
+          where project_id=${projectId}::uuid and paper_id=${targetPaperId}::uuid
+            and sha256=${current.sha256} and archived_at is null and storage_state='pending'
+          limit 1
+        `))[0];
+        if (pending) {
+          await materializePendingStorageRecord({
+            access: documentAccess(projectId), storage: documentStorage, id: String(pending.id),
+            projectId, flow: "pdf_intake_resolution", checkpoint: options.onCheckpoint,
+          });
+          throw new DomainError("CONCURRENT_MODIFICATION", "An exact-document candidate changed; refresh the PDF intake preview before resolving it");
+        }
       }
+
       const source = await intakeStorage.open(current.storageKey);
-      let staged: StagedDocument | undefined;
-      let promotedKeyForAttempt: string | undefined;
+      let staged: StagedDocument;
       try {
         staged = await documentStorage.stage(source as unknown as DocumentByteSource, { maxBytes });
-        if (staged.sha256 !== current.sha256 || staged.byteSize !== current.byteSize) throw new DomainError("STORAGE_ERROR", "Retained PDF bytes changed unexpectedly");
-        const requestFingerprint = jsonHash({ intakeId, kind: requested.kind, paperId: requested.paperId ?? null, payload: requested.payload ?? null, previewFingerprint: requested.previewFingerprint });
-        const result = await db.transaction(async (tx) => {
+      } catch (error) {
+        if (error instanceof DocumentStorageError) throw new DomainError(error.code === "STORAGE_INTEGRITY" ? "STORAGE_INTEGRITY" : "STORAGE_ERROR", error.message);
+        throw error;
+      }
+      await options.onCheckpoint?.("after_staging", { flow: "pdf_intake_resolution", projectId, storageKey: staged.temporaryKey });
+      if (staged.sha256 !== current.sha256 || staged.byteSize !== current.byteSize) {
+        await documentStorage.remove(staged.temporaryKey).catch(() => undefined);
+        throw new DomainError("STORAGE_INTEGRITY", "Retained PDF bytes changed unexpectedly");
+      }
+
+      let result: PdfResolution;
+      try {
+        result = await db.transaction(async (tx) => {
           await tx.execute(sql`select id from projects where id=${projectId}::uuid for update`);
-          const lockedIntake = rows(await tx.execute(sql`select id, storage_key, sha256, byte_size from pdf_intakes where project_id=${projectId}::uuid and id=${intakeId}::uuid for update`))[0];
+          const lockedIntake = rows(await tx.execute(sql`select id, storage_key, sha256, byte_size, storage_state from pdf_intakes where project_id=${projectId}::uuid and id=${intakeId}::uuid for update`))[0];
           if (!lockedIntake) throw new DomainError("NOT_FOUND", "PDF intake was not found");
+          if (lockedIntake.storage_state !== "ready") throw new DomainError("STORAGE_PENDING", "PDF intake bytes are still being materialized");
+          if (String(lockedIntake.sha256) !== current.sha256 || Number(lockedIntake.byte_size) !== current.byteSize) throw new DomainError("STORAGE_INTEGRITY", "PDF intake identity changed before resolution");
           const prior = rows(await tx.execute(sql`select id from pdf_intake_resolutions where project_id=${projectId}::uuid and intake_id=${intakeId}::uuid limit 1`))[0];
           if (prior) throw new DomainError("CONCURRENT_MODIFICATION", "This PDF intake has already been resolved");
           const resultRow = rows(await tx.execute(sql`select * from pdf_intake_metadata_results where project_id=${projectId}::uuid and intake_id=${intakeId}::uuid order by sequence_no desc, id desc limit 1`))[0];
@@ -669,8 +867,8 @@ export function createPdfIntakeServices(db: Database, options: {
             const target = rows(await tx.execute(sql`select id from papers where project_id=${projectId}::uuid and id=${paperId}::uuid for update`))[0];
             if (!target) throw new DomainError("CROSS_PROJECT_REFERENCE", "Paper does not belong to this project");
           }
-          const attached = await attachStagedFullTextDocumentInTransaction(tx, documentStorage, projectId, paperId, { originalFilename: current.originalFilename, mediaType: "application/pdf" }, staged!);
-          if (attached.kind === "created") promotedKeyForAttempt = attached.promotedKey;
+          const attached = await attachStagedFullTextDocumentInTransaction(tx, projectId, paperId, { originalFilename: current.originalFilename, mediaType: "application/pdf" }, staged);
+          if (attached.kind === "pending") throw new DomainError("CONCURRENT_MODIFICATION", "A pending exact-document owner must be recovered before resolving this PDF intake");
           const resolutionId = randomUUID();
           const resolutionRows = rows(await tx.execute(sql`
             insert into pdf_intake_resolutions
@@ -686,14 +884,18 @@ export function createPdfIntakeServices(db: Database, options: {
             returning id, paper_id, full_text_document_id, resolution_kind, materialization_kind, created_at
           `))[0];
           if (!resolutionRows) throw new DomainError("DATABASE_CONSTRAINT", "PDF intake resolution could not be recorded");
-          return { id: String(resolutionRows.id), intakeId, kind: String(resolutionRows.resolution_kind) as PdfResolutionInput["kind"], paperId: String(resolutionRows.paper_id), fullTextDocumentId: String(resolutionRows.full_text_document_id), materializationKind: String(resolutionRows.materialization_kind) as PdfResolution["materializationKind"], createdAt: dateValue(resolutionRows.created_at), promotedKey: attached.kind === "created" ? attached.promotedKey : null };
+          return toResolution(resolutionRows);
         }, { isolationLevel: "serializable" });
-        if (result.materializationKind === "reused_document") await documentStorage.remove(staged.temporaryKey).catch(() => undefined);
-        return result;
       } catch (error) {
-        if (staged) {
+        // A failed serializable transaction may still commit after a lost
+        // response; retain the source until ownership is unambiguous.
+        if (error instanceof DomainError || isConstraintError(error)) {
           await documentStorage.remove(staged.temporaryKey).catch(() => undefined);
-          if (promotedKeyForAttempt) await documentStorage.remove(promotedKeyForAttempt).catch(() => undefined);
+        }
+        const concurrentResolution = await findResolution().catch(() => null);
+        if (concurrentResolution) {
+          if (String(concurrentResolution.request_fingerprint) === requestFingerprint) return finishExistingResolution(concurrentResolution);
+          throw new DomainError("CONCURRENT_MODIFICATION", "This PDF intake has already been resolved");
         }
         let code = "";
         let currentError: unknown = error;
@@ -707,10 +909,39 @@ export function createPdfIntakeServices(db: Database, options: {
             : undefined;
         }
         if ((code === "40001" || code === "40P01") && attempt + 1 < attempts) continue;
+        if (error instanceof DomainError && error.code === "CONCURRENT_MODIFICATION" && requested.kind === "match_paper") {
+          const targetPaperId = parseId(String(requested.paperId ?? ""), "Paper");
+          const pending = rows(await db.execute(sql`
+            select id from full_text_documents
+            where project_id=${projectId}::uuid and paper_id=${targetPaperId}::uuid
+              and sha256=${current.sha256} and archived_at is null and storage_state='pending'
+            limit 1
+          `))[0];
+          if (pending) await materializePendingStorageRecord({
+            access: documentAccess(projectId), storage: documentStorage, id: String(pending.id),
+            projectId, flow: "pdf_intake_resolution", checkpoint: options.onCheckpoint,
+          });
+        }
         if (isConstraintError(error)) throw new DomainError("DATABASE_CONSTRAINT", "PDF intake resolution could not be recorded");
         if (error instanceof DomainError) throw error;
         throw new DomainError("STORAGE_ERROR", error instanceof Error ? error.message : "PDF intake resolution failed");
       }
+
+      if (result.materializationKind === "reused_document") {
+        await documentStorage.remove(staged.temporaryKey).catch(() => undefined);
+        return result;
+      }
+      await options.onCheckpoint?.("after_resolution_commit", { flow: "pdf_intake_resolution", projectId, id: result.fullTextDocumentId, storageKey: result.fullTextDocumentId });
+      try {
+        await materializePendingStorageRecord({
+          access: documentAccess(projectId), storage: documentStorage, id: result.fullTextDocumentId,
+          projectId, flow: "pdf_intake_resolution", checkpoint: options.onCheckpoint,
+        });
+      } catch (error) {
+        if (error instanceof DocumentStorageError) throw new DomainError(error.code === "STORAGE_INTEGRITY" ? "STORAGE_INTEGRITY" : "STORAGE_ERROR", error.message);
+        throw error;
+      }
+      return result;
     }
     throw new DomainError("CONCURRENT_MODIFICATION", "PDF intake resolution could not complete after retries");
   }
@@ -723,13 +954,13 @@ export function createPdfIntakeServices(db: Database, options: {
       await requireProject(projectId);
       const result = await db.execute(sql`
         select i.id, i.project_id, i.original_filename, i.media_type, i.byte_size,
-          i.sha256, i.storage_key, i.created_at,
+          i.sha256, i.storage_key, i.storage_state, i.created_at,
           mr.status as metadata_status, r.paper_id as resolution_paper_id,
           r.full_text_document_id as resolution_document_id
         from pdf_intakes i
         left join lateral (select status from pdf_intake_metadata_results m where m.project_id=i.project_id and m.intake_id=i.id order by m.sequence_no desc, m.id desc limit 1) mr on true
         left join pdf_intake_resolutions r on r.project_id=i.project_id and r.intake_id=i.id
-        where i.project_id=${projectId}::uuid
+        where i.project_id=${projectId}::uuid and i.storage_state='ready'
         order by i.created_at desc, i.id desc
       `);
       return rows(result).map(asSummary);

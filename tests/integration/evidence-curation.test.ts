@@ -276,8 +276,8 @@ describe("Slice 16 Evidence curation", () => {
     const doc1Id = crypto.randomUUID();
     const doc1StorageKey = `projects/${projectId}/papers/${paper1.id}/documents/${doc1Id}/source.pdf`;
     await client`insert into full_text_documents
-      (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256)
-      values (${doc1Id}, ${projectId}, ${paper1.id}, ${doc1StorageKey}, 'source-one.pdf', 'application/pdf', 24, ${"a".repeat(64)})`;
+      (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256, storage_state, staged_storage_key)
+      values (${doc1Id}, ${projectId}, ${paper1.id}, ${doc1StorageKey}, 'source-one.pdf', 'application/pdf', 24, ${"a".repeat(64)}, 'ready', null)`;
     const documentEvidence = await services.recordEvidence(projectId, {
       paperId: paper1.id,
       fullTextDocumentId: doc1Id,
@@ -289,8 +289,8 @@ describe("Slice 16 Evidence curation", () => {
     const doc2Id = crypto.randomUUID();
     const doc2StorageKey = `projects/${projectId}/papers/${paper2.id}/documents/${doc2Id}/source.pdf`;
     await client`insert into full_text_documents
-      (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256)
-      values (${doc2Id}, ${projectId}, ${paper2.id}, ${doc2StorageKey}, 'source-two.pdf', 'application/pdf', 24, ${"b".repeat(64)})`;
+      (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256, storage_state, staged_storage_key)
+      values (${doc2Id}, ${projectId}, ${paper2.id}, ${doc2StorageKey}, 'source-two.pdf', 'application/pdf', 24, ${"b".repeat(64)}, 'ready', null)`;
     const extractedText = "Extracted source passage with exact offsets.";
     const textExtractionId = await client.begin(async (tx) => {
       const extractionRows = await tx`insert into document_text_extractions

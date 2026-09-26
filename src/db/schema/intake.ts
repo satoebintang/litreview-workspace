@@ -10,6 +10,7 @@ import {
   check,
   bigint,
   jsonb,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { bytea } from "./shared";
@@ -154,12 +155,16 @@ export const pdfIntakes = pgTable(
     mediaType: text("media_type").notNull(),
     byteSize: bigint("byte_size", { mode: "number" }).notNull(),
     sha256: text("sha256").notNull(),
+    storageState: text("storage_state").$type<"pending" | "ready">().notNull(),
+    stagedStorageKey: text("staged_storage_key"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     projectIdentity: unique("pdf_intakes_project_id_id_unique").on(table.projectId, table.id),
     projectSha256Identity: unique("pdf_intakes_project_sha256_unique").on(table.projectId, table.sha256),
     storageKeyUnique: unique("pdf_intakes_storage_key_unique").on(table.storageKey),
+    stagedStorageKeyUnique: uniqueIndex("pdf_intakes_staged_storage_key_unique").on(table.stagedStorageKey).where(sql`${table.stagedStorageKey} is not null`),
+    pendingStorageIndex: index("pdf_intakes_pending_storage_idx").on(table.createdAt, table.id).where(sql`${table.storageState} = 'pending'`),
     projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "pdf_intakes_project_fk" }).onDelete("restrict"),
     storageKeyNonblank: check("pdf_intakes_storage_key_nonblank", sql`btrim(${table.storageKey}) <> ''`),
     storageKeyFormat: check("pdf_intakes_storage_key_format", sql`${table.storageKey} ~ '^projects/[0-9a-f-]{36}/pdf-intakes/[0-9a-f-]{36}/source\\.pdf$'`),
@@ -168,6 +173,8 @@ export const pdfIntakes = pgTable(
     mediaTypePdf: check("pdf_intakes_media_type_pdf", sql`${table.mediaType} = 'application/pdf'`),
     byteSizeBound: check("pdf_intakes_byte_size_bound", sql`${table.byteSize} > 0 and ${table.byteSize} <= 52428800`),
     sha256Format: check("pdf_intakes_sha256_format", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
+    storageStateValid: check("pdf_intakes_storage_state_valid", sql`${table.storageState} in ('pending', 'ready')`),
+    storageStateStageShape: check("pdf_intakes_storage_state_stage_shape", sql`((${table.storageState} = 'ready' and ${table.stagedStorageKey} is null) or (${table.storageState} = 'pending' and ${table.stagedStorageKey} ~ '^\\.pdf-intake/\\.tmp/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.upload$'))`),
     createdAtIndex: index("pdf_intakes_project_created_at_idx").on(table.projectId, table.createdAt),
   }),
 );

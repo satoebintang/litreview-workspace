@@ -112,8 +112,8 @@ describe("Slice 33 critical appraisal migration boundary", () => {
     try {
       await migrate(db.db, { migrationsFolder: migrationFolder });
       const [latest] = await db.client`select id, hash from drizzle.__drizzle_migrations order by id desc limit 1`;
-      expect(Number(latest.id)).toBe(33);
-      expect(latest.hash).toBe(createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0032_hot_path_hardening.sql")).subarray()).digest("hex"));
+      expect(Number(latest.id)).toBe(34);
+      expect(latest.hash).toBe(createHash("sha256").update(fs.readFileSync(path.join(migrationFolder, "0033_storage_materialization_recovery.sql"))).digest("hex"));
       const tables = await db.client`select table_name from information_schema.tables where table_schema = 'public' and table_name in ('appraisal_frameworks', 'appraisal_framework_versions', 'appraisal_framework_sections', 'appraisal_framework_items', 'appraisal_framework_response_options', 'appraisal_framework_overall_judgement_options', 'appraisals', 'appraisal_revisions', 'appraisal_revision_responses', 'appraisal_revision_response_evidence') order by table_name`;
       expect(tables.map((row) => row.table_name)).toEqual([
         "appraisal_framework_items",
@@ -157,7 +157,7 @@ describe("Slice 33 critical appraisal migration boundary", () => {
       await db.client`insert into projects (id, title) values (${projectId}::uuid, 'Slice 31 project'), (${otherProjectId}::uuid, 'Other project')`;
       await db.client`insert into papers (id, project_id, title) values (${paperId}::uuid, ${projectId}::uuid, 'Pinned paper')`;
       await db.client`insert into extraction_fields (id, project_id, name, field_type) values (${fieldId}::uuid, ${projectId}::uuid, 'Outcome', 'short_text')`;
-      await db.client`insert into full_text_documents (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256) values (${documentId}::uuid, ${projectId}::uuid, ${paperId}::uuid, ${`projects/${projectId}/papers/${paperId}/documents/${documentId}/source.pdf`}, 'study.pdf', 'application/pdf', 8, ${"a".repeat(64)})`;
+      await db.client`insert into full_text_documents (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256, storage_state, staged_storage_key) values (${documentId}::uuid, ${projectId}::uuid, ${paperId}::uuid, ${`projects/${projectId}/papers/${paperId}/documents/${documentId}/source.pdf`}, 'study.pdf', 'application/pdf', 8, ${"a".repeat(64)}, 'ready', null)`;
       await db.client.begin(async (tx) => {
         await tx`insert into document_text_extractions (id, project_id, paper_id, full_text_document_id, extractor_key, extractor_version, algorithm_version, status, page_count, character_count, started_at, completed_at) values (${extractionId}::uuid, ${projectId}::uuid, ${paperId}::uuid, ${documentId}::uuid, 'fixture', '1', '1', 'succeeded', 1, 14, now(), now())`;
         await tx`insert into document_text_extraction_pages (id, project_id, paper_id, document_text_extraction_id, page_number, status, text, character_count) values (${extractionPageId}::uuid, ${projectId}::uuid, ${paperId}::uuid, ${extractionId}::uuid, 1, 'succeeded', 'αβ résumé — 你好', 14)`;
@@ -174,7 +174,7 @@ describe("Slice 33 critical appraisal migration boundary", () => {
       const alternateDocumentId = "00000000-0000-4000-8000-000000000012";
       const alternateExtractionId = "00000000-0000-4000-8000-000000000013";
       const alternatePageId = "00000000-0000-4000-8000-000000000014";
-      await db.client`insert into full_text_documents (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256) values (${alternateDocumentId}::uuid, ${projectId}::uuid, ${paperId}::uuid, ${`projects/${projectId}/papers/${paperId}/documents/${alternateDocumentId}/source.pdf`}, 'alternate.pdf', 'application/pdf', 8, ${"b".repeat(64)})`;
+      await db.client`insert into full_text_documents (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256, storage_state, staged_storage_key) values (${alternateDocumentId}::uuid, ${projectId}::uuid, ${paperId}::uuid, ${`projects/${projectId}/papers/${paperId}/documents/${alternateDocumentId}/source.pdf`}, 'alternate.pdf', 'application/pdf', 8, ${"b".repeat(64)}, 'ready', null)`;
       await db.client.begin(async (tx) => {
         await tx`insert into document_text_extractions (id, project_id, paper_id, full_text_document_id, extractor_key, extractor_version, algorithm_version, status, page_count, character_count, started_at, completed_at) values (${alternateExtractionId}::uuid, ${projectId}::uuid, ${paperId}::uuid, ${alternateDocumentId}::uuid, 'fixture', '1', '1', 'succeeded', 1, 14, now(), now())`;
         await tx`insert into document_text_extraction_pages (id, project_id, paper_id, document_text_extraction_id, page_number, status, text, character_count) values (${alternatePageId}::uuid, ${projectId}::uuid, ${paperId}::uuid, ${alternateExtractionId}::uuid, 1, 'succeeded', 'αβ résumé — 你好', 14)`;

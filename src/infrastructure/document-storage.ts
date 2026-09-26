@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { lstat, mkdir, open, readdir, realpath, rename, rm } from "node:fs/promises";
+import { once } from "node:events";
+import { lstat, link, mkdir, open, opendir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { isDocumentStorageKey, isPdfSignature } from "@/domain/full-text-documents";
@@ -14,17 +15,35 @@ export interface StagedDocument {
   signature: Uint8Array;
 }
 
+export type StorageArtifactInspection = { byteSize: number; sha256: string };
+export type StorageInventoryEntry = { key: string; kind: "file" | "symlink" | "other" };
+
+export function isUnsupportedDirectorySyncError(error: unknown, platform = process.platform) {
+  const code = error && typeof error === "object" && "code" in error
+    ? String((error as { code?: unknown }).code)
+    : "";
+  if (["EINVAL", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EISDIR"].includes(code)) return true;
+  // Opening a directory for fsync is unsupported by Node's Windows file
+  // handle implementation; file sync failures are never ignored.
+  return platform === "win32" && code === "EPERM";
+}
+
 export interface DocumentStorage {
   stage(source: DocumentByteSource, options?: { maxBytes?: number; signal?: AbortSignal }): Promise<StagedDocument>;
-  promote(temporaryKey: string, storageKey: string): Promise<void>;
+  /** Atomically add a final hard link without replacing an existing entry. */
+  install(temporaryKey: string, storageKey: string): Promise<void>;
+  inspect(key: string): Promise<StorageArtifactInspection | null>;
+  /** Sync an already verified regular file and its parent directory. */
+  ensureDurable(key: string): Promise<void>;
   open(storageKey: string): Promise<Readable>;
   remove(key: string): Promise<void>;
   exists(key: string): Promise<boolean>;
   listKeys(): Promise<string[]>;
+  iterateInventory(): AsyncIterable<StorageInventoryEntry>;
 }
 
 export class DocumentStorageError extends Error {
-  constructor(public readonly code: "UPLOAD_TOO_LARGE" | "UPLOAD_INTERRUPTED" | "STORAGE_INTEGRITY", message: string) {
+  constructor(public readonly code: "UPLOAD_TOO_LARGE" | "UPLOAD_INTERRUPTED" | "STORAGE_INTEGRITY" | "STORAGE_UNAVAILABLE", message: string) {
     super(message);
     this.name = "DocumentStorageError";
   }
@@ -44,22 +63,71 @@ function asBuffer(chunk: Uint8Array) {
  * becoming a valid historical document key.
  */
 export class LocalStorageFilesystem {
-  private readonly rootPathPromise: Promise<string>;
+  private readonly configuredRootPath: string;
 
   constructor(rootPath: string) {
     if (!rootPath || !path.isAbsolute(rootPath)) throw new Error("Storage root must be an absolute path");
-    this.rootPathPromise = mkdir(rootPath, { recursive: true }).then(() => realpath(rootPath));
+    this.configuredRootPath = path.resolve(rootPath);
   }
 
   async rootPath() {
-    return this.rootPathPromise;
+    try {
+      return await realpath(this.configuredRootPath);
+    } catch (error) {
+      if (this.fsCode(error) === "ENOENT") return this.configuredRootPath;
+      throw error;
+    }
+  }
+
+  private async ensureRootPath() {
+    const root = await this.rootPath();
+    await mkdir(root, { recursive: true });
+    return realpath(root);
+  }
+
+  private fsCode(error: unknown) {
+    return error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code) : "";
+  }
+
+  async syncDirectory(directory: string) {
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      handle = await open(directory, "r");
+      await handle.sync();
+    } catch (error) {
+      if (isUnsupportedDirectorySyncError(error)) return;
+      throw new DocumentStorageError("STORAGE_UNAVAILABLE", "Storage directory could not be synchronized");
+    } finally {
+      await handle?.close().catch(() => undefined);
+    }
+  }
+
+  private async syncFile(filePath: string) {
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      // Windows rejects FlushFileBuffers on a read-only file handle. These
+      // files were created by this process and remain owner-writable; opening
+      // read/write does not alter their contents.
+      handle = await open(filePath, "r+");
+      const stat = await handle.stat();
+      if (!stat.isFile()) throw new DocumentStorageError("STORAGE_INTEGRITY", "Storage path is not a regular file");
+      await handle.sync();
+    } catch (error) {
+      if (error instanceof DocumentStorageError) throw error;
+      throw new DocumentStorageError("STORAGE_UNAVAILABLE", "Storage file could not be synchronized");
+    } finally {
+      await handle?.close().catch(() => undefined);
+    }
   }
 
   async resolveKey(key: string) {
+    return this.resolveKeyUnderRoot(key, await this.rootPath());
+  }
+
+  private resolveKeyUnderRoot(key: string, root: string) {
     if (!key || path.isAbsolute(key) || key.includes("\\") || key.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
       throw new DocumentStorageError("STORAGE_INTEGRITY", "Invalid storage key");
     }
-    const root = await this.rootPath();
     const resolved = path.resolve(root, ...key.split("/"));
     const relative = path.relative(root, resolved);
     if (relative.startsWith("..") || path.isAbsolute(relative)) throw new DocumentStorageError("STORAGE_INTEGRITY", "Storage key escapes the configured root");
@@ -77,8 +145,8 @@ export class LocalStorageFilesystem {
    * so the final recheck narrows (but cannot eliminate) a concurrent swap race.
    */
   async prepareWritePath(key: string) {
-    const resolved = await this.resolveKey(key);
-    const root = await this.rootPath();
+    const root = await this.ensureRootPath();
+    const resolved = this.resolveKeyUnderRoot(key, root);
     const relativeParent = path.relative(root, path.dirname(resolved));
     this.assertUnderRoot(root, path.dirname(resolved), "Storage path escapes the configured root");
     let current = root;
@@ -95,6 +163,7 @@ export class LocalStorageFilesystem {
         }
         const created = await lstat(current);
         if (created.isSymbolicLink() || !created.isDirectory()) throw new DocumentStorageError("STORAGE_INTEGRITY", "Storage ancestor is not a real directory");
+        await this.syncDirectory(path.dirname(current));
       }
     }
     const actualParent = await realpath(path.dirname(resolved));
@@ -107,6 +176,44 @@ export class LocalStorageFilesystem {
       if (!(error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT")) throw error;
     }
     return resolved;
+  }
+
+  async ensureDurable(key: string) {
+    const filePath = await this.requireExistingFile(key);
+    await this.syncFile(filePath);
+    await this.syncDirectory(path.dirname(filePath));
+  }
+
+  async installNoClobber(temporaryKey: string, storageKey: string) {
+    const sourcePath = await this.prepareExistingWritePath(temporaryKey);
+    const destinationPath = await this.prepareWritePath(storageKey);
+    try {
+      await link(sourcePath, destinationPath);
+    } catch (error) {
+      if (this.fsCode(error) === "EEXIST") return;
+      throw new DocumentStorageError("STORAGE_UNAVAILABLE", "The configured filesystem cannot install a final file without replacing an existing entry");
+    }
+    await this.ensureDurable(storageKey);
+  }
+
+  async inspect(key: string): Promise<StorageArtifactInspection | null> {
+    if (!(await this.verifyExistingFile(key))) return null;
+    const filePath = await this.requireExistingFile(key);
+    const before = await lstat(filePath);
+    const hash = createHash("sha256");
+    try {
+      for await (const chunk of createReadStream(filePath)) {
+        hash.update(asBuffer(chunk as Uint8Array));
+      }
+    } catch {
+      throw new DocumentStorageError("STORAGE_INTEGRITY", "Stored file could not be read for verification");
+    }
+    const after = await lstat(filePath).catch(() => null);
+    if (!after || after.isSymbolicLink() || !after.isFile() || before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
+      throw new DocumentStorageError("STORAGE_INTEGRITY", "Stored file changed while it was being verified");
+    }
+    if (!Number.isSafeInteger(after.size)) throw new DocumentStorageError("STORAGE_INTEGRITY", "Stored file size exceeds the supported range");
+    return { byteSize: after.size, sha256: hash.digest("hex") };
   }
 
   /** Validate a source/final path before a write-side rename or removal. */
@@ -163,7 +270,7 @@ export class LocalStorageFilesystem {
     };
 
     const rootEntry = await inspect(root);
-    if (!rootEntry) throw new DocumentStorageError("STORAGE_INTEGRITY", "Configured storage root is missing");
+    if (!rootEntry) return false;
     if (rootEntry.isSymbolicLink() || !rootEntry.isDirectory()) {
       throw new DocumentStorageError("STORAGE_INTEGRITY", "Storage root is not a real directory");
     }
@@ -215,20 +322,39 @@ export class LocalStorageFilesystem {
     return resolved;
   }
 
-  async listKeys() {
+  async *iterateInventory(): AsyncIterable<StorageInventoryEntry> {
     const root = await this.rootPath();
-    const result: string[] = [];
-    const walk = async (directory: string, prefix: string) => {
-      for (const entry of await readdir(directory, { withFileTypes: true })) {
+    try {
+      const rootEntry = await lstat(root);
+      if (rootEntry.isSymbolicLink() || !rootEntry.isDirectory()) {
+        throw new DocumentStorageError("STORAGE_INTEGRITY", "Configured storage root is not a real directory");
+      }
+    } catch (error) {
+      if (this.fsCode(error) === "ENOENT") return;
+      throw error;
+    }
+    const walk = async function* (directory: string, prefix: string): AsyncIterable<StorageInventoryEntry> {
+      const entries = await opendir(directory);
+      for await (const entry of entries) {
         const key = prefix ? `${prefix}/${entry.name}` : entry.name;
         const fullPath = path.join(directory, entry.name);
-        if (entry.isDirectory()) await walk(fullPath, key);
-        else if (entry.isFile()) result.push(key.replaceAll(path.sep, "/"));
+        if (entry.isDirectory()) yield* walk(fullPath, key);
+        else if (entry.isFile()) yield { key: key.replaceAll(path.sep, "/"), kind: "file" };
+        else yield { key: key.replaceAll(path.sep, "/"), kind: entry.isSymbolicLink() ? "symlink" : "other" };
       }
     };
-    await walk(root, "");
+    yield* walk(root, "");
+  }
+
+  async listKeys() {
+    const result: string[] = [];
+    for await (const entry of this.iterateInventory()) if (entry.kind === "file") result.push(entry.key);
     return result;
   }
+}
+
+function isDocumentTemporaryStorageKey(value: string) {
+  return /^\.tmp\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.upload$/.test(value);
 }
 
 export class LocalDocumentStorage implements DocumentStorage {
@@ -242,11 +368,22 @@ export class LocalDocumentStorage implements DocumentStorage {
     return stagePdfBytes(this.filesystem, ".tmp", source, options);
   }
 
-  async promote(temporaryKey: string, storageKey: string) {
-    if (!isDocumentStorageKey(storageKey)) throw new DocumentStorageError("STORAGE_INTEGRITY", "Invalid final document storage key");
-    const sourcePath = await this.filesystem.prepareExistingWritePath(temporaryKey);
-    const destinationPath = await this.filesystem.prepareWritePath(storageKey);
-    await rename(sourcePath, destinationPath);
+  private assertInspectableKey(key: string) {
+    if (!isDocumentStorageKey(key) && !isDocumentTemporaryStorageKey(key)) throw new DocumentStorageError("STORAGE_INTEGRITY", "Invalid document storage key");
+    return key;
+  }
+
+  async install(temporaryKey: string, storageKey: string) {
+    if (!isDocumentTemporaryStorageKey(temporaryKey) || !isDocumentStorageKey(storageKey)) throw new DocumentStorageError("STORAGE_INTEGRITY", "Invalid document storage installation keys");
+    await this.filesystem.installNoClobber(temporaryKey, storageKey);
+  }
+
+  async inspect(key: string) {
+    return this.filesystem.inspect(this.assertInspectableKey(key));
+  }
+
+  async ensureDurable(key: string) {
+    await this.filesystem.ensureDurable(this.assertInspectableKey(key));
   }
 
   async open(storageKey: string) {
@@ -258,6 +395,7 @@ export class LocalDocumentStorage implements DocumentStorage {
     try {
       const resolved = await this.filesystem.prepareExistingWritePath(key);
       await rm(resolved, { force: true });
+      await this.filesystem.syncDirectory(path.dirname(resolved));
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT") return;
       throw error;
@@ -265,7 +403,7 @@ export class LocalDocumentStorage implements DocumentStorage {
   }
 
   async exists(key: string) {
-    const validated = key.startsWith(".tmp/") ? key : isDocumentStorageKey(key) ? key : null;
+    const validated = isDocumentTemporaryStorageKey(key) || isDocumentStorageKey(key) ? key : null;
     if (!validated) throw new DocumentStorageError("STORAGE_INTEGRITY", "Invalid document storage key");
     return this.filesystem.verifyExistingFile(validated);
   }
@@ -273,13 +411,17 @@ export class LocalDocumentStorage implements DocumentStorage {
   async listKeys() {
     return this.filesystem.listKeys();
   }
+
+  iterateInventory() {
+    return this.filesystem.iterateInventory();
+  }
 }
 
 /** Storage contract for an accepted PDF while local metadata is inspected. */
-export type PdfIntakeStorage = Pick<DocumentStorage, "stage" | "promote" | "open" | "remove" | "exists" | "listKeys">;
+export type PdfIntakeStorage = DocumentStorage;
 
 export function isPdfIntakeStorageKey(value: string) {
-  return /^projects\/[0-9a-f-]{36}\/pdf-intakes\/[0-9a-f-]{36}\/source\.pdf$/.test(value);
+  return /^projects\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/pdf-intakes\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/source\.pdf$/.test(value);
 }
 
 /**
@@ -305,7 +447,7 @@ export class LocalPdfIntakeStorage implements PdfIntakeStorage {
   }
 
   private assertTemporary(key: string) {
-    if (!key.startsWith(`${this.namespace}/.tmp/`)) {
+    if (!new RegExp(`^${this.namespace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/\\.tmp/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.upload$`).test(key)) {
       throw new DocumentStorageError("STORAGE_INTEGRITY", "PDF intake temporary key is outside the intake namespace");
     }
     return key;
@@ -319,17 +461,25 @@ export class LocalPdfIntakeStorage implements PdfIntakeStorage {
   }
 
   async stage(source: DocumentByteSource, options: { maxBytes?: number; signal?: AbortSignal } = {}) {
-    // Reuse the same stream/hash/signature primitive and then move the staged
-    // file into the intake namespace.  A canonical DocumentStorage key is
-    // never accepted here.
+    // Reuse the same stream/hash/signature primitive while keeping the stage
+    // under the intake-only namespace. A canonical document key is never
+    // accepted here.
     const staged = await stagePdfBytes(this.filesystem, this.namespaced(".tmp"), source, options);
     return staged;
   }
 
-  async promote(temporaryKey: string, storageKey: string) {
-    const sourcePath = await this.filesystem.prepareExistingWritePath(this.assertTemporary(temporaryKey));
-    const destinationPath = await this.filesystem.prepareWritePath(this.assertFinal(storageKey));
-    await rename(sourcePath, destinationPath);
+  async install(temporaryKey: string, storageKey: string) {
+    await this.filesystem.installNoClobber(this.assertTemporary(temporaryKey), this.assertFinal(storageKey));
+  }
+
+  async inspect(key: string) {
+    const validated = key.startsWith(`${this.namespace}/.tmp/`) ? this.assertTemporary(key) : this.assertFinal(key);
+    return this.filesystem.inspect(validated);
+  }
+
+  async ensureDurable(key: string) {
+    const validated = key.startsWith(`${this.namespace}/.tmp/`) ? this.assertTemporary(key) : this.assertFinal(key);
+    await this.filesystem.ensureDurable(validated);
   }
 
   async open(storageKey: string) {
@@ -340,6 +490,7 @@ export class LocalPdfIntakeStorage implements PdfIntakeStorage {
     const validated = key.startsWith(`${this.namespace}/.tmp/`) ? this.assertTemporary(key) : this.assertFinal(key);
     try {
       await rm(await this.filesystem.prepareExistingWritePath(validated), { force: true });
+      await this.filesystem.syncDirectory(path.dirname(await this.filesystem.resolveKey(validated)));
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT") return;
       throw error;
@@ -357,6 +508,10 @@ export class LocalPdfIntakeStorage implements PdfIntakeStorage {
     // temporary files. Returning the shared inventory keeps those audits
     // independent from the canonical document audit.
     return this.filesystem.listKeys();
+  }
+
+  iterateInventory() {
+    return this.filesystem.iterateInventory();
   }
 }
 
@@ -395,15 +550,14 @@ async function stagePdfBytes(
       }
       byteSize += bytes.byteLength;
       hash.update(bytes);
-      if (!output.write(bytes)) await new Promise<void>((resolve, reject) => { output.once("drain", resolve); output.once("error", reject); });
+      if (!output.write(bytes)) await once(output, "drain");
     }
     await new Promise<void>((resolve, reject) => { output.end(() => resolve()); output.once("error", reject); });
-    const handle = await open(temporaryPath, "r");
+    const handle = await open(temporaryPath, "r+");
     try { await handle.sync(); }
-    catch (error) {
-      if (!(error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "EPERM")) throw error;
-    }
+    catch { throw new DocumentStorageError("STORAGE_UNAVAILABLE", "Staged file could not be synchronized"); }
     finally { await handle.close(); }
+    await filesystem.syncDirectory(path.dirname(temporaryPath));
     if (byteSize === 0 || !isPdfSignature(signature)) throw new DocumentStorageError("UPLOAD_INTERRUPTED", "Document is not a PDF artifact");
     failed = false;
     return { temporaryKey, byteSize, sha256: hash.digest("hex"), signature: new Uint8Array(signature) };

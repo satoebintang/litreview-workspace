@@ -104,6 +104,10 @@ describe("Slice 29 migration boundaries", () => {
       await admin.unsafe(`create database "${name}"`);
       created = createDb(databaseUrl(name));
       await migrate(created.db, { migrationsFolder: historicalFolder });
+      // Current service fixtures require the ready-state columns introduced
+      // by Slice 41; this historical migration test still applies 0028 after
+      // seeding its published-0027 AI history fixture below.
+      await runMigration(created.client, "0033_storage_materialization_recovery.sql");
 
       const review = createReviewServices(created.db);
       const project = await review.createProject({ title: "Slice 29 populated upgrade" });
@@ -120,11 +124,11 @@ describe("Slice 29 migration boundaries", () => {
       const documentSha256 = createHash("sha256").update(documentBytes).digest("hex");
       await created.client`
         insert into full_text_documents
-          (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256)
+          (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256, storage_state, staged_storage_key)
         values
           (${documentId}::uuid, ${project.id}::uuid, ${paper.id}::uuid,
            ${`projects/${project.id}/papers/${paper.id}/documents/${documentId}/source.pdf`},
-           'study.pdf', 'application/pdf', ${documentBytes.byteLength}, ${documentSha256})
+           'study.pdf', 'application/pdf', ${documentBytes.byteLength}, ${documentSha256}, 'ready', null)
       `;
       await created.client.begin(async (tx) => {
         await tx`

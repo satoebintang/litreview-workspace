@@ -30,8 +30,21 @@ Project and Paper.
 An immutable project-owned staged PDF source artifact. It is not a Paper or a
 FullTextDocument until explicit researcher resolution. Local metadata proposals
 and their field-level provenance remain intake audit history; resolution creates
-or selects the canonical Paper and materializes the exact bytes through the
-ordinary FullTextDocument workflow.
+or selects the canonical Paper and records the exact FullTextDocument identity
+and resolution in one SERIALIZABLE transaction. Byte materialization completes
+afterward from the retained intake source; retry finishes that committed
+resolution without recalculating the Paper decision. Both the intake source and
+canonical document must be ready before they are usable.
+
+## Crash-recoverable storage materialization
+
+FullTextDocument and PDF intake writes commit a pending row and exact staged
+recovery key before exclusive final-file installation. Final bytes are checked
+against immutable size and SHA-256 before the row becomes ready. Reconciliation
+retries known pending rows; audit reports missing or mismatched ready files,
+orphan finals, and unowned staged files. Audit and reconciliation do not delete
+unknown or mismatched artifacts. A stage file left after the ready commit is a
+reported, benign orphan. See `docs/adr/0041-crash-recoverable-storage-materialization.md`.
 
 ## Bibliographic import
 

@@ -35,10 +35,11 @@ export function createEvidenceServices<TProject, TPaper, TEvidence>(deps: {
       const values = validate(recordEvidenceSchema, input);
       await requirePaper(projectId, values.paperId);
       if (values.fullTextDocumentId) {
-        const document = await db.select({ id: fullTextDocuments.id, paperId: fullTextDocuments.paperId, archivedAt: fullTextDocuments.archivedAt })
+        const document = await db.select({ id: fullTextDocuments.id, paperId: fullTextDocuments.paperId, archivedAt: fullTextDocuments.archivedAt, storageState: fullTextDocuments.storageState })
           .from(fullTextDocuments)
           .where(and(eq(fullTextDocuments.projectId, projectId), eq(fullTextDocuments.id, values.fullTextDocumentId))).limit(1);
         if (!document[0] || document[0].paperId !== values.paperId) throw new DomainError("CROSS_PROJECT_REFERENCE", "Full-text document does not belong to this Paper");
+        if (document[0].storageState !== "ready") throw new DomainError("STORAGE_PENDING", "Evidence cannot reference a document while its bytes are being materialized");
         if (document[0].archivedAt) throw new DomainError("DOCUMENT_ARCHIVED", "New Evidence cannot reference an archived full-text document");
       }
       return evidenceRepo.create({ projectId, ...values, fullTextDocumentId: values.fullTextDocumentId ?? null, note: values.note ?? null });

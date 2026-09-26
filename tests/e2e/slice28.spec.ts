@@ -115,8 +115,8 @@ test.describe("Slice 28 PDF-first intake", () => {
       fs.mkdirSync(path.dirname(storedPath), { recursive: true });
       fs.writeFileSync(storedPath, nativePdf);
       await sql`
-        insert into pdf_intakes (id, project_id, storage_key, original_filename, media_type, byte_size, sha256)
-        values (${intakeId}, ${projectId}, ${storageKey}, 'recovery-fixture.pdf', 'application/pdf', ${nativePdf.byteLength}, ${createHash("sha256").update(nativePdf).digest("hex")})
+        insert into pdf_intakes (id, project_id, storage_key, original_filename, media_type, byte_size, sha256, storage_state, staged_storage_key)
+        values (${intakeId}, ${projectId}, ${storageKey}, 'recovery-fixture.pdf', 'application/pdf', ${nativePdf.byteLength}, ${createHash("sha256").update(nativePdf).digest("hex")}, 'ready', null)
       `;
       await page.goto(`/projects/${projectId}/papers/pdf-intake/${intakeId}`);
       await expect(page.getByText("Metadata inspection pending", { exact: true })).toBeVisible();
