@@ -295,3 +295,37 @@ A bounded, Project-scoped Paper title search for manual Evidence capture and
 the queue Paper filter. Search returns compact options; exact selected-Paper
 resolution is separate from the visible search page. Queue `paperId` and
 capture `capturePaperId` are independent state.
+
+## Synthesis comparison page
+
+A bounded page for one active Extraction Field, with Project-wide extraction
+state counts and exact current ExtractionRevision IDs. Field and Paper order
+remain stable. Evidence links are represented by counts; Evidence provenance
+stays in exact-revision detail views.
+
+## Synthesis ledger page
+
+A compact page of finalized current Synthesis revisions and exact support
+counts. Page rows and Project-wide support state counts share one read-only
+`REPEATABLE READ` snapshot. Statements without a finalized revision remain
+absent, matching the released ledger.
+
+## Synthesis history summary
+
+A compact summary of each finalized SynthesisRevision and its complete exact
+ExtractionRevision support snapshots in released support order. It does not
+hydrate Evidence provenance. The current revision retains its full-provenance
+detail view.
+
+## Synthesis support selection
+
+The selected set contains exact `ExtractionRevisionId` values and persists
+across matrix pages and searches. Visible labels are display context only;
+the canonical Synthesis writer validates submitted IDs.
+
+## Synthesis revision edit context
+
+Targeted eligibility facts for exact historical supports and their Paper/Field
+replacement candidates. Carry-forward follows canonical final Paper inclusion
+and exact finalized, non-cleared support state. Archived Fields preserve exact
+historical support but offer no current replacement.
