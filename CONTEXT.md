@@ -261,6 +261,48 @@ snapshot; page rows alone are mapped to full review status. The retrieval `all`
 queue includes both currently title/abstract-included Papers and historical
 retrieval conflicts.
 
+## Paper collection page
+
+The canonical `/projects/{projectId}/papers` workspace uses
+`getPaperCollectionPage()` for a compact Project-scoped Paper page. Its row
+contains Paper identity, title, authors, publication year, venue, DOI, creation
+and update timestamps, and the latest title/abstract screening badge
+(`sequence DESC, id DESC`). It does not load abstract, bibliographic note,
+decision notes, or downstream review history. A bounded Paper CTE is selected
+before one lateral latest-decision lookup per returned Paper.
+
+The previous page path called `listPapers()` and `listScreeningPapers()` in
+parallel, built a Paper-ID Map in Node, and rendered the whole Project. The
+replacement removes those two unbounded materializations only from this page;
+the services and repositories remain available to specialized legacy callers.
+
+The Project-anchored count and bounded page share a read-only `REPEATABLE READ`
+transaction. Existing Projects use two core SELECTs, including an empty
+Project; a missing Project returns `null` after the count SELECT. Page order is
+`created_at DESC, id DESC`. Invalid pages normalize to one and valid pages past
+the end clamp to the last page. Invalid, non-positive, or non-safe-integer page
+sizes default to 50; values above 100 clamp to 100. The UI always requests 50.
+
+`listPapers()` and `listScreeningPapers()` remain available for compatibility
+and specialized callers. Remaining interactive `listPapers()` scalability
+debt is deduplication resolution, bibliographic-import correction, PDF-intake
+matching, and protocol-run linking/relinking. Full-project BibTeX export is an
+intentional unbounded export and remains unchanged. See
+`docs/adr/0042-scalable-paper-collection-read-model.md` for query, benchmark,
+caller, and migration evidence.
+
+The PostgreSQL 16 benchmark returned 50 Paper rows at 1k, 10k, and 50k
+Project sizes with two core SELECTs, compared with 2k, 20k, and 100k Paper
+objects from the released dual-list path. At 50k, the bounded payload was
+18,210 bytes versus 100,172,196 bytes for both legacy service results. The
+first-page plan used `papers_project_created_at_idx`; latest-decision lookups
+used `screening_decisions_project_paper_sequence_idx`. The exact Project count
+scanned the Project's 50k Papers. The last page scanned and sorted all 50k
+rows for offset 49,950, which is expected OFFSET work; the first-page tie sort
+was incremental and did not spill. No essential missing index was shown, so
+the migration tail remains `0033_storage_materialization_recovery` and no
+`0034` migration was created. Evidence Set scaling remains deferred.
+
 ## Claim ledger page
 
 A Project-scoped page of compact current ClaimRevision summaries. Current
