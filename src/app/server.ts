@@ -3,6 +3,7 @@ import { createFullTextQueueReadServices } from "@/application/full-text-queue-r
 import { createClaimSupportReadServices } from "@/application/claim-support-read-services";
 import { createClaimReadServices } from "@/application/claim-read-services";
 import { createExtractionReadServices } from "@/application/extraction-read-services";
+import { createEvidenceWorkspaceReadServices } from "@/application/evidence-workspace-read-services";
 import { boundPdfIntakeDiagnostic, type PdfMetadataInspection, type PdfMetadataProposal } from "@/application/pdf-intake-services";
 import { createAiExtractionSuggestionServices } from "@/application/ai-extraction-suggestion-services";
 import { createAiExtractionBatchServices } from "@/application/ai-extraction-batch-services";
@@ -128,6 +129,7 @@ export const fullTextQueueReadServices = createFullTextQueueReadServices(databas
 export const claimSupportReadServices = createClaimSupportReadServices(database.db);
 export const claimReadServices = createClaimReadServices(database.db);
 export const extractionReadServices = createExtractionReadServices(database.db);
+export const evidenceWorkspaceReadServices = createEvidenceWorkspaceReadServices(database.db);
 
 const openAiKey = process.env.OPENAI_API_KEY?.trim();
 const configuredAiModel = process.env.AI_EXTRACTION_MODEL?.trim() || "gpt-5.6-luna";

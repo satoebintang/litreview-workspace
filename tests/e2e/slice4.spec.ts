@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 
 test.describe("Slice 4 evidence synthesis", () => {
   test("compares observations and retains exact historical support through revision, exclusion, and withdrawal", async ({ page }) => {
@@ -25,9 +26,9 @@ test.describe("Slice 4 evidence synthesis", () => {
 
     async function recordEvidence(title: string, passage: string) {
       await page.goto(`/projects/${projectId}/evidence`);
-      await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: title });
+      await selectEvidencePaper(page, title, page.getByRole("region", { name: "Record Evidence" }));
       await page.getByLabel("Verbatim source passage").fill(passage);
-      await page.getByLabel("Page number").fill("7");
+      await page.getByLabel("Page number", { exact: true }).fill("7");
       await page.getByRole("button", { name: "Record evidence" }).click();
       await expect(page.locator(".quote").filter({ hasText: passage })).toBeVisible({ timeout: 30_000 });
     }

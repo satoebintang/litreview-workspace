@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 
 test.describe("Slice 3 structured extraction", () => {
   test("configures a field, records revision-specific provenance, and derives progress", async ({ page }) => {
@@ -18,9 +19,9 @@ test.describe("Slice 3 structured extraction", () => {
     await expect(page.getByText("Poisoning Attacks in Vision Models", { exact: true }).first()).toBeVisible();
 
     await page.goto(`/projects/${projectId}/evidence`);
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Poisoning Attacks in Vision Models" });
+    await selectEvidencePaper(page, "Poisoning Attacks in Vision Models", page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill("We introduce poisoned samples into five percent of the training data.");
-    await page.getByLabel("Page number").fill("7");
+    await page.getByLabel("Page number", { exact: true }).fill("7");
     await page.getByRole("button", { name: "Record evidence" }).click();
 
     await page.goto(`/projects/${projectId}/screening`);

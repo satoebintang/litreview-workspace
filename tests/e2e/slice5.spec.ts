@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 
 test.describe("Slice 5 manuscript Claims", () => {
   test("creates, grounds, revises, and withdraws a Claim while retaining history", async ({ page }) => {
@@ -15,9 +16,9 @@ test.describe("Slice 5 manuscript Claims", () => {
     await addManualPaper(page);
     await expect(page.getByText("Grounded study", { exact: true }).first()).toBeVisible();
     await page.goto(`/projects/${projectId}/evidence`);
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Grounded study" });
+    await selectEvidencePaper(page, "Grounded study", page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill("The observed result was significant.");
-    await page.getByLabel("Page number").fill("7");
+    await page.getByLabel("Page number", { exact: true }).fill("7");
     await page.getByRole("button", { name: "Record evidence" }).click();
 
     await page.goto(`/projects/${projectId}/claims`);

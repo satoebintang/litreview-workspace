@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 
 test.describe("Slice 19 Synthesis Interpretation Context", () => {
   test("authors interpretation snapshots over exact finalized SynthesisRevision, records limitations, questions, and contradiction pairs, and drafts manuscript Claim with exact synthesis support", async ({ page }) => {
@@ -30,15 +31,15 @@ test.describe("Slice 19 Synthesis Interpretation Context", () => {
 
     // 3. Record Evidence for both papers
     await page.goto(`/projects/${projectId}/evidence`);
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Study Alpha" });
+    await selectEvidencePaper(page, "Study Alpha", page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill("Primary outcome was significantly enhanced by 85%.");
-    await page.getByLabel("Page number").fill("12");
+    await page.getByLabel("Page number", { exact: true }).fill("12");
     await page.getByRole("button", { name: "Record evidence" }).click();
     await expect(page.locator(".quote").filter({ hasText: "Primary outcome was significantly enhanced by 85%." })).toBeVisible({ timeout: 30_000 });
 
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Study Beta" });
+    await selectEvidencePaper(page, "Study Beta", page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill("Primary outcome showed minimal change of only 15%.");
-    await page.getByLabel("Page number").fill("34");
+    await page.getByLabel("Page number", { exact: true }).fill("34");
     await page.getByRole("button", { name: "Record evidence" }).click();
     await expect(page.locator(".quote").filter({ hasText: "Primary outcome showed minimal change of only 15%." })).toBeVisible({ timeout: 30_000 });
 

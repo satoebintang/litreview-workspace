@@ -38,7 +38,7 @@ test.describe("Slice 14 full-text document workflow", () => {
 
     await page.goto(firstDocumentUrl!);
     await page.getByLabel("Verbatim source passage").fill("Historical passage from the first artifact");
-    await page.getByLabel("Page number").fill("2");
+    await page.getByLabel("Page number", { exact: true }).fill("2");
     await page.getByRole("button", { name: "Record Evidence" }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/evidence\\?saved=evidence`));
     await page.goto(documentsUrl);
@@ -60,7 +60,7 @@ test.describe("Slice 14 full-text document workflow", () => {
     await expect(page.getByText("Historical passage from the first artifact")).toBeVisible();
     await page.goto(secondDocumentUrl!);
     await page.getByLabel("Verbatim source passage").fill("A new passage from the reattached artifact");
-    await page.getByLabel("Page number").fill("3");
+    await page.getByLabel("Page number", { exact: true }).fill("3");
     await page.getByRole("button", { name: "Record Evidence" }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/evidence\\?saved=evidence`));
     await expect(page.getByRole("link", { name: "Document artifact", exact: true })).toBeVisible();
