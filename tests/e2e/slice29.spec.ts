@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 import { createPlaywrightTestDatabaseClient } from "./playwright-database";
 
 
@@ -37,9 +38,9 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
     await expect(page.locator(".item-title").filter({ hasText: "Study Alpha" }).first()).toBeVisible();
 
     await page.goto(`/projects/${projectId}/evidence`);
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Study Alpha" });
+    await selectEvidencePaper(page, "Study Alpha", page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill(maliciousSource);
-    await page.getByLabel("Page number").fill("4");
+    await page.getByLabel("Page number", { exact: true }).fill("4");
     await page.getByRole("button", { name: "Record evidence" }).click();
     await expect(page.locator(".quote").filter({ hasText: maliciousSource }).first()).toBeVisible();
     expect(await page.locator(".quote script").count()).toBe(0);

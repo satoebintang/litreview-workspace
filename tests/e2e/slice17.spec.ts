@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 
 test.describe("Slice 17 Evidence Sets", () => {
   test("creates an empty set, adds Evidence without changing provenance, and archives it", async ({ page }) => {
@@ -15,11 +16,11 @@ test.describe("Slice 17 Evidence Sets", () => {
     await addManualPaper(page);
     await expect(page.getByText("Evidence Set study", { exact: true }).first()).toBeVisible();
     await page.goto(`/projects/${projectId}/evidence`);
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Evidence Set study" });
+    await selectEvidencePaper(page, "Evidence Set study", page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill("An exact passage retained in the set");
-    await page.getByLabel("Page number").fill("6");
+    await page.getByLabel("Page number", { exact: true }).fill("6");
     await page.getByRole("button", { name: "Record evidence" }).click();
-    await expect(page.getByRole("status")).toHaveText("Evidence recorded with source provenance.");
+    await expect(page.locator(".success-note")).toHaveText("Evidence recorded with source provenance.");
 
     await page.goto(`/projects/${projectId}/evidence-sets`);
     await page.getByLabel("Name").fill("Primary outcomes");

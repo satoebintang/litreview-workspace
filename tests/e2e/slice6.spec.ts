@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 
 test.describe("Slice 7 manuscript workspace", () => {
   test("composes mixed prose and exact ClaimRevisions with unified citation order", async ({ page }) => {
@@ -17,10 +18,9 @@ test.describe("Slice 7 manuscript workspace", () => {
       await addManualPaper(page);
       await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
       await page.goto(`/projects/${projectId}/evidence`);
-      await expect(page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").locator("option", { hasText: title })).toHaveCount(1);
-      await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: title });
+      await selectEvidencePaper(page, title, page.getByRole("region", { name: "Record Evidence" }));
       await page.getByLabel("Verbatim source passage").fill(passage);
-      await page.getByLabel("Page number").fill("1");
+      await page.getByLabel("Page number", { exact: true }).fill("1");
       await page.getByRole("button", { name: "Record evidence" }).click();
       await expect(page.getByText(passage, { exact: false })).toBeVisible();
     }

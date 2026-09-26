@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 import { createPlaywrightTestDatabaseClient } from "./playwright-database";
 
 
@@ -70,9 +71,9 @@ test.describe("Slice 20 Research Questions Traceability", () => {
 
     // Record Evidence
     await page.goto(`/projects/${projectId}/evidence`);
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Study Alpha" });
+    await selectEvidencePaper(page, "Study Alpha", page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill("Automated defense mechanisms reduced intrusion success by 92%.");
-    await page.getByLabel("Page number").fill("8");
+    await page.getByLabel("Page number", { exact: true }).fill("8");
     await page.getByRole("button", { name: "Record evidence" }).click();
     await expect(page.locator(".quote").filter({ hasText: "Automated defense mechanisms reduced intrusion success by 92%." })).toBeVisible({ timeout: 30_000 });
 

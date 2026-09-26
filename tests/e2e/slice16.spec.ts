@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 
 test.describe("Slice 16 Evidence curation", () => {
   test("curates an Evidence record, blocks rejected direct use, and restores it on re-acceptance", async ({ page }) => {
@@ -16,11 +17,11 @@ test.describe("Slice 16 Evidence curation", () => {
     await expect(page.getByText("Curation study", { exact: true }).first()).toBeVisible();
 
     await page.goto(`/projects/${projectId}/evidence`);
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Curation study" });
+    await selectEvidencePaper(page, "Curation study", page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill("Slice 16 curation passage");
-    await page.getByLabel("Page number").fill("7");
+    await page.getByLabel("Page number", { exact: true }).fill("7");
     await page.getByRole("button", { name: "Record evidence" }).click();
-    await expect(page.getByRole("status")).toHaveText("Evidence recorded with source provenance.");
+    await expect(page.locator(".success-note")).toHaveText("Evidence recorded with source provenance.");
 
     const workspaceUrl = `/projects/${projectId}/evidence`;
     await page.goto(workspaceUrl);
@@ -45,7 +46,7 @@ test.describe("Slice 16 Evidence curation", () => {
     await page.goto(workspaceUrl);
     await page.getByLabel("New label").fill("  important  ");
     await page.getByRole("button", { name: "Create label" }).click();
-    await expect(page.getByRole("status")).toHaveText("Label change saved.");
+    await expect(page.locator(".success-note")).toHaveText("Label change saved.");
     await expect(page.locator(".item-title").filter({ hasText: "important" })).toBeVisible();
 
     await page.goto(evidenceUrl);

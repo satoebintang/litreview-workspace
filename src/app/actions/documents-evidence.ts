@@ -6,18 +6,21 @@ import { fail, optional, text, verbatimText } from "../action-helpers";
 
 export async function recordEvidenceAction(form: FormData) {
   const projectId = text(form, "projectId");
+  const capturePaperId = text(form, "capturePaperId");
   try {
     await reviewServices.recordEvidence(projectId, {
-      paperId: text(form, "paperId"),
+      paperId: capturePaperId,
       fullTextDocumentId: optional(form, "fullTextDocumentId") || null,
       sourceText: verbatimText(form, "sourceText"),
       pageNumber: Number(text(form, "pageNumber")),
       note: optional(form, "note"),
     });
   } catch (error) {
-    fail(`/projects/${projectId}/evidence`, error);
+    const captureState = capturePaperId ? `?capturePaperId=${encodeURIComponent(capturePaperId)}` : "";
+    fail(`/projects/${projectId}/evidence${captureState}`, error);
   }
-  redirect(`/projects/${projectId}/evidence?saved=evidence`);
+  const captureState = capturePaperId ? `&capturePaperId=${encodeURIComponent(capturePaperId)}` : "";
+  redirect(`/projects/${projectId}/evidence?saved=evidence${captureState}`);
 }
 
 export async function setPreferredFullTextDocumentAction(form: FormData) {

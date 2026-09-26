@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 
 test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
   test("creates preparation workspace from Evidence Set, manages selections with connecting evidence, and finalizes to synthesis statement with preparation context", async ({ page }) => {
@@ -22,9 +23,9 @@ test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
 
     // 2. Record Evidence
     await page.goto(`/projects/${projectId}/evidence`);
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Study Alpha" });
+    await selectEvidencePaper(page, "Study Alpha", page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill("Primary outcome was significantly enhanced by 42%.");
-    await page.getByLabel("Page number").fill("4");
+    await page.getByLabel("Page number", { exact: true }).fill("4");
     await page.getByRole("button", { name: "Record evidence" }).click();
     await expect(page.locator(".quote").filter({ hasText: "Primary outcome was significantly enhanced by 42%." })).toBeVisible({ timeout: 30_000 });
 

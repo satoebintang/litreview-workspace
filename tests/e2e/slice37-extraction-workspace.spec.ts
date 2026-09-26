@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 import { createPlaywrightTestDatabaseClient } from "./playwright-database";
 
 test.describe("Slice 37 Extraction workspace", () => {
@@ -22,9 +23,9 @@ test.describe("Slice 37 Extraction workspace", () => {
     await expect(page.getByText(paperTitle, { exact: true }).first()).toBeVisible();
 
     await page.goto(`/projects/${projectId}/evidence`);
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: paperTitle });
+    await selectEvidencePaper(page, paperTitle, page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill("The study included 1,500 participants.");
-    await page.getByLabel("Page number").fill("9");
+    await page.getByLabel("Page number", { exact: true }).fill("9");
     await page.getByRole("button", { name: "Record evidence" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Evidence recorded" })).toBeVisible();
 

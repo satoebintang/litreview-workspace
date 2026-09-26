@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
+import { selectEvidencePaper } from "./evidence-paper-picker";
 
 test.describe("Slice 1 provenance workflow", () => {
   test("creates a project, captures evidence, and audits a claim", async ({ page }) => {
@@ -19,9 +20,9 @@ test.describe("Slice 1 provenance workflow", () => {
     await expect(page.locator(".item-title").filter({ hasText: "Sleep duration and grades" })).toBeVisible();
 
     await page.goto(`/projects/${projectId}/evidence`);
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Sleep duration and grades" });
+    await selectEvidencePaper(page, "Sleep duration and grades", page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill("Students who sleep longer show improved academic performance.");
-    await page.getByLabel("Page number").fill("12");
+    await page.getByLabel("Page number", { exact: true }).fill("12");
     await page.getByRole("button", { name: "Record evidence" }).click();
     await expect(page.getByText("Evidence recorded with source provenance.")).toBeVisible();
 
@@ -61,9 +62,9 @@ test.describe("Slice 1 provenance workflow", () => {
     await expect(page.locator(".item-title").filter({ hasText: "Sleep duration and grades" })).toBeVisible();
 
     await page.goto(`/projects/${projectId}/evidence`);
-    await page.getByRole("region", { name: "Record Evidence" }).getByLabel("Paper").selectOption({ label: "Sleep duration and grades" });
+    await selectEvidencePaper(page, "Sleep duration and grades", page.getByRole("region", { name: "Record Evidence" }));
     await page.getByLabel("Verbatim source passage").fill(sourceText);
-    await page.getByLabel("Page number").fill("12");
+    await page.getByLabel("Page number", { exact: true }).fill("12");
     await page.getByRole("button", { name: "Record evidence" }).click();
     await expect(page.getByText("Evidence recorded with source provenance.")).toBeVisible();
 

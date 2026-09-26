@@ -279,3 +279,19 @@ For an exact SynthesisRevision, the count of ExtractionRevision-to-Evidence
 links reachable through its support rows. Each supporting ExtractionRevision
 contributes its links, including when multiple support paths reach the same
 Evidence identity.
+
+## Evidence workspace page
+
+A filtered page of immutable Evidence and current curation context. The filtered
+count, ordered Evidence page, current Labels, and historical downstream usage
+share one read-only `REPEATABLE READ` snapshot. Current Label state uses the
+latest event per Evidence × Label pair. Historical usage keeps the five
+released reachability paths regardless of later review, screening, Claim, or
+revision state.
+
+## Evidence Paper picker
+
+A bounded, Project-scoped Paper title search for manual Evidence capture and
+the queue Paper filter. Search returns compact options; exact selected-Paper
+resolution is separate from the visible search page. Queue `paperId` and
+capture `capturePaperId` are independent state.
