@@ -10,6 +10,9 @@ const claimId = "00000000-0000-4000-8000-000000000005";
 const interpretationId = "00000000-0000-4000-8000-000000000006";
 const synthesisStatementId = "00000000-0000-4000-8000-000000000007";
 const revisionId = "00000000-0000-4000-8000-000000000008";
+const existingEvidenceId = "00000000-0000-4000-8000-000000000009";
+const extractionRevisionId = "00000000-0000-4000-8000-000000000010";
+const synthesisRevisionId = "00000000-0000-4000-8000-000000000011";
 const now = new Date("2026-09-23T00:00:00.000Z");
 
 const projectRow = { id: projectId, title: "Receiver test", description: null, createdAt: now, updatedAt: now };
@@ -96,8 +99,8 @@ function rowsFor(table: unknown): unknown[] {
   return [];
 }
 
-function fakeDatabase() {
-  const execute = vi.fn(async () => [paperReviewRow]);
+function fakeDatabase(executeRows: unknown[] = [paperReviewRow]) {
+  const execute = vi.fn(async () => executeRows);
   const transaction = vi.fn(async () => ({ id: revisionId }));
   const db = {
     execute,
@@ -239,11 +242,58 @@ describe("review service sibling calls retain the final composition receiver", (
   });
 
   it.each([
-    ["linkEvidenceToClaim", []],
-    ["unlinkEvidenceFromClaim", [{ evidenceId, evidence: evidenceRow }]],
-  ] as const)("routes %s through getCurrentClaim and createClaimRevision on the composed receiver", async (owner, evidence) => {
-    const services = createReviewServices(fakeDatabase());
-    const getCurrentClaim = receiverSpy<typeof services.getCurrentClaim>(services, currentClaim([...evidence]));
+    [
+      "linkEvidenceToClaim",
+      {
+        claim_id: claimId,
+        revision_id: revisionId,
+        state: "active",
+        claim_text: "Current claim text",
+        researcher_note: "Current note",
+        evidence_ids: [existingEvidenceId],
+        extraction_revision_ids: [extractionRevisionId],
+        synthesis_revision_ids: [synthesisRevisionId],
+      },
+      {
+        lifecycle: "active",
+        claimText: "Current claim text",
+        researcherNote: "Current note",
+        supports: [
+          { kind: "evidence", evidenceId: existingEvidenceId },
+          { kind: "extractionRevision", extractionRevisionId },
+          { kind: "synthesisRevision", synthesisRevisionId },
+          { kind: "evidence", evidenceId },
+        ],
+        expectedCurrentRevisionId: revisionId,
+      },
+    ],
+    [
+      "unlinkEvidenceFromClaim",
+      {
+        claim_id: claimId,
+        revision_id: revisionId,
+        state: "withdrawn",
+        claim_text: "Withdrawn claim text",
+        researcher_note: "Withdrawn note",
+        evidence_ids: [evidenceId, existingEvidenceId],
+        extraction_revision_ids: [extractionRevisionId],
+        synthesis_revision_ids: [synthesisRevisionId],
+      },
+      {
+        lifecycle: "withdrawn",
+        claimText: "Withdrawn claim text",
+        researcherNote: "Withdrawn note",
+        supports: [
+          { kind: "evidence", evidenceId: existingEvidenceId },
+          { kind: "extractionRevision", extractionRevisionId },
+          { kind: "synthesisRevision", synthesisRevisionId },
+        ],
+        expectedCurrentRevisionId: revisionId,
+      },
+    ],
+  ] as const)("routes %s through the targeted support snapshot and createClaimRevision on the composed receiver", async (owner, snapshot, expectedDraft) => {
+    const services = createReviewServices(fakeDatabase([snapshot]));
+    const getCurrentClaim = receiverSpy<typeof services.getCurrentClaim>(services, currentClaim());
     const createClaimRevision = receiverSpy<typeof services.createClaimRevision>(services, { id: revisionId });
     replaceServiceMethod(services, "getCurrentClaim", getCurrentClaim);
     replaceServiceMethod(services, "createClaimRevision", createClaimRevision);
@@ -251,8 +301,8 @@ describe("review service sibling calls retain the final composition receiver", (
     if (owner === "linkEvidenceToClaim") await services.linkEvidenceToClaim(projectId, { claimId, evidenceId });
     else await services.unlinkEvidenceFromClaim(projectId, { claimId, evidenceId });
 
-    expect(getCurrentClaim).toHaveBeenCalledWith(projectId, claimId);
-    expect(createClaimRevision).toHaveBeenCalledWith(projectId, claimId, expect.objectContaining({ lifecycle: "active" }));
+    expect(getCurrentClaim).not.toHaveBeenCalled();
+    expect(createClaimRevision).toHaveBeenCalledWith(projectId, claimId, expectedDraft);
   });
 
   it("routes claim provenance through getCurrentClaim on the composed receiver", async () => {

@@ -1,6 +1,7 @@
 import { createReviewServices } from "@/application/services";
 import { createFullTextQueueReadServices } from "@/application/full-text-queue-read-services";
 import { createClaimSupportReadServices } from "@/application/claim-support-read-services";
+import { createClaimReadServices } from "@/application/claim-read-services";
 import { createExtractionReadServices } from "@/application/extraction-read-services";
 import { boundPdfIntakeDiagnostic, type PdfMetadataInspection, type PdfMetadataProposal } from "@/application/pdf-intake-services";
 import { createAiExtractionSuggestionServices } from "@/application/ai-extraction-suggestion-services";
@@ -125,6 +126,7 @@ export const reviewServices = createReviewServices(database.db, {
 
 export const fullTextQueueReadServices = createFullTextQueueReadServices(database.db);
 export const claimSupportReadServices = createClaimSupportReadServices(database.db);
+export const claimReadServices = createClaimReadServices(database.db);
 export const extractionReadServices = createExtractionReadServices(database.db);
 
 const openAiKey = process.env.OPENAI_API_KEY?.trim();

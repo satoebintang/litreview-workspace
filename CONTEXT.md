@@ -248,6 +248,24 @@ snapshot; page rows alone are mapped to full review status. The retrieval `all`
 queue includes both currently title/abstract-included Papers and historical
 retrieval conflicts.
 
+## Claim ledger page
+
+A Project-scoped page of compact current ClaimRevision summaries. Current
+revision selection and exact support, citation-candidate, and structural Paper
+counts are computed in SQL. Citation and structural Paper paths remain separate;
+the workspace citation total sums each current Claim's distinct Paper count, so
+one Paper supporting multiple Claims contributes once for each Claim. State
+counts and the page share a read-only `REPEATABLE READ` snapshot.
+
+## Claim history summary
+
+A compact immutable summary of one finalized ClaimRevision. Typed support status
+and citation/structural Paper counts use the exact support snapshot for that
+revision and do not change when current Evidence review, Paper screening, or
+support-target freshness later changes. Claim detail keeps full provenance for
+the current revision and, when withdrawn, the latest prior active revision used
+for explicit reactivation context; remaining history stays compact.
+
 ## Claim support search page
 
 A compact, kind-specific page for eligible Evidence, ExtractionRevisions, or

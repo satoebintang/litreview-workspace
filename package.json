@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
     "benchmark:dedup": "tsx scripts/benchmark-dedup.ts",
+    "benchmark:claim-read-paths": "tsx scripts/benchmark-claim-read-paths.ts",
     "e2e:server": "tsx tests/e2e/playwright-server.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
