@@ -92,8 +92,9 @@ export function createAiExtractionSuggestionServices(
     };
   }
   async function requireRequestSourceEligible(req: Record<string, unknown>, executor: Executor) {
-    const document = rows(await executor.execute(sql`select archived_at from full_text_documents where project_id=${String(req.project_id)}::uuid and paper_id=${String(req.paper_id)}::uuid and id=${String(req.full_text_document_id)}::uuid limit 1`))[0];
+    const document = rows(await executor.execute(sql`select archived_at,storage_state from full_text_documents where project_id=${String(req.project_id)}::uuid and paper_id=${String(req.paper_id)}::uuid and id=${String(req.full_text_document_id)}::uuid limit 1`))[0];
     if (!document) throw new DomainError("CROSS_PROJECT_REFERENCE", "The frozen source document no longer exists");
+    if (document.storage_state !== "ready") throw new DomainError("STORAGE_PENDING", "The frozen source document is still being materialized");
     if (document.archived_at) throw new DomainError("DOCUMENT_ARCHIVED", "The frozen source document is archived and cannot be accepted");
     const extraction = rows(await executor.execute(sql`select status from document_text_extractions where project_id=${String(req.project_id)}::uuid and paper_id=${String(req.paper_id)}::uuid and full_text_document_id=${String(req.full_text_document_id)}::uuid and id=${String(req.document_text_extraction_id)}::uuid limit 1`))[0];
     if (!extraction || !["succeeded", "partial"].includes(String(extraction.status))) throw new DomainError("VALIDATION_ERROR", "The frozen text extraction is no longer eligible");
@@ -175,8 +176,9 @@ export function createAiExtractionSuggestionServices(
     const paperId = String(req.paper_id);
     const documentId = String(req.full_text_document_id);
     const extractionId = String(req.document_text_extraction_id);
-    const document = rows(await tx.execute(sql`select id,original_filename,archived_at from full_text_documents where project_id=${projectId}::uuid and paper_id=${paperId}::uuid and id=${documentId}::uuid limit 1`))[0];
+    const document = rows(await tx.execute(sql`select id,original_filename,archived_at,storage_state from full_text_documents where project_id=${projectId}::uuid and paper_id=${paperId}::uuid and id=${documentId}::uuid limit 1`))[0];
     if (!document || document.archived_at) return "stale_full_text_document";
+    if (document.storage_state !== "ready") return "stale_full_text_document";
     const preferred = rows(await tx.execute(sql`select full_text_document_id from paper_full_text_preferences where project_id=${projectId}::uuid and paper_id=${paperId}::uuid limit 1`))[0];
     if (!preferred || String(preferred.full_text_document_id) !== documentId) return "stale_full_text_document";
     const latest = await currentNonFailedExtraction(tx, projectId, paperId, documentId);
@@ -200,8 +202,9 @@ export function createAiExtractionSuggestionServices(
     const field = rows(await tx.execute(sql`select id,name,description,field_type,required,sort_order,archived_at from extraction_fields where project_id=${projectId}::uuid and id=${fieldId}::uuid limit 1`))[0];
     if (!field) throw new DomainError("CROSS_PROJECT_REFERENCE", "Extraction field was not found");
     if (field.archived_at) throw new DomainError("VALIDATION_ERROR", "Archived extraction fields cannot receive AI requests");
-    const document = rows(await tx.execute(sql`select id,archived_at from full_text_documents where project_id=${projectId}::uuid and paper_id=${paperId}::uuid and id=${documentId}::uuid limit 1`))[0];
+    const document = rows(await tx.execute(sql`select id,archived_at,storage_state from full_text_documents where project_id=${projectId}::uuid and paper_id=${paperId}::uuid and id=${documentId}::uuid limit 1`))[0];
     if (!document) throw new DomainError("CROSS_PROJECT_REFERENCE", "Document does not belong to this Paper");
+    if (document.storage_state !== "ready") throw new DomainError("STORAGE_PENDING", "Document bytes are still being materialized");
     if (document.archived_at) throw new DomainError("DOCUMENT_ARCHIVED", "Archived documents cannot receive AI requests");
     const extraction = rows(await tx.execute(sql`select id,status,sequence from document_text_extractions where project_id=${projectId}::uuid and paper_id=${paperId}::uuid and full_text_document_id=${documentId}::uuid and id=${extractionId}::uuid limit 1`))[0];
     if (!extraction || !["succeeded", "partial"].includes(String(extraction.status))) throw new DomainError("VALIDATION_ERROR", "Text extraction is not eligible");

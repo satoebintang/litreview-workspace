@@ -97,7 +97,7 @@ describe("Slice 31 batch orchestration race and boundary matrix", () => {
     const text = `Paper ${index} reports 42 participants.`;
     const bytes = Buffer.from(`%PDF-1.7\nfixture-${index}`);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    await client`insert into full_text_documents (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256) values (${documentId}::uuid, ${projectId}::uuid, ${paper.id}::uuid, ${`projects/${projectId}/papers/${paper.id}/documents/${documentId}/source.pdf`}, ${`study-${index}.pdf`}, 'application/pdf', ${bytes.byteLength}, ${sha256})`;
+    await client`insert into full_text_documents (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256, storage_state, staged_storage_key) values (${documentId}::uuid, ${projectId}::uuid, ${paper.id}::uuid, ${`projects/${projectId}/papers/${paper.id}/documents/${documentId}/source.pdf`}, ${`study-${index}.pdf`}, 'application/pdf', ${bytes.byteLength}, ${sha256}, 'ready', null)`;
     await services.setPreferredFullTextDocument(projectId, paper.id, documentId);
     await client.begin(async (tx) => {
       await tx`insert into document_text_extractions (id, project_id, paper_id, full_text_document_id, extractor_key, extractor_version, algorithm_version, status, page_count, character_count, started_at, completed_at) values (${extractionId}::uuid, ${projectId}::uuid, ${paper.id}::uuid, ${documentId}::uuid, 'fixture', '1', '1', 'succeeded', 1, ${Array.from(text).length}, now(), now())`;
@@ -269,7 +269,7 @@ describe("Slice 31 batch orchestration race and boundary matrix", () => {
     for (const mutation of ["switch", "clear", "archive"] as const) {
       const value = await createFixture();
       const secondDocumentId = randomUUID();
-      await client`insert into full_text_documents (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256) values (${secondDocumentId}::uuid, ${value.project.id}::uuid, ${value.cells[0].paper.id}::uuid, ${`projects/${value.project.id}/papers/${value.cells[0].paper.id}/documents/${secondDocumentId}/source.pdf`}, 'second.pdf', 'application/pdf', 8, ${"b".repeat(64)})`;
+      await client`insert into full_text_documents (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256, storage_state, staged_storage_key) values (${secondDocumentId}::uuid, ${value.project.id}::uuid, ${value.cells[0].paper.id}::uuid, ${`projects/${value.project.id}/papers/${value.cells[0].paper.id}/documents/${secondDocumentId}/source.pdf`}, 'second.pdf', 'application/pdf', 8, ${"b".repeat(64)}, 'ready', null)`;
       const provider = new InstrumentedProvider();
       const batches = makeServices(provider);
       const batch = await previewAndCreate(value.project.id, value.cells, batches);

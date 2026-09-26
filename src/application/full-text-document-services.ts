@@ -7,24 +7,21 @@ import { DomainError, isConstraintError } from "@/domain/errors";
 import { documentStorageKey, isDocumentStorageKey, validateDocumentFilename, validatePdfMetadata } from "@/domain/full-text-documents";
 import type { Evidence, FullTextDocument } from "@/domain/types";
 import { FullTextDocumentRepository, PaperRepository, ProjectRepository } from "./repositories";
-import type { DocumentByteSource, DocumentStorage, StagedDocument } from "@/infrastructure/document-storage";
+import { DocumentStorageError, type DocumentByteSource, type DocumentStorage, type StagedDocument } from "@/infrastructure/document-storage";
+import { materializePendingStorageRecord, type StorageCheckpoint, type StorageMaterializationAccess, type StorageMaterializationRecord } from "./storage-materialization";
 
 type FullTextDocumentTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export type CanonicalFullTextAttachmentResult =
-  | { kind: "created"; document: FullTextDocument; promotedKey: string }
+  | { kind: "created" | "pending"; document: FullTextDocument; stagedStorageKey: string | null }
   | { kind: "duplicate"; document: FullTextDocument };
 
 /**
- * Attach one already-staged PDF using the released FullTextDocument rules.
- *
- * The caller owns the transaction and the retry boundary. In particular, a
- * retry after promote() has moved the temporary object must create a fresh
- * StagedDocument before calling this function again.
+ * Reserve one already-staged PDF under its immutable Paper/SHA identity.
+ * Materialization happens only after the caller's transaction commits.
  */
 export async function attachStagedFullTextDocumentInTransaction(
   tx: FullTextDocumentTransaction,
-  documentStorage: DocumentStorage,
   projectId: string,
   paperId: string,
   metadata: FullTextDocumentUploadMetadata,
@@ -42,7 +39,7 @@ export async function attachStagedFullTextDocumentInTransaction(
 
   const duplicateRows = await tx.execute(sql`
     select id, project_id, paper_id, storage_key, original_filename, media_type,
-      byte_size, sha256, note, created_at, archived_at
+      byte_size, sha256, note, created_at, archived_at, storage_state, staged_storage_key
     from full_text_documents
     where project_id=${projectId}
       and paper_id=${paperId}
@@ -53,23 +50,33 @@ export async function attachStagedFullTextDocumentInTransaction(
   `) as unknown as Record<string, unknown>[];
   const duplicate = duplicateRows[0];
   if (duplicate) {
-    return { kind: "duplicate", document: mapDocument(duplicate as typeof fullTextDocuments.$inferSelect) };
+    if (String(duplicate.storage_state) === "ready") {
+      return { kind: "duplicate", document: mapDocument(duplicate as typeof fullTextDocuments.$inferSelect) };
+    }
+    return {
+      kind: "pending",
+      document: mapDocument(duplicate as typeof fullTextDocuments.$inferSelect),
+      stagedStorageKey: duplicate.staged_storage_key == null ? null : String(duplicate.staged_storage_key),
+    };
   }
 
   const id = randomUUID();
   const storageKey = documentStorageKey(projectId, paperId, id);
   const rows = await tx.execute(sql`
     insert into full_text_documents
-      (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256, note)
+      (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256, storage_state, staged_storage_key, note)
     values
-      (${id}::uuid, ${projectId}::uuid, ${paperId}::uuid, ${storageKey}, ${originalFilename}, 'application/pdf', ${staged.byteSize}, ${staged.sha256}, ${parsed.note ?? null})
+      (${id}::uuid, ${projectId}::uuid, ${paperId}::uuid, ${storageKey}, ${originalFilename}, 'application/pdf', ${staged.byteSize}, ${staged.sha256}, 'pending', ${staged.temporaryKey}, ${parsed.note ?? null})
     returning id, project_id, paper_id, storage_key, original_filename, media_type,
-      byte_size, sha256, note, created_at, archived_at
+      byte_size, sha256, note, created_at, archived_at, storage_state, staged_storage_key
   `) as unknown as Record<string, unknown>[];
   const row = rows[0];
   if (!row) throw new DomainError("DATABASE_CONSTRAINT", "Full-text document could not be created");
-  await documentStorage.promote(staged.temporaryKey, storageKey);
-  return { kind: "created", document: mapDocument(row as typeof fullTextDocuments.$inferSelect), promotedKey: storageKey };
+  return {
+    kind: "created",
+    document: mapDocument(row as typeof fullTextDocuments.$inferSelect),
+    stagedStorageKey: String(row.staged_storage_key),
+  };
 }
 
 function mapDocument(row: typeof fullTextDocuments.$inferSelect): FullTextDocument {
@@ -94,6 +101,19 @@ export type FullTextDocumentUploadMetadata = {
   note?: string | null;
 };
 
+function asStorageRecord(row: typeof fullTextDocuments.$inferSelect | null | undefined): StorageMaterializationRecord | null {
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    projectId: String(row.projectId),
+    storageKey: row.storageKey,
+    stagedStorageKey: row.stagedStorageKey,
+    byteSize: Number(row.byteSize),
+    sha256: row.sha256,
+    storageState: row.storageState,
+  };
+}
+
 export interface FullTextDocumentServices {
   stageFullTextDocument(source: DocumentByteSource, signal?: AbortSignal): Promise<StagedDocument>;
   discardStagedFullTextDocument(staged: StagedDocument): Promise<void>;
@@ -110,7 +130,7 @@ export interface FullTextDocumentServices {
   auditFullTextDocumentStorage(projectId?: string): Promise<{ missingFiles: string[]; orphanFiles: string[]; stagedFiles: string[] }>;
 }
 
-export function createFullTextDocumentServices(db: Database, storage?: DocumentStorage, maxBytes = 50 * 1024 * 1024): FullTextDocumentServices {
+export function createFullTextDocumentServices(db: Database, storage?: DocumentStorage, maxBytes = 50 * 1024 * 1024, checkpoint?: StorageCheckpoint): FullTextDocumentServices {
   const projectRepo = new ProjectRepository(db);
   const paperRepo = new PaperRepository(db);
   const documentRepo = new FullTextDocumentRepository(db);
@@ -136,43 +156,82 @@ export function createFullTextDocumentServices(db: Database, storage?: DocumentS
   async function getDocument(projectId: string, documentId: string) {
     await requireProject(projectId);
     const document = await documentRepo.findById(projectId, documentId);
-    if (!document) throw new DomainError("DOCUMENT_NOT_FOUND", "Full-text document was not found");
+    if (!document) {
+      const anyState = await documentRepo.findAnyById(projectId, documentId);
+      if (anyState?.storageState === "pending") throw new DomainError("STORAGE_PENDING", "Full-text document bytes are still being materialized");
+      throw new DomainError("DOCUMENT_NOT_FOUND", "Full-text document was not found");
+    }
     return mapDocument(document);
   }
 
   async function stageFullTextDocument(source: DocumentByteSource, signal?: AbortSignal) {
     const documentStorage = requireStorage();
+    let staged: StagedDocument;
     try {
-      return await documentStorage.stage(source, { maxBytes, signal });
+      staged = await documentStorage.stage(source, { maxBytes, signal });
     } catch (error) {
       if (error instanceof DomainError) throw error;
       throw new DomainError("STORAGE_ERROR", error instanceof Error ? error.message : "Document upload failed");
     }
+    await checkpoint?.("after_staging", { flow: "full_text_document", storageKey: staged.temporaryKey });
+    return staged;
   }
 
   async function attachStagedFullTextDocument(projectId: string, paperId: string, metadata: FullTextDocumentUploadMetadata, staged: StagedDocument) {
-    let promotedKey: string | undefined;
+    const documentStorage = requireStorage();
     try {
-      const documentStorage = requireStorage();
-      const result = await db.transaction(async (tx) => {
-        const attached = await attachStagedFullTextDocumentInTransaction(tx, documentStorage, projectId, paperId, metadata, staged);
-        if (attached.kind === "created") promotedKey = attached.promotedKey;
-        return attached;
-      });
-      if (result.kind === "duplicate") {
-        await documentStorage.remove(staged.temporaryKey);
-        return result;
-      }
-      return result;
+      const parsed = validatePdfMetadata(metadata);
+      validateDocumentFilename(parsed.originalFilename);
     } catch (error) {
-      if (storage) {
-        await storage.remove(staged.temporaryKey).catch(() => undefined);
-        if (promotedKey) await storage.remove(promotedKey).catch(() => undefined);
+      // Validate before opening a transaction, so this is a proven
+      // pre-commit failure and its unowned stage can be removed safely.
+      await documentStorage.remove(staged.temporaryKey).catch(() => undefined);
+      throw error;
+    }
+    let attached: CanonicalFullTextAttachmentResult;
+    try {
+      attached = await db.transaction((tx) => attachStagedFullTextDocumentInTransaction(tx, projectId, paperId, metadata, staged));
+    } catch (error) {
+      // Callback validation and PostgreSQL constraint failures establish a
+      // rollback. Other transport errors may race a commit still resolving.
+      if (error instanceof DomainError || isConstraintError(error)) {
+        await documentStorage.remove(staged.temporaryKey).catch(() => undefined);
       }
       if (isConstraintError(error)) throw new DomainError("DATABASE_CONSTRAINT", "Document could not be attached");
       if (error instanceof DomainError) throw error;
       throw new DomainError("STORAGE_ERROR", error instanceof Error ? error.message : "Document upload failed");
     }
+
+    if (attached.kind === "duplicate") {
+      await documentStorage.remove(staged.temporaryKey).catch(() => undefined);
+      return attached;
+    }
+
+    await checkpoint?.("after_pending_commit", { flow: "full_text_document", projectId, id: attached.document.id, storageKey: attached.document.storageKey });
+
+    const access: StorageMaterializationAccess = {
+      load: async (id) => asStorageRecord(await documentRepo.findAnyById(projectId, id)),
+      replaceStage: async (id, expected, replacement) => asStorageRecord(await documentRepo.replacePendingStage(projectId, id, expected, replacement)),
+      markReady: async (id, expected) => asStorageRecord(await documentRepo.markPendingReady(projectId, id, expected)),
+    };
+    try {
+      await materializePendingStorageRecord({
+        access,
+        storage: documentStorage,
+        id: attached.document.id,
+        projectId,
+        flow: "full_text_document",
+        checkpoint,
+        replacementStage: async () => staged,
+      });
+    } catch (error) {
+      if (error instanceof DocumentStorageError) {
+        throw new DomainError(error.code === "STORAGE_INTEGRITY" ? "STORAGE_INTEGRITY" : "STORAGE_ERROR", error.message);
+      }
+      throw error;
+    }
+    await documentStorage.remove(staged.temporaryKey).catch(() => undefined);
+    return { kind: attached.kind === "created" ? "created" as const : "duplicate" as const, document: await getDocument(projectId, attached.document.id) };
   }
 
   return {
@@ -201,7 +260,12 @@ export function createFullTextDocumentServices(db: Database, storage?: DocumentS
     async setPreferredFullTextDocument(projectId: string, paperId: string, documentId: string) {
       const paper = await requirePaper(projectId, paperId);
       const document = await documentRepo.findById(projectId, documentId);
-      if (!document || String(document.paperId) !== String(paper.id)) throw new DomainError("CROSS_PROJECT_REFERENCE", "Full-text document does not belong to this Paper");
+      if (!document) {
+        const anyState = await documentRepo.findAnyById(projectId, documentId);
+        if (anyState?.storageState === "pending") throw new DomainError("STORAGE_PENDING", "Full-text document bytes are still being materialized");
+        throw new DomainError("CROSS_PROJECT_REFERENCE", "Full-text document does not belong to this Paper");
+      }
+      if (String(document.paperId) !== String(paper.id)) throw new DomainError("CROSS_PROJECT_REFERENCE", "Full-text document does not belong to this Paper");
       if (document.archivedAt) throw new DomainError("DOCUMENT_ARCHIVED", "Archived full-text documents cannot become preferred");
       await documentRepo.setPreference(projectId, paperId, documentId);
       return mapDocument(document);

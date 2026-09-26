@@ -46,14 +46,18 @@ output, not a promise of linear behavior for dense keys.
 ## Storage integrity and recovery
 
 Database transactions and filesystem changes cannot be made atomic together.
-Storage operations stage and promote files around database writes. Ordinary
-errors attempt compensating cleanup, but a host or process crash after file
-promotion and before database commit can leave an orphan file. Storage audits
-identify missing referenced files, unreferenced orphan files, and staged
-temporary artifacts for repair.
+FullTextDocument and PDF intake writes commit a pending database row and its
+exact staged recovery key before installing the final file. Installation uses
+exclusive no-overwrite semantics; final bytes are verified against the row's
+immutable byte size and SHA-256 before the row becomes ready. Public document
+use requires ready state. PDF resolution commits the exact research decision
+before materialization, and recovery resumes that same resolution.
 
-The audit is a detection mechanism; it is not a background cleanup service or
-a storage state machine.
+`storage:audit` is read-only. `storage:reconcile` retries only known pending
+owners and then audits. Neither command deletes unknown, mismatched, or
+unowned artifacts. A stage file left after the ready transition is reported as
+a benign operational orphan; a missing or mismatched ready final is an
+integrity failure. See ADR 0041 for the state graph and recovery boundaries.
 
 ## Runtime contract and scope
 
@@ -61,6 +65,6 @@ The runtime contract pins Node.js to exactly 22.13.0 and Next.js plus
 eslint-config-next to exactly 15.5.26. The application and database are local
 services.
 
-This hardening slice adds no authentication, collaboration, remote or LAN
-deployment, multiuser support, broad module splitting, general query redesign,
-storage state machine, or new research feature.
+The storage recovery protocol does not add authentication, collaboration,
+remote or LAN deployment, multiuser support, or change researcher-controlled
+research decisions.

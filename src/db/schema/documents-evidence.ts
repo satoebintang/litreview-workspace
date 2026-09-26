@@ -27,6 +27,8 @@ export const fullTextDocuments = pgTable(
     mediaType: text("media_type").notNull(),
     byteSize: bigint("byte_size", { mode: "number" }).notNull(),
     sha256: text("sha256").notNull(),
+    storageState: text("storage_state").$type<"pending" | "ready">().notNull(),
+    stagedStorageKey: text("staged_storage_key"),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -35,9 +37,11 @@ export const fullTextDocuments = pgTable(
     projectIdentity: unique("full_text_documents_project_id_id_unique").on(table.projectId, table.id),
     projectPaperIdentity: unique("full_text_documents_project_paper_id_id_unique").on(table.projectId, table.paperId, table.id),
     storageKeyUnique: unique("full_text_documents_storage_key_unique").on(table.storageKey),
+    stagedStorageKeyUnique: uniqueIndex("full_text_documents_staged_storage_key_unique").on(table.stagedStorageKey).where(sql`${table.stagedStorageKey} is not null`),
     activeContentUnique: uniqueIndex("full_text_documents_active_content_unique")
       .on(table.projectId, table.paperId, table.sha256)
       .where(sql`${table.archivedAt} is null`),
+    pendingStorageIndex: index("full_text_documents_pending_storage_idx").on(table.createdAt, table.id).where(sql`${table.storageState} = 'pending'`),
     paperOwnership: foreignKey({
       columns: [table.projectId, table.paperId],
       foreignColumns: [papers.projectId, papers.id],
@@ -49,6 +53,8 @@ export const fullTextDocuments = pgTable(
     mediaTypePdf: check("full_text_documents_media_type_pdf", sql`${table.mediaType} = 'application/pdf'`),
     byteSizePositive: check("full_text_documents_byte_size_positive", sql`${table.byteSize} > 0`),
     sha256Format: check("full_text_documents_sha256_format", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
+    storageStateValid: check("full_text_documents_storage_state_valid", sql`${table.storageState} in ('pending', 'ready')`),
+    storageStateStageShape: check("full_text_documents_storage_state_stage_shape", sql`((${table.storageState} = 'ready' and ${table.stagedStorageKey} is null) or (${table.storageState} = 'pending' and ${table.stagedStorageKey} ~ '^\\.tmp/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.upload$'))`),
   }),
 );
 

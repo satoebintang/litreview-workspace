@@ -35,6 +35,7 @@ export async function POST(request: Request, context: RouteContext) {
   let uploadedMimeType = "";
   let fileStage: ReturnType<typeof reviewServices.stageFullTextDocument> | undefined;
   let staged: Awaited<ReturnType<typeof reviewServices.stageFullTextDocument>> | undefined;
+  let attachmentStarted = false;
   let parserFailure: Error | undefined;
   let oversized = false;
   const parser = Busboy({ headers: { "content-type": contentType }, limits: { files: 1, fields: 3, parts: 4, fileSize: 50 * 1024 * 1024 + 1 } });
@@ -87,6 +88,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (request.signal.aborted) throw new Error("Document upload was cancelled");
     if (oversized) throw new Error("Document exceeds the 50 MiB upload limit");
     if (uploadedMimeType.toLowerCase() !== "application/pdf") throw new Error("Only application/pdf uploads are accepted");
+    attachmentStarted = true;
     const result = await reviewServices.attachStagedFullTextDocument(projectId, paperId, {
       originalFilename: uploadedFilename,
       mediaType: "application/pdf",
@@ -96,7 +98,7 @@ export async function POST(request: Request, context: RouteContext) {
   } catch (error) {
     incoming.destroy();
     const completedStage = staged ?? await fileStage?.catch(() => undefined);
-    if (completedStage) await reviewServices.discardStagedFullTextDocument(completedStage);
+    if (completedStage && !attachmentStarted) await reviewServices.discardStagedFullTextDocument(completedStage);
     return redirectTo(request, projectId, paperId, "error", message(error));
   } finally {
     request.signal.removeEventListener("abort", abortHandler);

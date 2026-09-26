@@ -101,10 +101,10 @@ async function seedCorpus(client: postgres.Sql, services: ReturnType<typeof crea
        select source.*, ${documentId} as document_id from source
      )
      insert into full_text_documents
-       (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256)
+        (id, project_id, paper_id, storage_key, original_filename, media_type, byte_size, sha256, storage_state, staged_storage_key)
      select document_id, project_id, paper_id,
        'projects/' || project_id::text || '/papers/' || paper_id::text || '/documents/' || document_id::text || '/source.pdf',
-       'benchmark-source.pdf', 'application/pdf', 1024, repeat('a', 64)
+        'benchmark-source.pdf', 'application/pdf', 1024, repeat('a', 64), 'ready', null
      from documents where mod(n, 10)=0 or mod(n, 20)=2`,
     [projectId],
   );

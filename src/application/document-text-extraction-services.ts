@@ -250,6 +250,7 @@ export function createDocumentTextExtractionServices(
     ensureUuid(documentId, "Document");
     const document = await db.select().from(fullTextDocuments).where(sql`${fullTextDocuments.projectId} = ${projectId} and ${fullTextDocuments.id} = ${documentId}`).limit(1);
     if (!document[0]) throw new DomainError("DOCUMENT_NOT_FOUND", "Full-text document was not found");
+    if (document[0].storageState !== "ready") throw new DomainError("STORAGE_PENDING", "Full-text document bytes are still being materialized");
     if (!includeArchived && document[0].archivedAt) throw new DomainError("DOCUMENT_ARCHIVED", "Archived full-text documents cannot be extracted");
     return document[0];
   }
@@ -322,11 +323,12 @@ export function createDocumentTextExtractionServices(
     const now = new Date().toISOString();
     return db.transaction(async (tx) => {
       const locked = rows(await tx.execute(sql`
-        select id, project_id, paper_id, archived_at from full_text_documents
+        select id, project_id, paper_id, archived_at, storage_state from full_text_documents
         where project_id=${input.projectId} and id=${input.documentId}
         for update
       `));
       if (!locked[0]) throw new DomainError("DOCUMENT_NOT_FOUND", "Full-text document was not found");
+      if (locked[0].storage_state !== "ready") throw new DomainError("STORAGE_PENDING", "Full-text document bytes are still being materialized");
       if (locked[0].archived_at) throw new DomainError("DOCUMENT_ARCHIVED", "Archived full-text documents cannot receive new extraction runs");
       const extractionRows = rows(await tx.execute(sql`
         insert into document_text_extractions

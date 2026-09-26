@@ -4,7 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { LocalDocumentStorage, LocalPdfIntakeStorage } from "@/infrastructure/document-storage";
+import { isUnsupportedDirectorySyncError, LocalDocumentStorage, LocalPdfIntakeStorage } from "@/infrastructure/document-storage";
 
 async function withTemporaryStorageRoot(run: (root: string) => Promise<void>) {
   const root = await mkdtemp(path.join(os.tmpdir(), "litreview_storage_integrity_test_"));
@@ -25,17 +25,66 @@ describe("full-text document storage", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it("hashes and sizes streamed PDF bytes, then promotes only the generated key", async () => {
+  it("hashes streamed PDF bytes and installs a final key without consuming its recovery stage", async () => {
     const bytes = Buffer.from("%PDF-1.7\nstreamed test bytes\n");
     const staged = await storage.stage(Readable.from([bytes]), { maxBytes: 50 });
     expect(staged.byteSize).toBe(bytes.byteLength);
     expect(staged.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(Array.from(staged.signature)).toEqual(Array.from(Buffer.from("%PDF-")));
     const key = `projects/${randomUUID()}/papers/${randomUUID()}/documents/${randomUUID()}/source.pdf`;
-    await storage.promote(staged.temporaryKey, key);
+    await storage.install(staged.temporaryKey, key);
     expect(await storage.exists(key)).toBe(true);
     expect(await readFile(path.join(root, key))).toEqual(bytes);
-    expect(await storage.listKeys()).not.toContain(staged.temporaryKey);
+    expect(await storage.exists(staged.temporaryKey)).toBe(true);
+    await storage.remove(staged.temporaryKey);
+    expect(await storage.exists(staged.temporaryKey)).toBe(false);
+  });
+
+  it("installs with exclusive destination semantics and preserves a concurrent winner", async () => {
+    await withTemporaryStorageRoot(async (temporaryRoot) => {
+      const local = new LocalDocumentStorage(temporaryRoot);
+      const finalKey = `projects/${randomUUID()}/papers/${randomUUID()}/documents/${randomUUID()}/source.pdf`;
+      const leftBytes = Buffer.from("%PDF-1.7\nleft winner");
+      const rightBytes = Buffer.from("%PDF-1.7\nright winner");
+      const left = await local.stage(Readable.from([leftBytes]));
+      const right = await local.stage(Readable.from([rightBytes]));
+
+      await Promise.all([
+        local.install(left.temporaryKey, finalKey),
+        local.install(right.temporaryKey, finalKey),
+      ]);
+      const final = await local.inspect(finalKey);
+      expect(final).not.toBeNull();
+      expect([left.sha256, right.sha256]).toContain(final?.sha256);
+      expect([leftBytes.byteLength, rightBytes.byteLength]).toContain(final?.byteSize);
+      expect(await local.exists(left.temporaryKey)).toBe(true);
+      expect(await local.exists(right.temporaryKey)).toBe(true);
+      await local.remove(left.temporaryKey);
+      await local.remove(right.temporaryKey);
+    });
+  });
+
+  it("does not create a missing storage root during a read-only inventory", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "litreview_storage_read_only_root_"));
+    const missingRoot = path.join(parent, "not-created");
+    try {
+      const local = new LocalDocumentStorage(missingRoot);
+      await expect(local.listKeys()).resolves.toEqual([]);
+      await expect((await import("node:fs/promises")).stat(missingRoot)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("classifies unsupported directory fsync separately from real durability failures", () => {
+    const error = (code: string) => Object.assign(new Error(code), { code });
+    for (const code of ["EINVAL", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EISDIR"]) {
+      expect(isUnsupportedDirectorySyncError(error(code), "linux")).toBe(true);
+      expect(isUnsupportedDirectorySyncError(error(code), "win32")).toBe(true);
+    }
+    expect(isUnsupportedDirectorySyncError(error("EPERM"), "win32")).toBe(true);
+    expect(isUnsupportedDirectorySyncError(error("EPERM"), "linux")).toBe(false);
+    expect(isUnsupportedDirectorySyncError(error("EIO"), "win32")).toBe(false);
   });
 
   it("removes staged bytes after overflow, invalid signatures, and stream interruption", async () => {
@@ -62,8 +111,8 @@ describe("full-text document storage", () => {
 
   it("rejects traversal and absolute storage keys", async () => {
     const staged = await storage.stage(Readable.from([Buffer.from("%PDF-1.7\nbytes")]), { maxBytes: 50 });
-    await expect(storage.promote(staged.temporaryKey, "../escape.pdf")).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
-    await expect(storage.promote(staged.temporaryKey, "C:\\escape.pdf")).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+    await expect(storage.install(staged.temporaryKey, "../escape.pdf")).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+    await expect(storage.install(staged.temporaryKey, "C:\\escape.pdf")).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
     await storage.remove(staged.temporaryKey);
   });
 
@@ -292,7 +341,7 @@ describe("full-text document storage", () => {
     await rm(path.join(root, "projects"), { recursive: true, force: true });
     await symlink(outside, path.join(root, "projects"), symlinkType);
     const rootStaged = await storage.stage(pdf);
-    await expect(storage.promote(rootStaged.temporaryKey, `projects/${projectId}/papers/${paperId}/documents/${randomUUID()}/source.pdf`)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+    await expect(storage.install(rootStaged.temporaryKey, `projects/${projectId}/papers/${paperId}/documents/${randomUUID()}/source.pdf`)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
     expect(await readdir(outside)).toEqual([]);
     await storage.remove(rootStaged.temporaryKey);
     await rm(path.join(root, "projects"), { recursive: false, force: true });
@@ -303,7 +352,7 @@ describe("full-text document storage", () => {
     const intakeOutside = await mkdtemp(path.join(os.tmpdir(), "litreview_intake_symlink_outside_"));
     await symlink(intakeOutside, path.join(root, "projects", projectId, "pdf-intakes"), symlinkType);
     const intakeStaged = await intake.stage(Readable.from([Buffer.from("%PDF-1.7\nintake")]))
-    await expect(intake.promote(intakeStaged.temporaryKey, `projects/${projectId}/pdf-intakes/${randomUUID()}/source.pdf`)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+    await expect(intake.install(intakeStaged.temporaryKey, `projects/${projectId}/pdf-intakes/${randomUUID()}/source.pdf`)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
     expect(await readdir(intakeOutside)).toEqual([]);
     await intake.remove(intakeStaged.temporaryKey);
     await rm(path.join(root, "projects", projectId, "pdf-intakes"), { recursive: false, force: true });
@@ -313,7 +362,7 @@ describe("full-text document storage", () => {
     const papersOutside = await mkdtemp(path.join(os.tmpdir(), "litreview_papers_symlink_outside_"));
     await symlink(papersOutside, path.join(root, "projects", projectId, "papers"), symlinkType);
     const papersStaged = await storage.stage(Readable.from([Buffer.from("%PDF-1.7\npapers")]))
-    await expect(storage.promote(papersStaged.temporaryKey, `projects/${projectId}/papers/${paperId}/documents/${randomUUID()}/source.pdf`)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+    await expect(storage.install(papersStaged.temporaryKey, `projects/${projectId}/papers/${paperId}/documents/${randomUUID()}/source.pdf`)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
     expect(await readdir(papersOutside)).toEqual([]);
     await storage.remove(papersStaged.temporaryKey);
     await rm(path.join(root, "projects", projectId, "papers"), { recursive: false, force: true });
@@ -336,7 +385,7 @@ describe("full-text document storage", () => {
     const finalPath = path.join(finalParent, "source.pdf");
     await symlink(outsideFile, finalPath, process.platform === "win32" ? "file" : undefined);
     const finalStaged = await storage.stage(Readable.from([Buffer.from("%PDF-1.7\nfinal")]))
-    await expect(storage.promote(finalStaged.temporaryKey, `projects/${projectId}/papers/${paperId}/documents/${documentId}/source.pdf`)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
+    await expect(storage.install(finalStaged.temporaryKey, `projects/${projectId}/papers/${paperId}/documents/${documentId}/source.pdf`)).rejects.toMatchObject({ code: "STORAGE_INTEGRITY" });
     expect(await readFile(outsideFile)).toEqual(sentinel);
     await storage.remove(finalStaged.temporaryKey);
     await rm(finalPath, { force: true });

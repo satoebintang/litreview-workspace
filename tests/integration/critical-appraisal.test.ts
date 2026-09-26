@@ -354,7 +354,7 @@ describe("Slice 33 critical appraisal foundation", () => {
     const bytes = Buffer.from("%PDF-1.7\nsynthetic appraisal snapshot fixture");
     const documentHash = createHash("sha256").update(bytes).digest("hex");
     await client.unsafe(
-      "insert into full_text_documents (id,project_id,paper_id,storage_key,original_filename,media_type,byte_size,sha256) values ($1::uuid,$2::uuid,$3::uuid,$4,'snapshot.pdf','application/pdf',$5,$6)",
+      "insert into full_text_documents (id,project_id,paper_id,storage_key,original_filename,media_type,byte_size,sha256,storage_state,staged_storage_key) values ($1::uuid,$2::uuid,$3::uuid,$4,'snapshot.pdf','application/pdf',$5,$6,'ready',null)",
       [documentId, projectId, paper.id, `projects/${projectId}/papers/${paper.id}/documents/${documentId}/source.pdf`, bytes.byteLength, documentHash],
     );
     await client.begin(async (tx) => {

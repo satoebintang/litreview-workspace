@@ -13,7 +13,7 @@ import { resolveDatabaseUrl } from "@/db/config";
 
 const baseUrl = resolveDatabaseUrl();
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
-const migrationPath = path.join(migrationFolder, "0032_hot_path_hardening.sql");
+const migrationPath = path.join(migrationFolder, "0033_storage_materialization_recovery.sql");
 const migrationHash = createHash("sha256").update(fs.readFileSync(migrationPath)).digest("hex");
 
 function databaseUrl(name: string) {
@@ -35,13 +35,16 @@ function create0031MigrationFolder() {
   const target = path.join(tempRoot, "drizzle");
   fs.cpSync(migrationFolder, target, {
     recursive: true,
-    filter: (source) => !["0032_hot_path_hardening.sql", "0032_snapshot.json"].includes(path.basename(source)),
+    filter: (source) => ![
+      "0032_hot_path_hardening.sql", "0032_snapshot.json",
+      "0033_storage_materialization_recovery.sql", "0033_snapshot.json",
+    ].includes(path.basename(source)),
   });
   const journalPath = path.join(target, "meta", "_journal.json");
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
     entries: Array<{ tag: string }>;
   };
-  journal.entries = journal.entries.filter((entry) => entry.tag !== "0032_hot_path_hardening");
+  journal.entries = journal.entries.filter((entry) => !["0032_hot_path_hardening", "0033_storage_materialization_recovery"].includes(entry.tag));
   fs.writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   return { tempRoot, folder: target };
 }
