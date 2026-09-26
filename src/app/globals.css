@@ -243,6 +243,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--forest); box-sha
 .chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 .matrix-list { display: grid; gap: 9px; }
 .matrix-row { cursor: pointer; }
+.matrix-row input[type="checkbox"] { width: auto; flex: 0 0 auto; margin-top: 4px; padding: 0; }
 .matrix-row:has(input:disabled) { cursor: default; opacity: .75; }
 .synthesis-statement { margin: 0 0 18px; padding: 20px; border-left: 3px solid #b6d4c4; background: #f5f9f6; font-family: Newsreader, Georgia, serif; font-size: 25px; line-height: 1.4; }
 .provenance-list { margin-top: 13px; }

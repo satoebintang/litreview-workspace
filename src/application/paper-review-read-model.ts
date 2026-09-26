@@ -36,17 +36,22 @@ export function paperReviewStatusFromFacts(row: PaperReviewFactsRow): PaperRevie
  * Keep queue predicates and their aliases in the consuming query; this CTE is
  * the single set-based projection of the underlying decision/history rows.
  */
-export function paperReviewFactsCtes(projectId: string) {
+export function paperReviewFactsCtes(projectId: string, paperIds?: readonly string[]) {
+  const paperIdList = paperIds?.length
+    ? sql`(${sql.join(paperIds.map((paperId) => sql`${paperId}::uuid`), sql`, `)})`
+    : null;
+  const paperScope = paperIds === undefined ? sql`` : paperIdList === null ? sql`and false` : sql`and paper_id in ${paperIdList}`;
+  const paperScopeForPaper = paperIds === undefined ? sql`` : paperIdList === null ? sql`and false` : sql`and p.id in ${paperIdList}`;
   return sql`
     with latest_title_abstract as (
       select distinct on (project_id, paper_id) project_id, paper_id, decision
       from screening_decisions
-      where project_id=${projectId}::uuid and stage='title_abstract'
+      where project_id=${projectId}::uuid and stage='title_abstract' ${paperScope}
       order by project_id, paper_id, sequence desc, id desc
     ), latest_full_text as (
       select distinct on (project_id, paper_id) project_id, paper_id, decision
       from full_text_screening_decisions
-      where project_id=${projectId}::uuid
+      where project_id=${projectId}::uuid ${paperScope}
       order by project_id, paper_id, sequence desc, id desc
     ), retrieval_facts as (
       select project_id, paper_id,
@@ -54,12 +59,12 @@ export function paperReviewFactsCtes(projectId: string) {
         true as has_retrieval_history,
         bool_or(outcome='retrieved') as ever_retrieved
       from full_text_retrieval_attempts
-      where project_id=${projectId}::uuid
+      where project_id=${projectId}::uuid ${paperScope}
       group by project_id, paper_id
     ), analytical_history as (
       select distinct project_id, paper_id
       from extraction_value_revisions
-      where project_id=${projectId}::uuid and finalized_at is not null
+      where project_id=${projectId}::uuid and finalized_at is not null ${paperScope}
     ), review_facts as (
       select p.project_id, p.id as paper_id, p.created_at,
         ta.decision as title_abstract_decision,
@@ -74,7 +79,7 @@ export function paperReviewFactsCtes(projectId: string) {
       left join latest_full_text ft on ft.project_id=p.project_id and ft.paper_id=p.id
       left join retrieval_facts rf on rf.project_id=p.project_id and rf.paper_id=p.id
       left join analytical_history ah on ah.project_id=p.project_id and ah.paper_id=p.id
-      where p.project_id=${projectId}::uuid
+      where p.project_id=${projectId}::uuid ${paperScopeForPaper}
     )
   `;
 }
