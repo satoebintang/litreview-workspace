@@ -1,5 +1,3 @@
-import { reviewServices } from "@/app/server";
-
 export type ClaimLifecycle = "active" | "withdrawn";
 export type ClaimSupportKind = "evidence" | "extraction" | "synthesis";
 
@@ -12,22 +10,6 @@ export interface ClaimSupportView { kind: ClaimSupportKind; id: string; evidence
 export interface CitationCandidateView { paper: PaperView; pathCount: number; paths?: Array<{ kind?: ClaimSupportKind; label?: string } | string>; }
 export interface ClaimRevisionView { id: string; sequence: number; state: ClaimLifecycle; claimText: string | null; researcherNote?: string | null; finalizedAt?: string | null; supports: { evidence: ClaimSupportView[]; extraction: ClaimSupportView[]; synthesis: ClaimSupportView[] }; supportStatus: "supported" | "unsupported"; citationCandidates: CitationCandidateView[]; distinctPaperCount: number; citationCandidateCount: number; }
 export interface ClaimView { id: string; createdAt?: string; currentRevision: ClaimRevisionView; }
-
-export interface ClaimReadServices {
-  listCurrentClaims?: (projectId: string) => Promise<unknown>;
-  listClaims?: (projectId: string) => Promise<unknown>;
-  getCurrentClaim?: (projectId: string, claimId: string) => Promise<unknown>;
-  getClaimProvenance?: (projectId: string, claimId: string) => Promise<unknown>;
-  getClaimHistory?: (projectId: string, claimId: string) => Promise<unknown>;
-  listEvidence?: (projectId: string) => Promise<unknown>;
-  listPapers?: (projectId: string) => Promise<unknown>;
-  listExtractionComparison?: (projectId: string, fieldId?: string) => Promise<unknown>;
-  listProjectSynthesis?: (projectId: string) => Promise<unknown>;
-  listProjectExtractionRevisions?: (projectId: string) => Promise<unknown>;
-  listProjectSynthesisRevisions?: (projectId: string) => Promise<unknown>;
-}
-
-export const claimReadServices = reviewServices as unknown as ClaimReadServices;
 
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? value as Record<string, unknown> : {};
@@ -118,9 +100,6 @@ export function normalizeClaim(value: unknown): ClaimView {
   const current = row.currentRevision ?? row.revision ?? row.current ?? value;
   return { id: string(row.id ?? object(row.claim).id), createdAt: typeof row.createdAt === "string" ? row.createdAt : undefined, currentRevision: revision(current) };
 }
-
-export function normalizeClaims(value: unknown): ClaimView[] { const row = object(value); return array(Array.isArray(value) ? value : row.claims ?? row.items ?? value).map(normalizeClaim); }
-export function normalizeHistory(value: unknown): ClaimRevisionView[] { const row = object(value); return array(Array.isArray(value) ? value : row.revisions ?? row.history ?? value).map(revision); }
 
 export function supportCount(view: ClaimRevisionView) { return view.supports.evidence.length + view.supports.extraction.length + view.supports.synthesis.length; }
 export function extractionDisplay(value: ExtractionView) { return value.textValue ?? value.numberValue ?? (value.booleanValue === null || value.booleanValue === undefined ? value.optionId : value.booleanValue ? "Yes" : "No") ?? value.valueState ?? "No value"; }

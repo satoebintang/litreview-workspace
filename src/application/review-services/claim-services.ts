@@ -53,6 +53,47 @@ export function createClaimServices<TProject, TClaim, TEvidence, TInterpretation
     return (rows as unknown as Record<string, unknown>[])[0] ?? null;
   }
 
+  async function currentClaimSupportSnapshot(projectId: string, claimId: string) {
+    ensureId(projectId);
+    ensureId(claimId);
+    const rows = await db.execute(sql`
+      select c.id as claim_id, r.id as revision_id, r.state, r.claim_text, r.researcher_note,
+        coalesce((select array_agg(s.evidence_id::text order by s.evidence_id)
+          from claim_revision_evidence_supports s
+          where s.project_id=p.id and s.claim_revision_id=r.id), array[]::text[]) as evidence_ids,
+        coalesce((select array_agg(s.extraction_revision_id::text order by s.extraction_revision_id)
+          from claim_revision_extraction_supports s
+          where s.project_id=p.id and s.claim_revision_id=r.id), array[]::text[]) as extraction_revision_ids,
+        coalesce((select array_agg(s.synthesis_revision_id::text order by s.synthesis_revision_id)
+          from claim_revision_synthesis_supports s
+          where s.project_id=p.id and s.claim_revision_id=r.id), array[]::text[]) as synthesis_revision_ids
+      from projects p
+      left join claims c on c.project_id=p.id and c.id=${claimId}
+      left join lateral (
+        select current_r.id, current_r.state, current_r.claim_text, current_r.researcher_note
+        from claim_revisions current_r
+        where current_r.project_id=p.id and current_r.claim_id=c.id and current_r.finalized_at is not null
+        order by current_r.sequence desc
+        limit 1
+      ) r on true
+      where p.id=${projectId}
+      limit 1
+    `) as unknown as Record<string, unknown>[];
+    if (!rows.length) throw new DomainError("PROJECT_NOT_FOUND", "Project was not found");
+    if (rows[0].claim_id == null) throw new DomainError("CROSS_PROJECT_REFERENCE", "Claim does not belong to this project");
+    if (rows[0].revision_id == null) throw new DomainError("NOT_FOUND", "Claim has no finalized revision");
+    const ids = (value: unknown) => Array.isArray(value) ? value.map(String) : [];
+    return {
+      id: String(rows[0].revision_id),
+      lifecycle: String(rows[0].state) as "active" | "withdrawn",
+      claimText: rows[0].claim_text == null ? null : String(rows[0].claim_text),
+      researcherNote: rows[0].researcher_note == null ? null : String(rows[0].researcher_note),
+      evidenceIds: ids(rows[0].evidence_ids),
+      extractionRevisionIds: ids(rows[0].extraction_revision_ids),
+      synthesisRevisionIds: ids(rows[0].synthesis_revision_ids),
+    };
+  }
+
   function mapClaimRevision(row: Record<string, unknown>) {
     return { id: String(row.id ?? row.revision_id), sequence: Number(row.sequence), projectId: String(row.project_id), claimId: String(row.claim_id), lifecycle: String(row.state) as "active" | "withdrawn", claimText: row.claim_text == null ? null : String(row.claim_text), researcherNote: row.researcher_note == null ? null : String(row.researcher_note), createdAt: row.created_at as Date, finalizedAt: row.finalized_at as Date | null };
   }
@@ -363,17 +404,17 @@ export function createClaimServices<TProject, TClaim, TEvidence, TInterpretation
       const values = validate(claimEvidenceInputSchema, input);
       await requireEvidence(projectId, values.evidenceId);
       try {
-        const current = await this.getCurrentClaim(projectId, values.claimId);
-        if (current.currentRevision.supports.evidence.some((item) => item.evidenceId === values.evidenceId)) {
+        const current = await currentClaimSupportSnapshot(projectId, values.claimId);
+        if (current.evidenceIds.includes(values.evidenceId)) {
           throw new DomainError("DUPLICATE_LINK", "Evidence is already linked to this claim");
         }
         const supports = [
-          ...current.currentRevision.supports.evidence.map((item) => ({ kind: "evidence" as const, evidenceId: item.evidenceId })),
-          ...current.currentRevision.supports.extractionRevisions.map((item) => ({ kind: "extractionRevision" as const, extractionRevisionId: item.extractionRevisionId })),
-          ...current.currentRevision.supports.synthesisRevisions.map((item) => ({ kind: "synthesisRevision" as const, synthesisRevisionId: item.synthesisRevisionId })),
+          ...current.evidenceIds.map((evidenceId) => ({ kind: "evidence" as const, evidenceId })),
+          ...current.extractionRevisionIds.map((extractionRevisionId) => ({ kind: "extractionRevision" as const, extractionRevisionId })),
+          ...current.synthesisRevisionIds.map((synthesisRevisionId) => ({ kind: "synthesisRevision" as const, synthesisRevisionId })),
           { kind: "evidence" as const, evidenceId: values.evidenceId },
         ];
-        return await this.createClaimRevision(projectId, values.claimId, { lifecycle: "active", claimText: current.currentRevision.claimText, researcherNote: current.currentRevision.researcherNote, supports, expectedCurrentRevisionId: current.currentRevision.id });
+        return await this.createClaimRevision(projectId, values.claimId, { lifecycle: "active", claimText: current.claimText, researcherNote: current.researcherNote, supports, expectedCurrentRevisionId: current.id });
       } catch (error) {
         if (isConstraintError(error)) throw new DomainError("DUPLICATE_LINK", "Evidence is already linked to this claim");
         throw error;
@@ -383,15 +424,15 @@ export function createClaimServices<TProject, TClaim, TEvidence, TInterpretation
     async unlinkEvidenceFromClaim(projectId: string, input: { claimId: string; evidenceId: string }) {
       const values = validate(claimEvidenceInputSchema, input);
       await requireEvidence(projectId, values.evidenceId);
-      const current = await this.getCurrentClaim(projectId, values.claimId);
-      const existing = current.currentRevision.supports.evidence.some((item) => item.evidenceId === values.evidenceId);
+      const current = await currentClaimSupportSnapshot(projectId, values.claimId);
+      const existing = current.evidenceIds.includes(values.evidenceId);
       if (!existing) throw new DomainError("NOT_FOUND", "Evidence link was not found");
       const supports = [
-        ...current.currentRevision.supports.evidence.filter((item) => item.evidenceId !== values.evidenceId).map((item) => ({ kind: "evidence" as const, evidenceId: item.evidenceId })),
-        ...current.currentRevision.supports.extractionRevisions.map((item) => ({ kind: "extractionRevision" as const, extractionRevisionId: item.extractionRevisionId })),
-        ...current.currentRevision.supports.synthesisRevisions.map((item) => ({ kind: "synthesisRevision" as const, synthesisRevisionId: item.synthesisRevisionId })),
+        ...current.evidenceIds.filter((evidenceId) => evidenceId !== values.evidenceId).map((evidenceId) => ({ kind: "evidence" as const, evidenceId })),
+        ...current.extractionRevisionIds.map((extractionRevisionId) => ({ kind: "extractionRevision" as const, extractionRevisionId })),
+        ...current.synthesisRevisionIds.map((synthesisRevisionId) => ({ kind: "synthesisRevision" as const, synthesisRevisionId })),
       ];
-      return this.createClaimRevision(projectId, values.claimId, { lifecycle: current.currentRevision.lifecycle, claimText: current.currentRevision.claimText, researcherNote: current.currentRevision.researcherNote, supports, expectedCurrentRevisionId: current.currentRevision.id });
+      return this.createClaimRevision(projectId, values.claimId, { lifecycle: current.lifecycle, claimText: current.claimText, researcherNote: current.researcherNote, supports, expectedCurrentRevisionId: current.id });
     },
 
     async deleteClaim(projectId: string, claimId: string) {

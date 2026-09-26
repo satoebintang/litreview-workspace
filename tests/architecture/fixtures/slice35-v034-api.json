@@ -1087,18 +1087,8 @@
       },
       {
         "owner": "linkEvidenceToClaim",
-        "callee": "getCurrentClaim",
-        "line": 1358
-      },
-      {
-        "owner": "linkEvidenceToClaim",
         "callee": "createClaimRevision",
         "line": 1368
-      },
-      {
-        "owner": "unlinkEvidenceFromClaim",
-        "callee": "getCurrentClaim",
-        "line": 1378
       },
       {
         "owner": "unlinkEvidenceFromClaim",
@@ -2056,7 +2046,7 @@
   "configHashes": [
     {
       "file": "package.json",
-      "sha256": "3f18dd43ea88c979674826e8b0a6cc329e7d5713c4fbe91832ea328345b2cce1"
+      "sha256": "661310240bd800faf6e0493a684c51dd5bc18d5ddf6f55c72b8f08e98b2f2868"
     },
     {
       "file": "package-lock.json",
