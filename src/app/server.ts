@@ -5,6 +5,7 @@ import { createClaimReadServices } from "@/application/claim-read-services";
 import { createExtractionReadServices } from "@/application/extraction-read-services";
 import { createEvidenceWorkspaceReadServices } from "@/application/evidence-workspace-read-services";
 import { createPaperCollectionReadServices } from "@/application/paper-collection-read-services";
+import { createPaperSelectionReadServices } from "@/application/paper-selection-read-services";
 import { createSynthesisReadServices } from "@/application/synthesis-read-services";
 import { boundPdfIntakeDiagnostic, type PdfMetadataInspection, type PdfMetadataProposal } from "@/application/pdf-intake-services";
 import { createAiExtractionSuggestionServices } from "@/application/ai-extraction-suggestion-services";
@@ -133,6 +134,7 @@ export const claimReadServices = createClaimReadServices(database.db);
 export const extractionReadServices = createExtractionReadServices(database.db);
 export const evidenceWorkspaceReadServices = createEvidenceWorkspaceReadServices(database.db);
 export const paperCollectionReadServices = createPaperCollectionReadServices(database.db);
+export const paperSelectionReadServices = createPaperSelectionReadServices(database.db);
 export const synthesisReadServices = createSynthesisReadServices(database.db);
 
 const openAiKey = process.env.OPENAI_API_KEY?.trim();

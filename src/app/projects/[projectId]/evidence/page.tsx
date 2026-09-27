@@ -77,11 +77,10 @@ export default async function EvidenceWorkspacePage({
 
   let workspace;
   let labels;
-  let paperOptions;
   let filterPaper;
   let capturePaper;
   try {
-    [workspace, labels, paperOptions, filterPaper, capturePaper] = await Promise.all([
+    [workspace, labels, filterPaper, capturePaper] = await Promise.all([
       evidenceWorkspaceReadServices.getEvidenceWorkspacePage(projectId, {
         state,
         paperId: query.paperId || undefined,
@@ -94,7 +93,6 @@ export default async function EvidenceWorkspacePage({
         page,
       }),
       reviewServices.listEvidenceLabels(projectId, true),
-      evidenceWorkspaceReadServices.searchEvidencePaperOptions({ projectId, page: 1, pageSize: 20 }),
       query.paperId && isUuid(query.paperId)
         ? evidenceWorkspaceReadServices.getEvidencePaperOption(projectId, query.paperId)
         : Promise.resolve(null),
@@ -130,14 +128,11 @@ export default async function EvidenceWorkspacePage({
       <div className="workspace-grid">
         <section className="card section-card full" aria-labelledby="capture-evidence-heading">
           <div className="section-heading"><div><p className="eyebrow">Source capture</p><h2 id="capture-evidence-heading">Record Evidence</h2></div><span className="count">Manual capture</span></div>
-          {paperOptions.totalCount === 0
-            ? <div className="empty">Add a Paper before recording a source passage.</div>
-            : <EvidenceCaptureForm
-              projectId={projectId}
-              capturePaperId={query.capturePaperId}
-              selectedPaper={capturePaper}
-              papers={paperOptions}
-            />}
+          <EvidenceCaptureForm
+            projectId={projectId}
+            capturePaperId={query.capturePaperId}
+            selectedPaper={capturePaper}
+          />
         </section>
 
         <section className="card section-card full" aria-labelledby="evidence-filter-heading">
@@ -147,13 +142,11 @@ export default async function EvidenceWorkspacePage({
             <div className="field"><label htmlFor="evidence-state">Review state</label><select id="evidence-state" name="state" defaultValue={workspace.state}>{evidenceWorkspaceStates.map((item) => <option key={item} value={item}>{stateLabels[item]}</option>)}</select></div>
             <div className="field">
               <EvidencePaperPicker
-                key={`${projectId}:filter-paper`}
                 projectId={projectId}
                 fieldName="paperId"
                 label="Evidence queue filter"
                 initialPaperId={query.paperId}
                 initialSelectedPaper={filterPaper}
-                initialPage={paperOptions}
               />
             </div>
             <div className="field"><label htmlFor="evidence-label-filter">Current label</label><select id="evidence-label-filter" name="labelId" defaultValue={query.labelId ?? ""}><option value="">All labels</option>{labels.map((label) => <option key={label.id} value={label.id}>{label.name}{label.archivedAt ? " (archived)" : ""}</option>)}</select></div>

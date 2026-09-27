@@ -7,6 +7,7 @@ import { sql } from "drizzle-orm";
 import { createDb, type Database } from "@/db/client";
 import { createReviewServices } from "@/application/services";
 import { createEvidenceWorkspaceReadServices } from "@/application/evidence-workspace-read-services";
+import { createPaperSelectionReadServices } from "@/application/paper-selection-read-services";
 import { evidence, evidenceLabelEvents, schema } from "@/db/schema";
 
 const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://litreview:litreview@127.0.0.1:5432/litreview";
@@ -35,6 +36,22 @@ function createCountedEvidenceReads() {
   });
   return {
     reads: createEvidenceWorkspaceReadServices(drizzle(queryClient, { schema })),
+    selects,
+    close: () => queryClient.end(),
+  };
+}
+
+function createCountedPaperSelectionReads() {
+  const selects: string[] = [];
+  const queryClient = postgres(DATABASE_URL, {
+    max: 1,
+    prepare: false,
+    debug: (_connection, query) => {
+      if (/^\s*(select|with)\b/i.test(query) && /\b(from|join)\s+(projects|papers)\b/i.test(query)) selects.push(query);
+    },
+  });
+  return {
+    reads: createPaperSelectionReadServices(drizzle(queryClient, { schema })),
     selects,
     close: () => queryClient.end(),
   };
@@ -644,5 +661,102 @@ describe("Slice 16 Evidence curation", () => {
 
     await expect(reads.searchEvidencePaperOptions({ projectId, query: "😀".repeat(201) })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     expect((await reads.searchEvidencePaperOptions({ projectId, query: "😀".repeat(200) })).items).toHaveLength(0);
+  });
+
+  it("provides a canonical bounded Paper option search and exact lookup query budget", async () => {
+    const literal = await services.addPaper(projectId, {
+      title: "Literal 100% Case Study",
+      authors: ["Ada Researcher"],
+      publicationYear: 2024,
+      doi: "10.5555/literal",
+      abstract: "Not part of the option projection",
+    });
+    const second = await services.addPaper(projectId, { title: "Second Case Study" });
+    const third = await services.addPaper(projectId, { title: "Third Case Study" });
+    await client`update papers set created_at=timestamptz '2025-01-01 00:00:00+00' where project_id=${projectId}`;
+
+    const counted = createCountedPaperSelectionReads();
+    try {
+      const literalSearch = await counted.reads.searchPaperOptions({ projectId, query: "  100%  " });
+      expect(literalSearch).toMatchObject({ totalCount: 1, page: 1, pageSize: 20, from: 1, to: 1 });
+      expect(literalSearch.items[0]).toMatchObject({
+        id: literal.id,
+        title: "Literal 100% Case Study",
+        authors: ["Ada Researcher"],
+        publicationYear: 2024,
+        doi: "10.5555/literal",
+      });
+      expect(literalSearch.items[0]).not.toHaveProperty("abstract");
+      expect(counted.selects, counted.selects.map((query) => query.slice(0, 240)).join("\n")).toHaveLength(2);
+
+      counted.selects.length = 0;
+      const all = await counted.reads.searchPaperOptions({ projectId, page: 500, pageSize: 500 });
+      expect(all).toMatchObject({ page: 1, pageSize: 50, totalCount: 3, totalPages: 1, hasPrevious: false, hasNext: false });
+      expect(all.items.map((item) => item.id)).toEqual([third.id, second.id, literal.id].sort((a, b) => b.localeCompare(a)));
+      expect(counted.selects).toHaveLength(2);
+
+      counted.selects.length = 0;
+      expect(await counted.reads.getPaperOption(projectId, literal.id)).toMatchObject({ id: literal.id, title: literal.title });
+      expect(counted.selects).toHaveLength(1);
+
+      const otherProject = await services.createProject({ title: "Paper selection foreign lookup" });
+      const foreign = await services.addPaper(otherProject.id, { title: "Foreign Paper" });
+      const missingId = crypto.randomUUID();
+      counted.selects.length = 0;
+      const batch = await counted.reads.getPaperOptionsByIds(projectId, [second.id, foreign.id, literal.id, second.id, missingId]);
+      expect(batch.map((entry) => entry.paperId)).toEqual([second.id, foreign.id, literal.id, missingId]);
+      expect(batch.map((entry) => entry.option?.id ?? null)).toEqual([second.id, null, literal.id, null]);
+      expect(counted.selects).toHaveLength(1);
+
+      counted.selects.length = 0;
+      expect(await counted.reads.getPaperOptionsByIds(projectId, [])).toEqual([]);
+      expect(counted.selects).toHaveLength(0);
+
+      counted.selects.length = 0;
+      const uncappedIds = Array.from({ length: 1_001 }, () => crypto.randomUUID());
+      const uncapped = await counted.reads.getPaperOptionsByIds(projectId, [...uncappedIds, uncappedIds[0]]);
+      expect(uncapped).toHaveLength(1_001);
+      expect(uncapped.every((entry) => entry.option === null)).toBe(true);
+      expect(counted.selects).toHaveLength(1);
+
+      const excluded = await counted.reads.searchPaperOptions({ projectId, excludePaperId: literal.id });
+      expect(excluded.totalCount).toBe(2);
+      expect(excluded.items.some((item) => item.id === literal.id)).toBe(false);
+      await expect(counted.reads.searchPaperOptions({ projectId, excludePaperId: "not-a-uuid" })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+      await expect(counted.reads.searchPaperOptions({ projectId, query: "😀".repeat(201) })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+      expect((await counted.reads.searchPaperOptions({ projectId, query: "😀".repeat(200) })).items).toHaveLength(0);
+
+      const emptyProject = await services.createProject({ title: "Empty Paper selection Project" });
+      expect(await counted.reads.searchPaperOptions({ projectId: emptyProject.id })).toMatchObject({ totalCount: 0, items: [], page: 1, totalPages: 0 });
+      await expect(counted.reads.searchPaperOptions({ projectId: crypto.randomUUID() })).rejects.toMatchObject({ code: "PROJECT_NOT_FOUND" });
+      expect(await counted.reads.getPaperOption(projectId, foreign.id)).toBeNull();
+    } finally {
+      await counted.close();
+    }
+  });
+
+  it("keeps Paper search count and page on one repeatable-read snapshot", async () => {
+    const first = await services.addPaper(projectId, { title: "Snapshot before Paper search page" });
+    const countCompleted = deferred();
+    const allowReadToContinue = deferred();
+    const pausedDatabase = pauseAfterFirstTransactionExecute(db, async () => {
+      countCompleted.resolve();
+      await allowReadToContinue.promise;
+    });
+    const pausedRead = createPaperSelectionReadServices(pausedDatabase);
+    const inFlight = pausedRead.searchPaperOptions({ projectId, pageSize: 20 });
+
+    await countCompleted.promise;
+    try {
+      await writerServices.addPaper(projectId, { title: "Committed between Paper count and page" });
+    } finally {
+      allowReadToContinue.resolve();
+    }
+
+    const snapshot = await inFlight;
+    expect(snapshot.totalCount).toBe(1);
+    expect(snapshot.items.map((item) => item.id)).toEqual([first.id]);
+    const later = await createPaperSelectionReadServices(db).searchPaperOptions({ projectId, pageSize: 20 });
+    expect(later.totalCount).toBe(2);
   });
 });

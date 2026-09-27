@@ -37,6 +37,9 @@ test.describe("Slice 39 Evidence workspace reads", () => {
     const capturePicker = capture.locator(".evidence-paper-picker");
     const captureSearch = capturePicker.getByRole("searchbox");
     await expect(captureSearch).toHaveAccessibleName("Search Papers for manual evidence capture");
+    await expect(capturePicker.locator(".evidence-paper-results")).toHaveCount(0);
+    await captureSearch.focus();
+    await expect(capturePicker.locator(".claim-support-result-row")).toHaveCount(0);
     await captureSearch.fill(`Capture Paper ${unique}`);
     await captureSearch.press("Enter");
     const captureResult = capturePicker.locator(".claim-support-result-row").filter({ hasText: `Capture Paper ${unique}` });
@@ -65,6 +68,7 @@ test.describe("Slice 39 Evidence workspace reads", () => {
     const restoredCapture = page.getByRole("region", { name: "Record Evidence" });
     await expect(restoredCapture.locator('input[name="capturePaperId"]')).toHaveValue(capturePaperId);
     await expect(restoredCapture.locator(".evidence-paper-selection")).toContainText(`Selected Paper: Capture Paper ${unique}`);
+    await expect(restoredCapture.locator(".evidence-paper-results")).toHaveCount(0);
 
     const filters = page.getByRole("region", { name: "Filter Evidence" });
     await selectEvidencePaper(page, `Queue Paper ${unique}`, filters);

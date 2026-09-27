@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { createPlaywrightTestDatabaseClient } from "./playwright-database";
 import { expect, test } from "@playwright/test";
+import { selectPaper } from "./paper-picker";
 
 const nativePdf = fs.readFileSync(path.join(process.cwd(), "tests", "fixtures", "slice15", "native-text-unicode-2page.pdf"));
 
@@ -43,7 +44,7 @@ test.describe("Slice 28 PDF-first intake", () => {
     await page.locator("#pdf-file").setInputFiles(secondPdf);
     await page.getByRole("button", { name: "Stage PDF" }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${actualProjectId}/papers/pdf-intake/[0-9a-f-]+\\?saved=staged$`));
-    await page.getByLabel("Paper").selectOption(firstPaperId);
+    await selectPaper("PDF-first canonical study", page);
     await page.getByRole("button", { name: "Attach to existing Paper" }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${actualProjectId}/papers/${firstPaperId}/documents/[0-9a-f-]+\\?saved=pdf-intake$`));
 
