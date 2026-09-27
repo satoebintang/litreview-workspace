@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createPlaywrightTestDatabaseClient } from "./playwright-database";
 import { expect, test } from "@playwright/test";
+import { selectPaper } from "./paper-picker";
 
 
 async function getTestDbClient() {
@@ -31,15 +32,22 @@ test.describe("Slice 27 bibliographic intake", () => {
 
       const parsedRecords = page.locator("section").filter({ has: page.getByRole("heading", { name: "Parsed records" }) });
       const existing = parsedRecords.locator(".item").filter({ hasText: "Existing work" }).first();
-      await existing.locator("select[name=paperId]").selectOption(existingPaperId);
+      const candidateSelect = existing.locator("select[name=paperId]");
+      await expect(existing.locator(".paper-picker")).toHaveCount(0);
+      await expect(candidateSelect.locator("option")).toHaveCount(2);
+      await candidateSelect.selectOption(existingPaperId);
       await existing.getByRole("button", { name: "Match existing Paper" }).click();
       await expect(page.getByText("Current Paper:", { exact: false })).toBeVisible();
       await existing.getByRole("button", { name: "Clear resolution" }).click();
       await expect(existing.locator(".status")).toHaveText("unresolved");
-      await existing.locator("select[name=paperId]").selectOption(alternatePaperId);
-      await existing.getByRole("button", { name: "Match existing Paper" }).click();
+      await expect(existing.getByText(/Resolution history \(2\)/)).toBeVisible();
+      await existing.getByRole("button", { name: "Leave unresolved" }).click();
+      await expect(existing.locator(".status")).toHaveText("unresolved");
       await expect(existing.getByText(/Resolution history \(3\)/)).toBeVisible();
-      await expect(existing.getByText(/cleared/)).toBeVisible();
+      await selectPaper("Alternate work", existing);
+      await existing.getByRole("button", { name: "Match existing Paper" }).click();
+      await expect(existing.getByText(/Resolution history \(4\)/)).toBeVisible();
+      await expect(existing.locator(".revision-history li").filter({ hasText: "cleared" })).toHaveCount(2);
 
       const created = parsedRecords.locator(".item").filter({ hasText: "New imported work" }).first();
       await created.getByRole("button", { name: "Create canonical Paper" }).click();

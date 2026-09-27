@@ -4,6 +4,14 @@ import { DomainError } from "@/domain/errors";
 import { evidenceWorkspaceFilterSchema } from "@/domain/validation";
 import type { EvidenceWorkspaceFilter } from "./evidence-curation-services";
 import {
+  createPaperSelectionReadServices,
+  PAPER_OPTIONS_DEFAULT_PAGE_SIZE,
+  PAPER_OPTIONS_MAX_PAGE_SIZE,
+  PAPER_SEARCH_MAX_CODE_POINTS,
+  type PaperOption,
+  type SearchPaperOptionsInput,
+} from "./paper-selection-read-services";
+import {
   deriveEvidenceReviewState,
   evidenceReviewWarnings,
   mapEvidenceWorkspaceEvidence,
@@ -12,26 +20,14 @@ import {
 
 export const EVIDENCE_WORKSPACE_DEFAULT_PAGE_SIZE = 50;
 export const EVIDENCE_WORKSPACE_MAX_PAGE_SIZE = 100;
-export const EVIDENCE_PAPER_OPTIONS_DEFAULT_PAGE_SIZE = 20;
-export const EVIDENCE_PAPER_OPTIONS_MAX_PAGE_SIZE = 50;
-export const EVIDENCE_PAPER_SEARCH_MAX_CODE_POINTS = 200;
+export const EVIDENCE_PAPER_OPTIONS_DEFAULT_PAGE_SIZE = PAPER_OPTIONS_DEFAULT_PAGE_SIZE;
+export const EVIDENCE_PAPER_OPTIONS_MAX_PAGE_SIZE = PAPER_OPTIONS_MAX_PAGE_SIZE;
+export const EVIDENCE_PAPER_SEARCH_MAX_CODE_POINTS = PAPER_SEARCH_MAX_CODE_POINTS;
 export const evidenceWorkspaceStates = ["attention", "unreviewed", "needs_review", "accepted", "rejected", "all"] as const;
 export type EvidenceWorkspaceState = typeof evidenceWorkspaceStates[number];
 
-export type EvidencePaperOption = {
-  id: string;
-  title: string;
-  authors: string[];
-  publicationYear: number | null;
-  doi: string | null;
-};
-
-export type SearchEvidencePaperOptionsInput = {
-  projectId: string;
-  query?: string;
-  page?: number;
-  pageSize?: number;
-};
+export type EvidencePaperOption = PaperOption;
+export type SearchEvidencePaperOptionsInput = SearchPaperOptionsInput;
 
 type Row = Record<string, unknown>;
 
@@ -222,49 +218,8 @@ function countValue(value: unknown) {
   return count;
 }
 
-function paperOption(row: Row): EvidencePaperOption {
-  return {
-    id: String(row.id),
-    title: String(row.title),
-    authors: Array.isArray(row.authors) ? row.authors as string[] : [],
-    publicationYear: row.publication_year == null ? null : Number(row.publication_year),
-    doi: row.doi == null ? null : String(row.doi),
-  };
-}
-
-function normalizePaperSearch(input: SearchEvidencePaperOptionsInput) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    throw new DomainError("VALIDATION_ERROR", "Paper search input is invalid");
-  }
-  const projectId = ensureUuid(input.projectId, "Project");
-  if (input.query !== undefined && typeof input.query !== "string") {
-    throw new DomainError("VALIDATION_ERROR", "Paper search query must be text");
-  }
-  const query = (input.query ?? "").trim();
-  if (Array.from(query).length > EVIDENCE_PAPER_SEARCH_MAX_CODE_POINTS) {
-    throw new DomainError("VALIDATION_ERROR", `Paper search query cannot exceed ${EVIDENCE_PAPER_SEARCH_MAX_CODE_POINTS} Unicode code points`);
-  }
-  const page = input.page ?? 1;
-  if (!Number.isSafeInteger(page) || page < 1) throw new DomainError("VALIDATION_ERROR", "Paper search page must be a positive integer");
-  const requestedPageSize = input.pageSize ?? EVIDENCE_PAPER_OPTIONS_DEFAULT_PAGE_SIZE;
-  if (!Number.isSafeInteger(requestedPageSize) || requestedPageSize < 1) {
-    throw new DomainError("VALIDATION_ERROR", "Paper search page size must be a positive integer");
-  }
-  return {
-    projectId,
-    query,
-    page,
-    pageSize: Math.min(requestedPageSize, EVIDENCE_PAPER_OPTIONS_MAX_PAGE_SIZE),
-  };
-}
-
-function paperSearchPredicate(projectId: string, query: string) {
-  return query === ""
-    ? sql`paper.project_id=${projectId}`
-    : sql`paper.project_id=${projectId} and strpos(lower(paper.title), lower(${query})) > 0`;
-}
-
 export function createEvidenceWorkspaceReadServices(db: Database) {
+  const paperSelectionReads = createPaperSelectionReadServices(db);
   return {
     async getEvidenceWorkspacePage(projectId: string, input: EvidenceWorkspaceFilter = {}) {
       ensureUuid(projectId, "Project");
@@ -306,41 +261,11 @@ export function createEvidenceWorkspaceReadServices(db: Database) {
     },
 
     async searchEvidencePaperOptions(input: SearchEvidencePaperOptionsInput) {
-      const values = normalizePaperSearch(input);
-      return db.transaction(async (tx) => {
-        const countRows = rows(await tx.execute(sql`
-          select project.id as project_id, count(paper.id)::bigint as total_count
-          from projects project
-          left join papers paper on paper.project_id=project.id
-            and (${values.query === ""} or strpos(lower(paper.title), lower(${values.query})) > 0)
-          where project.id=${values.projectId}
-          group by project.id
-        `));
-        const countRow = countRows[0];
-        if (!countRow?.project_id) throw new DomainError("PROJECT_NOT_FOUND", "Project was not found");
-        const totalCount = countValue(countRow.total_count);
-        const bounds = pageBounds(values.page, values.pageSize, totalCount);
-        const optionRows = rows(await tx.execute(sql`
-          select paper.id, paper.title, paper.authors, paper.publication_year, paper.doi
-          from papers paper
-          where ${paperSearchPredicate(values.projectId, values.query)}
-          order by paper.created_at desc, paper.id desc
-          limit ${bounds.pageSize} offset ${(bounds.page - 1) * bounds.pageSize}
-        `));
-        return { ...bounds, items: optionRows.map(paperOption) };
-      }, { isolationLevel: "repeatable read", accessMode: "read only" });
+      return paperSelectionReads.searchPaperOptions(input);
     },
 
     async getEvidencePaperOption(projectId: string, paperId: string): Promise<EvidencePaperOption | null> {
-      ensureUuid(projectId, "Project");
-      ensureUuid(paperId, "Paper");
-      const optionRows = rows(await db.execute(sql`
-        select paper.id, paper.title, paper.authors, paper.publication_year, paper.doi
-        from papers paper
-        where paper.project_id=${projectId} and paper.id=${paperId}
-        limit 1
-      `));
-      return optionRows[0] ? paperOption(optionRows[0]) : null;
+      return paperSelectionReads.getPaperOption(projectId, paperId);
     },
   };
 }

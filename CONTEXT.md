@@ -344,12 +344,35 @@ latest event per Evidence × Label pair. Historical usage keeps the five
 released reachability paths regardless of later review, screening, Claim, or
 revision state.
 
-## Evidence Paper picker
+## Canonical Paper selection
 
-A bounded, Project-scoped Paper title search for manual Evidence capture and
-the queue Paper filter. Search returns compact options; exact selected-Paper
-resolution is separate from the visible search page. Queue `paperId` and
-capture `capturePaperId` are independent state.
+The shared Project-scoped Paper option read model returns only `id`, `title`,
+`authors`, `publicationYear`, and `doi`. Literal case-insensitive title search
+uses 20 rows by default, clamps at 50, limits query input to 200 Unicode code
+points, and returns exact counts from a read-only `REPEATABLE READ` count/page
+pair. Ordering is `created_at DESC, id DESC`. Search can exclude one optional
+Paper ID. Exact lookup is one Project-scoped SELECT.
+
+Batch lookup uses one set-based SQL SELECT with requested-ID ordinality. SQL
+deduplicates UUIDs by first occurrence, preserves that order, and returns an
+explicit null option for unavailable or foreign-Project IDs. It has no fixed
+ID-count cap or per-Paper queries.
+
+`PaperPicker` keeps its exact selected Paper independent from search results.
+It starts with no Paper search results and loads a page only after the user
+chooses Browse Papers or submits a nonempty search; focus does not load data.
+Required selection is caller-controlled and defaults to optional. The Evidence
+workspace delegates its existing search and exact-lookup APIs to this service;
+queue `paperId` and capture `capturePaperId` remain independent state.
+
+## Canonical Paper selector boundaries
+
+Deduplication, PDF matching, Protocol linking/relinking, and resolved
+Bibliographic-import correction use bounded Project-wide Paper selection.
+Import candidate matching for an ordinary unresolved record remains restricted
+to the computed candidate list. Project-wide retargeting is available only for
+the explicitly cleared state. Search controls do not change writer validation,
+Paper identity, or append-only resolution/history semantics.
 
 ## Synthesis comparison page
 
