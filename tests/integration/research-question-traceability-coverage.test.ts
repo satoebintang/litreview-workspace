@@ -1,18 +1,28 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import "dotenv/config";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { createDb } from "@/db/client";
 import { createReviewServices } from "@/application/services";
 import { createResearchQuestionTraceabilityServices } from "@/application/research-question-traceability-services";
 import { createResearchQuestionCoverageServices } from "@/application/research-question-coverage-services";
+import { schema } from "@/db/schema";
 
-const { db, client } = createDb(
-  process.env.DATABASE_URL ?? "postgres://litreview:litreview@localhost:5432/litreview",
-);
+const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://litreview:litreview@127.0.0.1:5432/litreview";
+const { db, client } = createDb(DATABASE_URL);
+const queryLog: string[] = [];
+const countedClient = postgres(DATABASE_URL, {
+  max: 5,
+  prepare: false,
+  debug: (_connection, query) => { queryLog.push(query); },
+});
+const countedDb = drizzle(countedClient, { schema });
 const reviewServices = createReviewServices(db);
 const traceabilityServices = createResearchQuestionTraceabilityServices(db);
 const coverageServices = createResearchQuestionCoverageServices(db, traceabilityServices.repo);
+const countedCoverageServices = createResearchQuestionCoverageServices(countedDb, traceabilityServices.repo);
 
 let projectId = "";
 
@@ -31,9 +41,9 @@ describe("Slice 20 Research Question Traceability Coverage & Read Projections", 
 
   afterAll(async () => {
     await client.unsafe(
-      "TRUNCATE TABLE doi_lookup_resolutions, doi_lookup_dispatches, bibliographic_metadata_result_authors, bibliographic_metadata_http_attempts, bibliographic_metadata_fetch_results, bibliographic_metadata_fetches, doi_lookup_requests, pdf_intake_resolutions, pdf_intake_metadata_fields, pdf_intake_metadata_results, pdf_intakes, bibliographic_import_resolutions, bibliographic_import_records, bibliographic_imports, ai_synthesis_decisions, ai_synthesis_result_groundings, ai_synthesis_results, ai_synthesis_dispatches, ai_synthesis_request_sources, ai_synthesis_request_supports, ai_synthesis_requests, ai_extraction_batch_items, ai_extraction_batches, ai_extraction_decision_evidence, ai_extraction_decisions, ai_extraction_result_groundings, ai_extraction_results, ai_extraction_dispatches, ai_extraction_request_pages, ai_extraction_requests, manuscript_snapshot_warnings, manuscript_snapshot_claim_bibliography_members, manuscript_snapshot_bibliography_entries, manuscript_snapshot_claim_items, manuscript_snapshot_prose_items, manuscript_snapshot_items, manuscript_snapshot_sections, manuscript_snapshots, research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_revisions, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents, evidence_set_composition_members, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, appraisal_revision_response_evidence, appraisal_revision_responses, appraisal_revisions, appraisals, appraisal_framework_overall_judgement_options, appraisal_framework_response_options, appraisal_framework_items, appraisal_framework_sections, appraisal_framework_versions, appraisal_frameworks, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects",
+      "TRUNCATE TABLE doi_lookup_resolutions, doi_lookup_dispatches, bibliographic_metadata_result_authors, bibliographic_metadata_http_attempts, bibliographic_metadata_fetch_results, bibliographic_metadata_fetches, doi_lookup_requests, pdf_intake_resolutions, pdf_intake_metadata_fields, pdf_intake_metadata_results, pdf_intakes, bibliographic_import_resolutions, bibliographic_import_records, bibliographic_imports, ai_synthesis_decisions, ai_synthesis_result_groundings, ai_synthesis_results, ai_synthesis_dispatches, ai_synthesis_request_sources, ai_synthesis_request_supports, ai_synthesis_requests, ai_extraction_batch_items, ai_extraction_batches, ai_extraction_decision_evidence, ai_extraction_decisions, ai_extraction_result_groundings, ai_extraction_results, ai_extraction_dispatches, ai_extraction_request_pages, ai_extraction_requests, manuscript_snapshot_warnings, manuscript_snapshot_claim_bibliography_members, manuscript_snapshot_bibliography_entries, manuscript_snapshot_claim_items, manuscript_snapshot_prose_items, manuscript_snapshot_items, manuscript_snapshot_sections, manuscript_snapshots, research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_revisions, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents,  evidence_set_membership_order_versions, evidence_set_paper_member_counts, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, appraisal_revision_response_evidence, appraisal_revision_responses, appraisal_revisions, appraisals, appraisal_framework_overall_judgement_options, appraisal_framework_response_options, appraisal_framework_items, appraisal_framework_sections, appraisal_framework_versions, appraisal_frameworks, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects",
     );
-    await client.end();
+    await Promise.all([client.end(), countedClient.end()]);
   });
 
   async function includedPaper(title: string) {
@@ -45,6 +55,14 @@ describe("Slice 20 Research Question Traceability Coverage & Read Projections", 
     });
     await reviewServices.recordFullTextScreeningDecision(projectId, paper.id, { decision: "include" });
     return paper;
+  }
+
+  async function addEvidenceToSet(setId: string, evidenceId: string) {
+    const current = await reviewServices.getEvidenceSet(projectId, setId);
+    return reviewServices.addEvidenceToSet(projectId, setId, {
+      evidenceId,
+      expectedRevisionId: current.currentRevision.id,
+    });
   }
 
   it("projects empty links with baseline flags and project-wide protocol context", async () => {
@@ -167,12 +185,8 @@ describe("Slice 20 Research Question Traceability Coverage & Read Projections", 
       name: "Reviewed Trials",
       description: "Includes accepted evidence",
     });
-    await reviewServices.addEvidenceToSet(projectId, createdSet.set.id, {
-      evidenceId: ev1.id,
-    });
-    await reviewServices.addEvidenceToSet(projectId, createdSet.set.id, {
-      evidenceId: ev2.id,
-    });
+    await addEvidenceToSet(createdSet.set.id, ev1.id);
+    await addEvidenceToSet(createdSet.set.id, ev2.id);
 
     // Link set to RQ
     await traceabilityServices.linkEvidenceSet({
@@ -194,6 +208,62 @@ describe("Slice 20 Research Question Traceability Coverage & Read Projections", 
     expect(setCov.reviewCounts.needsReview).toBe(0);
     expect(setCov.reviewCounts.rejected).toBe(0);
     expect(projection.flags.evidenceSets).toEqual([]);
+  });
+
+  it("aggregates exact latest linked Set summaries with a fixed query count", async () => {
+    const oneSetQuestion = await reviewServices.createResearchQuestion(projectId, {
+      identifier: "RQ-one-set",
+      label: "One linked Set",
+    });
+    const manySetsQuestion = await reviewServices.createResearchQuestion(projectId, {
+      identifier: "RQ-many-sets",
+      label: "Several linked Sets",
+    });
+    const paper = await reviewServices.addPaper(projectId, { title: "Set coverage aggregate study" });
+    const evidence = await reviewServices.recordEvidence(projectId, {
+      paperId: paper.id,
+      sourceText: "Shared composition evidence",
+      pageNumber: 1,
+    });
+    await reviewServices.appendEvidenceReviewDecision(projectId, evidence.id, { decision: "accepted" });
+
+    const sets = [];
+    const expectedRevisionIds = new Map<string, string>();
+    for (let index = 0; index < 4; index += 1) {
+      const created = await reviewServices.createEvidenceSet(projectId, { name: `Aggregate set ${index + 1}` });
+      const added = await addEvidenceToSet(created.set.id, evidence.id);
+      sets.push(created.set);
+      expectedRevisionIds.set(created.set.id, added.revision.id);
+    }
+    await traceabilityServices.linkEvidenceSet({
+      projectId,
+      questionId: oneSetQuestion.id,
+      evidenceSetId: sets[0]!.id,
+    });
+    for (const set of sets) {
+      await traceabilityServices.linkEvidenceSet({ projectId, questionId: manySetsQuestion.id, evidenceSetId: set.id });
+    }
+
+    const selectCount = async (questionId: string) => {
+      queryLog.length = 0;
+      const projection = await countedCoverageServices.getQuestionTraceability(projectId, questionId);
+      return {
+        projection,
+        compositionReads: queryLog.filter((query) => /evidence_set_membership_order_versions/i.test(query)).length,
+      };
+    };
+    const oneSet = await selectCount(oneSetQuestion.id);
+    const manySets = await selectCount(manySetsQuestion.id);
+
+    expect(oneSet.compositionReads).toBe(1);
+    expect(manySets.compositionReads).toBe(oneSet.compositionReads);
+    expect(manySets.projection.evidenceSetCoverage).toHaveLength(4);
+    for (const coverage of manySets.projection.evidenceSetCoverage) {
+      expect(coverage.memberCount).toBe(1);
+      expect(coverage.distinctPaperCount).toBe(1);
+      expect(coverage.reviewCounts).toEqual({ accepted: 1, needsReview: 0, unreviewed: 0, rejected: 0 });
+      expect(coverage.latestCompositionRevisionId).toBe(expectedRevisionIds.get(coverage.evidenceSetId));
+    }
   });
 
   it("projects synthesis coverage and enforces flag suppression for withdrawn statements", async () => {
@@ -715,7 +785,7 @@ describe("Slice 20 Research Question Traceability Coverage & Read Projections", 
     });
 
     const setRes = await reviewServices.createEvidenceSet(projectId, { name: "Set 1" });
-    await reviewServices.addEvidenceToSet(projectId, setRes.set.id, { evidenceId: ev.id });
+    await addEvidenceToSet(setRes.set.id, ev.id);
 
     const stmt = await reviewServices.createSynthesisStatement(projectId, {
       statementText: "Synthesis statement",

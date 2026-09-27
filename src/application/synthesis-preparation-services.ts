@@ -37,6 +37,7 @@ import {
   idSchema,
 } from "@/domain/validation";
 import { writeActiveSynthesisRevision, type ReviewTransaction, type SynthesisWriterOptions } from "./synthesis-writer";
+import { resolveEvidenceSetCompositionRevisionMembers } from "./evidence-set-composition-resolver";
 import type {
   PaperRepository,
   SynthesisStatementRepository,
@@ -55,6 +56,15 @@ function ensureId(id: string): string {
   const result = idSchema.safeParse(id);
   if (!result.success) throw new DomainError("VALIDATION_ERROR", "Identifier must be a UUID", result.error.issues);
   return result.data;
+}
+
+function compositionMembersJson(members: Array<{ membershipId: string; evidenceId: string; paperId: string; position: number }>): string {
+  return JSON.stringify(members.map((member) => ({
+    membership_id: member.membershipId,
+    evidence_id: member.evidenceId,
+    paper_id: member.paperId,
+    position: member.position,
+  })));
 }
 
 function evidenceReviewState(value: string | undefined): EvidenceReviewState {
@@ -225,15 +235,28 @@ export function createSynthesisPreparationServices(
             eq(evidenceSetCompositionRevisions.evidenceSetId, evidenceSetId),
           ),
         )
-        .orderBy(desc(evidenceSetCompositionRevisions.sequence))
+        .orderBy(desc(evidenceSetCompositionRevisions.setOrdinal))
         .limit(1);
 
       if (!latestRevRows[0]) {
         throw new DomainError("CROSS_PROJECT_REFERENCE", "Evidence Set does not exist in this project");
       }
       const latestCompositionRevisionId = latestRevRows[0].id;
+      const compositionMembers = await resolveEvidenceSetCompositionRevisionMembers(
+        db,
+        projectId,
+        evidenceSetId,
+        latestCompositionRevisionId,
+      );
+      if (compositionMembers.length === 0) return [];
+      const membersJson = compositionMembersJson(compositionMembers);
 
       const rows = (await db.execute(sql`
+        with composition_members as (
+          select member.evidence_id
+          from jsonb_to_recordset(${membersJson}::jsonb)
+            as member(membership_id uuid, evidence_id uuid, paper_id uuid, position integer)
+        )
         select
           f.id as field_id,
           f.project_id,
@@ -247,23 +270,17 @@ export function createSynthesisPreparationServices(
           f.archived_at as field_archived_at,
           count(distinct r.id)::int as candidate_revision_count,
           count(distinct r.paper_id)::int as candidate_paper_count
-        from evidence_set_composition_members cm
-        join evidence_set_memberships m
-          on m.project_id = cm.project_id
-         and m.evidence_set_id = cm.evidence_set_id
-         and m.id = cm.membership_id
+        from composition_members cm
         join extraction_revision_evidence ere
-          on ere.project_id = m.project_id
-         and ere.evidence_id = m.evidence_id
+          on ere.project_id = ${projectId}
+         and ere.evidence_id = cm.evidence_id
         join extraction_value_revisions r
           on r.project_id = ere.project_id
          and r.id = ere.revision_id
         join extraction_fields f
           on f.project_id = r.project_id
          and f.id = r.field_id
-        where cm.project_id = ${projectId}
-          and cm.evidence_set_id = ${evidenceSetId}
-          and cm.composition_revision_id = ${latestCompositionRevisionId}
+        where r.project_id = ${projectId}
           and r.finalized_at is not null
           and f.archived_at is null
         group by f.id
@@ -294,58 +311,66 @@ export function createSynthesisPreparationServices(
     ): Promise<SynthesisPreparation> {
       await deps.requireProject(projectId);
       const values = validate(createSynthesisPreparationSchema, input);
+      return db.transaction(async (tx) => {
+        const [evidenceSet] = await tx
+          .select()
+          .from(evidenceSets)
+          .where(and(eq(evidenceSets.projectId, projectId), eq(evidenceSets.id, values.evidenceSetId)))
+          .for("update")
+          .limit(1);
 
-      const [evidenceSet] = await db
-        .select()
-        .from(evidenceSets)
-        .where(and(eq(evidenceSets.projectId, projectId), eq(evidenceSets.id, values.evidenceSetId)))
-        .limit(1);
+        if (!evidenceSet) {
+          throw new DomainError("CROSS_PROJECT_REFERENCE", "Evidence Set does not belong to this project");
+        }
+        if (evidenceSet.archivedAt) {
+          throw new DomainError("VALIDATION_ERROR", "Cannot create synthesis preparation from an archived Evidence Set");
+        }
 
-      if (!evidenceSet) {
-        throw new DomainError("CROSS_PROJECT_REFERENCE", "Evidence Set does not belong to this project");
-      }
-      if (evidenceSet.archivedAt) {
-        throw new DomainError("VALIDATION_ERROR", "Cannot create synthesis preparation from an archived Evidence Set");
-      }
+        const [latestRev] = await tx
+          .select()
+          .from(evidenceSetCompositionRevisions)
+          .where(
+            and(
+              eq(evidenceSetCompositionRevisions.projectId, projectId),
+              eq(evidenceSetCompositionRevisions.evidenceSetId, values.evidenceSetId),
+            ),
+          )
+          .orderBy(desc(evidenceSetCompositionRevisions.setOrdinal))
+          .limit(1);
 
-      const [latestRev] = await db
-        .select()
-        .from(evidenceSetCompositionRevisions)
-        .where(
-          and(
-            eq(evidenceSetCompositionRevisions.projectId, projectId),
-            eq(evidenceSetCompositionRevisions.evidenceSetId, values.evidenceSetId),
-          ),
-        )
-        .orderBy(desc(evidenceSetCompositionRevisions.sequence))
-        .limit(1);
+        if (!latestRev) {
+          throw new DomainError("DATABASE_CONSTRAINT", "Evidence Set has no composition");
+        }
+        if (values.expectedRevisionId !== undefined && latestRev.id !== values.expectedRevisionId) {
+          throw new DomainError(
+            "CONCURRENT_MODIFICATION",
+            "This Evidence Set changed in another session. Reload the current composition before continuing.",
+          );
+        }
 
-      if (!latestRev) {
-        throw new DomainError("DATABASE_CONSTRAINT", "Evidence Set has no composition");
-      }
+        const field = await deps.extractionFieldRepo.findById(projectId, values.extractionFieldId);
+        if (!field) {
+          throw new DomainError("CROSS_PROJECT_REFERENCE", "Extraction Field does not belong to this project");
+        }
+        if (field.archivedAt) {
+          throw new DomainError("VALIDATION_ERROR", "Cannot create synthesis preparation from an archived Extraction Field");
+        }
 
-      const field = await deps.extractionFieldRepo.findById(projectId, values.extractionFieldId);
-      if (!field) {
-        throw new DomainError("CROSS_PROJECT_REFERENCE", "Extraction Field does not belong to this project");
-      }
-      if (field.archivedAt) {
-        throw new DomainError("VALIDATION_ERROR", "Cannot create synthesis preparation from an archived Extraction Field");
-      }
+        const [prep] = await tx
+          .insert(synthesisPreparations)
+          .values({
+            projectId,
+            evidenceSetId: values.evidenceSetId,
+            evidenceSetCompositionRevisionId: latestRev.id,
+            extractionFieldId: values.extractionFieldId,
+            workingTitle: values.workingTitle ?? null,
+            workingNote: values.workingNote ?? null,
+            status: "active",
+          })
+          .returning();
 
-      const [prep] = await db
-        .insert(synthesisPreparations)
-        .values({
-          projectId,
-          evidenceSetId: values.evidenceSetId,
-          evidenceSetCompositionRevisionId: latestRev.id,
-          extractionFieldId: values.extractionFieldId,
-          workingTitle: values.workingTitle ?? null,
-          workingNote: values.workingNote ?? null,
-          status: "active",
-        })
-        .returning();
-
-      return mapPreparation(prep);
+        return mapPreparation(prep);
+      });
     },
 
     async listSynthesisPreparations(projectId: string): Promise<SynthesisPreparationSummary[]> {
@@ -360,11 +385,12 @@ export function createSynthesisPreparationServices(
           es.archived_at as evidence_set_archived_at,
           p.evidence_set_composition_revision_id,
           cr.sequence as pinned_composition_sequence,
+          cr.set_ordinal as pinned_composition_ordinal,
           (
-            select max(sequence)
+            select max(set_ordinal)
             from evidence_set_composition_revisions
             where project_id = p.project_id and evidence_set_id = p.evidence_set_id
-          ) as latest_composition_sequence,
+          ) as latest_composition_ordinal,
           p.extraction_field_id,
           f.name as extraction_field_name,
           f.field_type as extraction_field_type,
@@ -381,22 +407,7 @@ export function createSynthesisPreparationServices(
             select count(*)::int
             from synthesis_preparation_selections s
             where s.project_id = p.project_id and s.preparation_id = p.id
-          ) as selected_count,
-          (
-            select count(distinct r.id)::int
-            from evidence_set_composition_members cm
-            join evidence_set_memberships m
-              on m.project_id = cm.project_id and m.evidence_set_id = cm.evidence_set_id and m.id = cm.membership_id
-            join extraction_revision_evidence ere
-              on ere.project_id = m.project_id and ere.evidence_id = m.evidence_id
-            join extraction_value_revisions r
-              on r.project_id = ere.project_id and r.id = ere.revision_id
-            where cm.project_id = p.project_id
-              and cm.evidence_set_id = p.evidence_set_id
-              and cm.composition_revision_id = p.evidence_set_composition_revision_id
-              and r.field_id = p.extraction_field_id
-              and r.finalized_at is not null
-          ) as candidate_count
+          ) as selected_count
         from synthesis_preparations p
         join evidence_sets es on es.project_id = p.project_id and es.id = p.evidence_set_id
         join evidence_set_composition_revisions cr on cr.project_id = p.project_id and cr.evidence_set_id = p.evidence_set_id and cr.id = p.evidence_set_composition_revision_id
@@ -405,9 +416,34 @@ export function createSynthesisPreparationServices(
         order by p.created_at desc
       `)) as unknown as Array<Record<string, unknown>>;
 
+      const candidateCountRows = rows.length === 0 ? [] : await db.execute(sql`
+        select p.id as preparation_id, count(distinct r.id)::int as candidate_count
+        from synthesis_preparations p
+        join evidence_set_composition_revisions pinned
+          on pinned.project_id=p.project_id and pinned.evidence_set_id=p.evidence_set_id
+         and pinned.id=p.evidence_set_composition_revision_id
+        join evidence_set_membership_order_versions ov
+          on ov.project_id=pinned.project_id and ov.evidence_set_id=pinned.evidence_set_id
+         and ov.valid_from_ordinal <= pinned.set_ordinal
+         and (ov.valid_to_ordinal is null or pinned.set_ordinal < ov.valid_to_ordinal)
+        join evidence_set_memberships m
+          on m.project_id=ov.project_id and m.evidence_set_id=ov.evidence_set_id and m.id=ov.membership_id
+        join extraction_revision_evidence ere
+          on ere.project_id=m.project_id and ere.evidence_id=m.evidence_id
+        join extraction_value_revisions r
+          on r.project_id=ere.project_id and r.id=ere.revision_id
+         and r.field_id=p.extraction_field_id and r.finalized_at is not null
+        where p.project_id=${projectId}
+        group by p.id
+      `) as unknown as Array<Record<string, unknown>>;
+      const candidateCountByPreparationId = new Map(candidateCountRows.map((row) => [
+        String(row.preparation_id), Number(row.candidate_count),
+      ]));
+
       return rows.map((row) => {
         const pinnedSeq = Number(row.pinned_composition_sequence);
-        const latestSeq = Number(row.latest_composition_sequence);
+        const pinnedOrdinal = Number(row.pinned_composition_ordinal);
+        const latestOrdinal = Number(row.latest_composition_ordinal);
         return {
           id: String(row.id),
           projectId: String(row.project_id),
@@ -424,8 +460,8 @@ export function createSynthesisPreparationServices(
           targetSynthesisStatementId: row.target_synthesis_statement_id as string | null,
           status: row.status as SynthesisPreparation["status"],
           finalizedSynthesisRevisionId: row.finalized_synthesis_revision_id as string | null,
-          sourceSetChanged: latestSeq > pinnedSeq,
-          candidateCount: Number(row.candidate_count),
+          sourceSetChanged: latestOrdinal > pinnedOrdinal,
+          candidateCount: candidateCountByPreparationId.get(String(row.id)) ?? 0,
           selectedCount: Number(row.selected_count),
           createdAt: row.created_at as Date,
           updatedAt: row.updated_at as Date,
@@ -465,7 +501,7 @@ export function createSynthesisPreparationServices(
       }
 
       const [pinnedCompRow] = await db
-        .select({ sequence: evidenceSetCompositionRevisions.sequence })
+        .select({ sequence: evidenceSetCompositionRevisions.sequence, setOrdinal: evidenceSetCompositionRevisions.setOrdinal })
         .from(evidenceSetCompositionRevisions)
         .where(
           and(
@@ -477,7 +513,7 @@ export function createSynthesisPreparationServices(
         .limit(1);
 
       const [latestCompRow] = await db
-        .select({ sequence: evidenceSetCompositionRevisions.sequence })
+        .select({ sequence: evidenceSetCompositionRevisions.sequence, setOrdinal: evidenceSetCompositionRevisions.setOrdinal })
         .from(evidenceSetCompositionRevisions)
         .where(
           and(
@@ -485,11 +521,13 @@ export function createSynthesisPreparationServices(
             eq(evidenceSetCompositionRevisions.evidenceSetId, preparation.evidenceSetId),
           ),
         )
-        .orderBy(desc(evidenceSetCompositionRevisions.sequence))
+        .orderBy(desc(evidenceSetCompositionRevisions.setOrdinal))
         .limit(1);
 
       const pinnedSeq = Number(pinnedCompRow?.sequence ?? 0);
       const latestSeq = Number(latestCompRow?.sequence ?? 0);
+      const pinnedOrdinal = Number(pinnedCompRow?.setOrdinal ?? 0);
+      const latestOrdinal = Number(latestCompRow?.setOrdinal ?? 0);
 
       const fieldRow = await deps.extractionFieldRepo.findById(projectId, preparation.extractionFieldId);
       if (!fieldRow) {
@@ -536,12 +574,22 @@ export function createSynthesisPreparationServices(
       const selectedSet = new Set(selectionRows.map((r) => r.extractionRevisionId));
 
       // Query candidates with connecting evidence, ordered deterministically
-      const candidateRows = (await db.execute(sql`
-        with connecting as (
+      const pinnedMembers = await resolveEvidenceSetCompositionRevisionMembers(
+        db,
+        projectId,
+        preparation.evidenceSetId,
+        preparation.evidenceSetCompositionRevisionId,
+      );
+      const candidateRows = pinnedMembers.length === 0 ? [] : (await db.execute(sql`
+        with pinned_members as (
+          select member.membership_id, member.evidence_id, member.position
+          from jsonb_to_recordset(${compositionMembersJson(pinnedMembers)}::jsonb)
+            as member(membership_id uuid, evidence_id uuid, paper_id uuid, position integer)
+        ), connecting as (
           select
-            cm.membership_id,
-            cm.sort_order as membership_order,
-            m.evidence_id,
+            pm.membership_id,
+            pm.position as membership_order,
+            pm.evidence_id,
             e.source_text,
             e.page_number,
             e.full_text_document_id,
@@ -552,14 +600,10 @@ export function createSynthesisPreparationServices(
             d.archived_at as document_archived_at,
             coalesce(erd.decision, 'unreviewed') as evidence_curation_decision,
             ere.revision_id
-          from evidence_set_composition_members cm
-          join evidence_set_memberships m
-            on m.project_id = cm.project_id
-           and m.evidence_set_id = cm.evidence_set_id
-           and m.id = cm.membership_id
+          from pinned_members pm
           join evidence e
-            on e.project_id = m.project_id
-           and e.id = m.evidence_id
+            on e.project_id = ${projectId}
+           and e.id = pm.evidence_id
           left join full_text_documents d
             on d.project_id = e.project_id
            and d.id = e.full_text_document_id
@@ -574,9 +618,6 @@ export function createSynthesisPreparationServices(
           join extraction_revision_evidence ere
             on ere.project_id = e.project_id
            and ere.evidence_id = e.id
-          where cm.project_id = ${projectId}
-            and cm.evidence_set_id = ${preparation.evidenceSetId}
-            and cm.composition_revision_id = ${preparation.evidenceSetCompositionRevisionId}
         )
         select
           r.id as revision_id,
@@ -897,7 +938,7 @@ export function createSynthesisPreparationServices(
         },
         pinnedCompositionSequence: pinnedSeq,
         latestCompositionSequence: latestSeq,
-        sourceSetChanged: latestSeq > pinnedSeq,
+        sourceSetChanged: latestOrdinal > pinnedOrdinal,
         field,
         targetStatement,
         currentTargetRevision,
@@ -1001,6 +1042,13 @@ export function createSynthesisPreparationServices(
         // Approved Correction 3: Validate ONLY newly added IDs (desired - existing).
         // Removed and unchanged remain permitted even if unchanged drifted to ineligible.
         if (addedIds.length > 0) {
+          const pinnedMembers = await resolveEvidenceSetCompositionRevisionMembers(
+            tx,
+            projectId,
+            prep.evidenceSetId,
+            prep.evidenceSetCompositionRevisionId,
+          );
+          const pinnedEvidenceIdsJson = JSON.stringify(pinnedMembers.map((member) => member.evidenceId));
           const addedRows = (await tx.execute(sql`
             select
               r.id, r.project_id, r.field_id, r.finalized_at, r.value_state,
@@ -1008,17 +1056,10 @@ export function createSynthesisPreparationServices(
               coalesce(fd.decision, 'not_started') as full_text_state,
               exists (
                 select 1
-                from evidence_set_composition_members cm
-                join evidence_set_memberships m
-                  on m.project_id = cm.project_id
-                 and m.evidence_set_id = cm.evidence_set_id
-                 and m.id = cm.membership_id
+                from jsonb_array_elements_text(${pinnedEvidenceIdsJson}::jsonb) pinned(evidence_id)
                 join extraction_revision_evidence ere
-                  on ere.project_id = m.project_id
-                 and ere.evidence_id = m.evidence_id
-                where cm.project_id = ${projectId}
-                  and cm.evidence_set_id = ${prep.evidenceSetId}
-                  and cm.composition_revision_id = ${prep.evidenceSetCompositionRevisionId}
+                  on ere.project_id = r.project_id
+                 and ere.evidence_id = pinned.evidence_id::uuid
                   and ere.revision_id = r.id
               ) as is_reachable
             from extraction_value_revisions r

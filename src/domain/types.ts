@@ -50,7 +50,7 @@ export type ExtractionValueState = "present" | "not_reported" | "not_applicable"
 export type EvidenceReviewDecisionValue = "needs_review" | "accepted" | "rejected";
 export type EvidenceReviewState = "unreviewed" | EvidenceReviewDecisionValue;
 export type EvidenceLabelEventType = "assigned" | "removed";
-export type EvidenceSetCompositionOperationKind = "created" | "added" | "readded" | "removed" | "reordered";
+export type EvidenceSetCompositionOperationKind = "created" | "added" | "readded" | "removed" | "reordered" | "moved";
 
 export type SupportStatus = "supported" | "unsupported";
 export type ClaimLifecycle = "active" | "withdrawn";
@@ -948,6 +948,7 @@ export interface SynthesisPreparationContext {
 
 export interface CreateSynthesisPreparationInput {
   evidenceSetId: string;
+  expectedRevisionId?: string;
   extractionFieldId: string;
   workingTitle?: string | null;
   workingNote?: string | null;

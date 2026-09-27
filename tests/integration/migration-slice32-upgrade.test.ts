@@ -15,6 +15,8 @@ const baseUrl = resolveDatabaseUrl();
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
 const migrationPath = path.join(migrationFolder, "0033_storage_materialization_recovery.sql");
 const migrationHash = createHash("sha256").update(fs.readFileSync(migrationPath)).digest("hex");
+const slice45MigrationPath = path.join(migrationFolder, "0034_evidence_set_composition_timeline.sql");
+const slice45MigrationHash = createHash("sha256").update(fs.readFileSync(slice45MigrationPath)).digest("hex");
 
 function databaseUrl(name: string) {
   const url = new URL(baseUrl);
@@ -35,16 +37,19 @@ function create0031MigrationFolder() {
   const target = path.join(tempRoot, "drizzle");
   fs.cpSync(migrationFolder, target, {
     recursive: true,
-    filter: (source) => ![
-      "0032_hot_path_hardening.sql", "0032_snapshot.json",
-      "0033_storage_materialization_recovery.sql", "0033_snapshot.json",
-    ].includes(path.basename(source)),
+    filter: (source) => {
+      const versionedFile = path.basename(source).match(/^(\d{4})_.+\.(?:sql|json)$/);
+      return !versionedFile || Number(versionedFile[1]) <= 31;
+    },
   });
   const journalPath = path.join(target, "meta", "_journal.json");
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
     entries: Array<{ tag: string }>;
   };
-  journal.entries = journal.entries.filter((entry) => !["0032_hot_path_hardening", "0033_storage_materialization_recovery"].includes(entry.tag));
+  journal.entries = journal.entries.filter((entry) => {
+    const version = entry.tag.match(/^(\d{4})_/);
+    return !version || Number(version[1]) <= 31;
+  });
   fs.writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   return { tempRoot, folder: target };
 }
@@ -142,7 +147,7 @@ describe("Slice 34 hot-path migration boundary", () => {
     try {
       await migrate(db.db, { migrationsFolder: migrationFolder });
       const [latest] = await db.client`select hash from drizzle.__drizzle_migrations order by id desc limit 1`;
-      expect(latest.hash).toBe(migrationHash);
+      expect(latest.hash).toBe(slice45MigrationHash);
       const indexes = await comparisonIndexState(db.db);
       expect([...indexes.keys()]).toEqual([
         "retrieved_records_project_doi_comparison_idx",
@@ -173,10 +178,11 @@ describe("Slice 34 hot-path migration boundary", () => {
 
       await migrate(db.db, { migrationsFolder: migrationFolder });
 
-      const [latest] = await db.client`select hash from drizzle.__drizzle_migrations order by id desc limit 1`;
+      const appliedHashes = await db.client`select hash from drizzle.__drizzle_migrations order by id`;
       const afterData = await researchDataFingerprint(db.db, projectId);
       const afterIndexes = await comparisonIndexState(db.db);
-      expect(latest.hash).toBe(migrationHash);
+      expect(appliedHashes.map((row) => row.hash)).toContain(migrationHash);
+      expect(appliedHashes.at(-1)?.hash).toBe(slice45MigrationHash);
       expect(afterData).toEqual(beforeData);
       expect(afterIndexes.get("retrieved_records_project_title_comparison_idx")).toBe(beforeIndexes.get("retrieved_records_project_title_comparison_idx"));
       expect(afterIndexes.has("retrieved_records_project_source_record_comparison_idx")).toBe(true);

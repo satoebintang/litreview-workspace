@@ -41,23 +41,68 @@ export async function archiveEvidenceSetAction(form: FormData) {
 export async function addEvidenceToSetAction(form: FormData) {
   const projectId = text(form, "projectId");
   const evidenceSetId = text(form, "evidenceSetId");
+  let revisionId: string;
   try {
-    await reviewServices.addEvidenceToSet(projectId, evidenceSetId, { evidenceId: text(form, "evidenceId") });
+    const result = await reviewServices.addEvidenceToSet(projectId, evidenceSetId, {
+      evidenceId: text(form, "evidenceId"), expectedRevisionId: text(form, "expectedRevisionId"),
+    });
+    revisionId = result.revision.id;
   } catch (error) {
     fail(`/projects/${projectId}/evidence-sets/${evidenceSetId}`, error);
   }
-  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=member`);
+  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=member&revisionId=${revisionId}`);
+}
+
+export async function addEvidenceToSelectedSetAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const evidenceId = text(form, "evidenceId");
+  const selection = text(form, "setRevision").split(".");
+  const evidenceSetId = selection[0] ?? "";
+  const expectedRevisionId = selection[1] ?? "";
+  let revisionId: string;
+  try {
+    const result = await reviewServices.addEvidenceToSet(projectId, evidenceSetId, { evidenceId, expectedRevisionId });
+    revisionId = result.revision.id;
+  } catch (error) {
+    fail(`/projects/${projectId}/evidence/${evidenceId}`, error);
+  }
+  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=member&revisionId=${revisionId}`);
 }
 
 export async function removeEvidenceFromSetAction(form: FormData) {
   const projectId = text(form, "projectId");
   const evidenceSetId = text(form, "evidenceSetId");
+  let revisionId: string;
   try {
-    await reviewServices.removeEvidenceFromSet(projectId, evidenceSetId, text(form, "evidenceId"));
+    const result = await reviewServices.removeEvidenceFromSet(projectId, evidenceSetId, {
+      evidenceId: text(form, "evidenceId"), expectedRevisionId: text(form, "expectedRevisionId"),
+    });
+    revisionId = result.revision.id;
   } catch (error) {
     fail(`/projects/${projectId}/evidence-sets/${evidenceSetId}`, error);
   }
-  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=member`);
+  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=member&revisionId=${revisionId}`);
+}
+
+export async function moveEvidenceSetMembershipAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const evidenceSetId = text(form, "evidenceSetId");
+  let revisionId: string;
+  let moved: boolean;
+  const direction = text(form, "direction");
+  try {
+    const result = await reviewServices.moveEvidenceSetMembership(projectId, evidenceSetId, {
+      expectedRevisionId: text(form, "expectedRevisionId"),
+      membershipId: text(form, "membershipId"),
+      direction: direction as "up" | "down",
+    });
+    revisionId = result.revision.id;
+    moved = result.moved;
+  } catch (error) {
+    fail(`/projects/${projectId}/evidence-sets/${evidenceSetId}`, error);
+  }
+  if (!moved) redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=boundary&direction=${direction}`);
+  redirect(`/projects/${projectId}/evidence-sets/${evidenceSetId}?saved=member&revisionId=${revisionId}`);
 }
 
 export async function reorderEvidenceSetAction(form: FormData) {

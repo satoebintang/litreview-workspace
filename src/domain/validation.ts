@@ -75,14 +75,22 @@ export const updateEvidenceSetMetadataSchema = z.object({
 
 export const evidenceSetMembershipInputSchema = z.object({
   evidenceId: idSchema,
+  expectedRevisionId: idSchema,
 });
 
 export const reorderEvidenceSetSchema = z.object({
   evidenceIds: z.array(idSchema),
+  expectedRevisionId: idSchema.optional(),
 }).superRefine((value, ctx) => {
   if (new Set(value.evidenceIds).size !== value.evidenceIds.length) {
     ctx.addIssue({ code: "custom", path: ["evidenceIds"], message: "Evidence Set order cannot contain duplicates" });
   }
+});
+
+export const moveEvidenceSetMembershipSchema = z.object({
+  expectedRevisionId: idSchema,
+  membershipId: idSchema,
+  direction: z.enum(["up", "down"]),
 });
 
 export const appendEvidenceSetAnnotationSchema = z.object({
@@ -249,6 +257,7 @@ export const synthesisWithdrawalSchema = z.object({
 
 export const createSynthesisPreparationSchema = z.object({
   evidenceSetId: idSchema,
+  expectedRevisionId: idSchema.optional(),
   extractionFieldId: idSchema,
   workingTitle: synthesisText.max(500).nullable().optional(),
   workingNote: synthesisText.max(10000).nullable().optional(),
@@ -605,6 +614,7 @@ export type CreateEvidenceSetInput = z.input<typeof createEvidenceSetSchema>;
 export type UpdateEvidenceSetMetadataInput = z.input<typeof updateEvidenceSetMetadataSchema>;
 export type EvidenceSetMembershipInput = z.input<typeof evidenceSetMembershipInputSchema>;
 export type ReorderEvidenceSetInput = z.input<typeof reorderEvidenceSetSchema>;
+export type MoveEvidenceSetMembershipInput = z.input<typeof moveEvidenceSetMembershipSchema>;
 export type AppendEvidenceSetAnnotationInput = z.input<typeof appendEvidenceSetAnnotationSchema>;
 export type CreateSynthesisPreparationSchemaInput = z.input<typeof createSynthesisPreparationSchema>;
 export type UpdateSynthesisPreparationSchemaInput = z.input<typeof updateSynthesisPreparationSchema>;

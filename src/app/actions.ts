@@ -215,8 +215,14 @@ export async function archiveEvidenceSetAction(  form: Parameters<typeof actions
 export async function addEvidenceToSetAction(  form: Parameters<typeof actionsEvidenceSets.addEvidenceToSetAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.addEvidenceToSetAction>>> {
   return actionsEvidenceSets.addEvidenceToSetAction(form);
 }
+export async function addEvidenceToSelectedSetAction(  form: Parameters<typeof actionsEvidenceSets.addEvidenceToSelectedSetAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.addEvidenceToSelectedSetAction>>> {
+  return actionsEvidenceSets.addEvidenceToSelectedSetAction(form);
+}
 export async function removeEvidenceFromSetAction(  form: Parameters<typeof actionsEvidenceSets.removeEvidenceFromSetAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.removeEvidenceFromSetAction>>> {
   return actionsEvidenceSets.removeEvidenceFromSetAction(form);
+}
+export async function moveEvidenceSetMembershipAction(  form: Parameters<typeof actionsEvidenceSets.moveEvidenceSetMembershipAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.moveEvidenceSetMembershipAction>>> {
+  return actionsEvidenceSets.moveEvidenceSetMembershipAction(form);
 }
 export async function reorderEvidenceSetAction(  form: Parameters<typeof actionsEvidenceSets.reorderEvidenceSetAction>[0]): Promise<Awaited<ReturnType<typeof actionsEvidenceSets.reorderEvidenceSetAction>>> {
   return actionsEvidenceSets.reorderEvidenceSetAction(form);

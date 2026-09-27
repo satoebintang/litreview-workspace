@@ -20,7 +20,7 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
 
   afterAll(async () => {
     await client.unsafe(
-      "TRUNCATE TABLE doi_lookup_resolutions, doi_lookup_dispatches, bibliographic_metadata_result_authors, bibliographic_metadata_http_attempts, bibliographic_metadata_fetch_results, bibliographic_metadata_fetches, doi_lookup_requests, pdf_intake_resolutions, pdf_intake_metadata_fields, pdf_intake_metadata_results, pdf_intakes, bibliographic_import_resolutions, bibliographic_import_records, bibliographic_imports, ai_synthesis_decisions, ai_synthesis_result_groundings, ai_synthesis_results, ai_synthesis_dispatches, ai_synthesis_request_sources, ai_synthesis_request_supports, ai_synthesis_requests, ai_extraction_batch_items, ai_extraction_batches, ai_extraction_decision_evidence, ai_extraction_decisions, ai_extraction_result_groundings, ai_extraction_results, ai_extraction_dispatches, ai_extraction_request_pages, ai_extraction_requests, manuscript_snapshot_warnings, manuscript_snapshot_claim_bibliography_members, manuscript_snapshot_bibliography_entries, manuscript_snapshot_claim_items, manuscript_snapshot_prose_items, manuscript_snapshot_items, manuscript_snapshot_sections, manuscript_snapshots, research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_revisions, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents, evidence_set_composition_members, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, appraisal_revision_response_evidence, appraisal_revision_responses, appraisal_revisions, appraisals, appraisal_framework_overall_judgement_options, appraisal_framework_response_options, appraisal_framework_items, appraisal_framework_sections, appraisal_framework_versions, appraisal_frameworks, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects",
+      "TRUNCATE TABLE doi_lookup_resolutions, doi_lookup_dispatches, bibliographic_metadata_result_authors, bibliographic_metadata_http_attempts, bibliographic_metadata_fetch_results, bibliographic_metadata_fetches, doi_lookup_requests, pdf_intake_resolutions, pdf_intake_metadata_fields, pdf_intake_metadata_results, pdf_intakes, bibliographic_import_resolutions, bibliographic_import_records, bibliographic_imports, ai_synthesis_decisions, ai_synthesis_result_groundings, ai_synthesis_results, ai_synthesis_dispatches, ai_synthesis_request_sources, ai_synthesis_request_supports, ai_synthesis_requests, ai_extraction_batch_items, ai_extraction_batches, ai_extraction_decision_evidence, ai_extraction_decisions, ai_extraction_result_groundings, ai_extraction_results, ai_extraction_dispatches, ai_extraction_request_pages, ai_extraction_requests, manuscript_snapshot_warnings, manuscript_snapshot_claim_bibliography_members, manuscript_snapshot_bibliography_entries, manuscript_snapshot_claim_items, manuscript_snapshot_prose_items, manuscript_snapshot_items, manuscript_snapshot_sections, manuscript_snapshots, research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_revisions, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents,  evidence_set_membership_order_versions, evidence_set_paper_member_counts, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, appraisal_revision_response_evidence, appraisal_revision_responses, appraisal_revisions, appraisals, appraisal_framework_overall_judgement_options, appraisal_framework_response_options, appraisal_framework_items, appraisal_framework_sections, appraisal_framework_versions, appraisal_frameworks, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects",
     );
     await client.end();
   });
@@ -31,6 +31,14 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     await services.recordFullTextRetrievalAttempt(projectId, paper.id, { outcome: "retrieved", attemptedAt: new Date() });
     await services.recordFullTextScreeningDecision(projectId, paper.id, { decision: "include" });
     return paper;
+  }
+
+  async function addEvidenceToSet(setId: string, evidenceId: string) {
+    const current = await services.getEvidenceSet(projectId, setId);
+    return services.addEvidenceToSet(projectId, setId, {
+      evidenceId,
+      expectedRevisionId: current.currentRevision.id,
+    });
   }
 
   it("lists synthesis fields available in an Evidence Set composition", async () => {
@@ -50,7 +58,7 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
 
     // Create Evidence Set with only ev1 initially
     const set = (await services.createEvidenceSet(projectId, { name: "Evidence Set 1" })).set;
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: ev1.id });
+    await addEvidenceToSet(set.id, ev1.id);
 
     // Field listing for set should find both fields (ev1 connects to field1 and field2)
     const fields = await services.listEvidenceSetSynthesisFields(projectId, set.id);
@@ -60,7 +68,7 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     expect(field1Summary?.candidatePaperCount).toBe(1);
 
     // Add ev2 to Evidence Set
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: ev2.id });
+    await addEvidenceToSet(set.id, ev2.id);
     const updatedFields = await services.listEvidenceSetSynthesisFields(projectId, set.id);
     const updatedField1 = updatedFields.find((f) => f.field.id === field1.id);
     expect(updatedField1?.candidateRevisionCount).toBe(2);
@@ -74,7 +82,7 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     await services.reviseExtractionValue(projectId, paper.id, field.id, { value: "Positive", evidenceIds: [ev.id] });
 
     const set = (await services.createEvidenceSet(projectId, { name: "Pinned Set" })).set;
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: ev.id });
+    await addEvidenceToSet(set.id, ev.id);
 
     const prep = await services.createSynthesisPreparation(projectId, {
       evidenceSetId: set.id,
@@ -94,15 +102,55 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     expect(workspace.candidates[0].selected).toBe(false);
     expect(workspace.candidates[0].selectable).toBe(true);
 
-    // Add another item to Evidence Set to create composition drift
-    const evNew = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "New passage", pageNumber: 2 });
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: evNew.id });
+    // Add another finalized candidate after pinning; it must not enter this preparation.
+    const laterPaper = await includedPaper("Later Study");
+    const evNew = await services.recordEvidence(projectId, { paperId: laterPaper.id, sourceText: "New passage", pageNumber: 2 });
+    await services.reviseExtractionValue(projectId, laterPaper.id, field.id, { value: "Later result", evidenceIds: [evNew.id] });
+    await addEvidenceToSet(set.id, evNew.id);
 
     // Preparation pinned sequence has not changed, but sourceSetChanged is now true
     const driftedWorkspace = await services.getSynthesisPreparationWorkspace(projectId, prep.id);
     expect(driftedWorkspace.sourceSetChanged).toBe(true);
     expect(driftedWorkspace.pinnedCompositionSequence).toBe(workspace.pinnedCompositionSequence);
     expect(driftedWorkspace.latestCompositionSequence).toBeGreaterThan(driftedWorkspace.pinnedCompositionSequence);
+    expect(driftedWorkspace.candidates.map((candidate) => candidate.extractionRevision.paperId)).not.toContain(laterPaper.id);
+    expect(driftedWorkspace.candidates).toHaveLength(1);
+  });
+
+  it("pins the submitted revision and rejects a stale preparation launch without creating a row", async () => {
+    const paper = await includedPaper("Launch Token Study");
+    const evidence = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "Pinned passage", pageNumber: 1 });
+    const laterEvidence = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "Later passage", pageNumber: 2 });
+    const field = await services.createExtractionField(projectId, { name: "Launch Token Outcome", fieldType: "short_text" });
+    await services.reviseExtractionValue(projectId, paper.id, field.id, { value: "Observed", evidenceIds: [evidence.id] });
+    const set = (await services.createEvidenceSet(projectId, { name: "Launch Token Set" })).set;
+    await addEvidenceToSet(set.id, evidence.id);
+
+    const displayedRevision = (await services.getEvidenceSet(projectId, set.id)).currentRevision.id;
+    const preparation = await services.createSynthesisPreparation(projectId, {
+      evidenceSetId: set.id,
+      expectedRevisionId: displayedRevision,
+      extractionFieldId: field.id,
+    });
+    expect(preparation.evidenceSetCompositionRevisionId).toBe(displayedRevision);
+
+    await addEvidenceToSet(set.id, laterEvidence.id);
+    const before = await client`
+      select count(*)::int as count from synthesis_preparations
+      where project_id=${projectId}::uuid and evidence_set_id=${set.id}::uuid
+        and extraction_field_id=${field.id}::uuid
+    `;
+    await expect(services.createSynthesisPreparation(projectId, {
+      evidenceSetId: set.id,
+      expectedRevisionId: displayedRevision,
+      extractionFieldId: field.id,
+    })).rejects.toMatchObject({ code: "CONCURRENT_MODIFICATION" });
+    const after = await client`
+      select count(*)::int as count from synthesis_preparations
+      where project_id=${projectId}::uuid and evidence_set_id=${set.id}::uuid
+        and extraction_field_id=${field.id}::uuid
+    `;
+    expect(after).toEqual(before);
   });
 
   it("manages selections, enforcing Approved Correction 3 isolation", async () => {
@@ -118,8 +166,8 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     const revOther = await services.reviseExtractionValue(projectId, paperA.id, otherField.id, { value: "Other Val", evidenceIds: [evA.id] });
 
     const set = (await services.createEvidenceSet(projectId, { name: "Selection Set" })).set;
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: evA.id });
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: evB.id });
+    await addEvidenceToSet(set.id, evA.id);
+    await addEvidenceToSet(set.id, evB.id);
 
     const prep = await services.createSynthesisPreparation(projectId, {
       evidenceSetId: set.id,
@@ -134,6 +182,13 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     let ws = await services.getSynthesisPreparationWorkspace(projectId, prep.id);
     expect(ws.selectedCount).toBe(1);
     expect(ws.candidates.find((c) => c.extractionRevision.id === revA.id)?.selected).toBe(true);
+
+    // Removing an Evidence later must not remove it from the preparation's pinned composition.
+    const beforeRemoval = await services.getEvidenceSet(projectId, set.id);
+    await services.removeEvidenceFromSet(projectId, set.id, {
+      evidenceId: evB.id,
+      expectedRevisionId: beforeRemoval.currentRevision.id,
+    });
 
     // 2. Reject adding candidate from a different extraction field
     await expect(
@@ -166,6 +221,7 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
 
     ws = await services.getSynthesisPreparationWorkspace(projectId, prep.id);
     expect(ws.selectedCount).toBe(2);
+    expect(ws.candidates.some((candidate) => candidate.extractionRevision.id === revB.id)).toBe(true);
 
     // 5. Removing the ineligible selection revA must also succeed
     await services.replaceSynthesisPreparationSelections(projectId, prep.id, {
@@ -183,7 +239,7 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     const rev = await services.reviseExtractionValue(projectId, paper.id, field.id, { value: "Theme A", evidenceIds: [ev.id] });
 
     const set = (await services.createEvidenceSet(projectId, { name: "Set 1" })).set;
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: ev.id });
+    await addEvidenceToSet(set.id, ev.id);
 
     const prep = await services.createSynthesisPreparation(projectId, {
       evidenceSetId: set.id,
@@ -247,7 +303,7 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     await services.withdrawSynthesisStatement(projectId, stmt.statement.id);
 
     const set = (await services.createEvidenceSet(projectId, { name: "Set 2" })).set;
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: ev.id });
+    await addEvidenceToSet(set.id, ev.id);
 
     // Create preparation targeted to existing withdrawn statement
     const prep = await services.createSynthesisPreparation(projectId, {
@@ -281,7 +337,7 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     const field = await services.createExtractionField(projectId, { name: "Theme Zero", fieldType: "short_text" });
 
     const set = (await services.createEvidenceSet(projectId, { name: "Zero Set" })).set;
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: ev.id });
+    await addEvidenceToSet(set.id, ev.id);
 
     const prep = await services.createSynthesisPreparation(projectId, {
       evidenceSetId: set.id,
@@ -307,7 +363,7 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     const field = await services.createExtractionField(projectId, { name: "Field Abandon", fieldType: "short_text" });
 
     const set = (await services.createEvidenceSet(projectId, { name: "Abandon Set" })).set;
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: ev.id });
+    await addEvidenceToSet(set.id, ev.id);
 
     const prep = await services.createSynthesisPreparation(projectId, {
       evidenceSetId: set.id,
@@ -339,8 +395,8 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     const revB = await services.reviseExtractionValue(projectId, paperB.id, field.id, { value: "Val B", evidenceIds: [evB.id] });
 
     const set = (await services.createEvidenceSet(projectId, { name: "Direct SQL Set" })).set;
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: evA.id });
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: evB.id });
+    await addEvidenceToSet(set.id, evA.id);
+    await addEvidenceToSet(set.id, evB.id);
 
     // Helper to create an active statement revision with given supports
     async function createStatementWithSupports(supportIds: string[]) {
@@ -423,7 +479,7 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     const rev = await services.reviseExtractionValue(projectId, paper.id, field.id, { value: "Val Lifecycle", evidenceIds: [ev.id] });
 
     const set = (await services.createEvidenceSet(projectId, { name: "Lifecycle Set" })).set;
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: ev.id });
+    await addEvidenceToSet(set.id, ev.id);
 
     // 1. Create preparation and finalize -> creates Revision 1 on Statement S
     const prep = await services.createSynthesisPreparation(projectId, {
@@ -499,9 +555,9 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     const revC = await services.reviseExtractionValue(projectId, paperC.id, field.id, { value: "Val C", evidenceIds: [evC.id] });
 
     const set = (await services.createEvidenceSet(projectId, { name: "Drift Set" })).set;
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: evA.id });
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: evB.id });
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: evC.id });
+    await addEvidenceToSet(set.id, evA.id);
+    await addEvidenceToSet(set.id, evB.id);
+    await addEvidenceToSet(set.id, evC.id);
 
     const prep = await services.createSynthesisPreparation(projectId, {
       evidenceSetId: set.id,

@@ -5,10 +5,10 @@ import {
   appendEvidenceReviewDecisionAction,
   assignEvidenceLabelAction,
   removeEvidenceLabelAction,
-  addEvidenceToSetAction,
+  addEvidenceToSelectedSetAction,
 } from "@/app/actions";
 import { DomainError } from "@/domain/errors";
-import { reviewServices } from "@/app/server";
+import { evidenceSetWorkspaceReadServices, reviewServices } from "@/app/server";
 import { AuditDetails, ConfirmAction } from "@/components";
 
 export default async function EvidenceDetailPage({
@@ -16,7 +16,7 @@ export default async function EvidenceDetailPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string; evidenceId: string }>;
-  searchParams?: Promise<{ error?: string; saved?: string }>;
+  searchParams?: Promise<{ error?: string; saved?: string; setCursor?: string; setQuery?: string }>;
 }) {
   const { projectId, evidenceId } = await params;
   const query = searchParams ? await searchParams : {};
@@ -27,10 +27,17 @@ export default async function EvidenceDetailPage({
     if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "CROSS_PROJECT_REFERENCE", "VALIDATION_ERROR", "NOT_FOUND"].includes(error.code)) notFound();
     throw error;
   }
-  const [labels, evidenceSets] = await Promise.all([
-    reviewServices.listEvidenceLabels(projectId, true),
-    reviewServices.listEvidenceSets(projectId, false),
-  ]);
+  const labelsPromise = reviewServices.listEvidenceLabels(projectId, true);
+  let evidenceSets;
+  let setCursorNotice: string | undefined;
+  try {
+    evidenceSets = await evidenceSetWorkspaceReadServices.listActiveEvidenceSetOptions(projectId, { cursor: query.setCursor, query: query.setQuery ?? "" });
+  } catch (error) {
+    if (!query.setCursor || !(error instanceof DomainError) || error.code !== "VALIDATION_ERROR") throw error;
+    setCursorNotice = error.message;
+    evidenceSets = await evidenceSetWorkspaceReadServices.listActiveEvidenceSetOptions(projectId, { query: query.setQuery ?? "" });
+  }
+  const labels = await labelsPromise;
   const currentLabelIds = new Set(detail.labels.map((label) => label.id));
   const assignableLabels = labels.filter((label) => !label.archivedAt && !currentLabelIds.has(label.id));
   const evidence = detail.evidence;
@@ -38,6 +45,7 @@ export default async function EvidenceDetailPage({
   return <div className="project-page">
     <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Evidence detail</p><h1>{evidence.paper?.title ?? "Source Evidence"}</h1><p>Immutable source passage · page {evidence.pageNumber}</p></div><span className={`status ${detail.reviewState === "accepted" ? "supported" : detail.reviewState === "rejected" ? "withdrawn" : "stale"}`}>{reviewLabel}</span></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">Curation change saved.</div>}
+      {setCursorNotice && <div className="error-banner" role="alert">{setCursorNotice} The Set selector has returned to its first page.</div>}
       {detail.warnings.length > 0 && <div className="support-warning">{detail.reviewState === "rejected" ? "Currently rejected for new direct use." : detail.reviewState === "needs_review" ? "Needs review; direct use remains allowed." : "Never reviewed; direct use remains allowed."}</div>}
       <AuditDetails items={[{ label: "Evidence identity", value: evidenceId }, { label: "Paper", value: evidence.paper?.title ?? evidence.paperId }, { label: "Page", value: evidence.pageNumber }, { label: "Document artifact", value: evidence.fullTextDocumentId ?? "None recorded" }, { label: "Text extraction", value: evidence.documentTextExtractionId ?? "None recorded" }]} />
       <div className="workspace-grid">
@@ -49,7 +57,7 @@ export default async function EvidenceDetailPage({
 
         <section className="card section-card"><div className="section-heading"><h2>Labels</h2><span className="count">{detail.labels.length} current</span></div>{detail.labels.length === 0 ? <p className="hint">No current labels.</p> : <div className="item-list">{detail.labels.map((label) => <article className="item" key={label.id}><div className="item-row"><span className="item-title">{label.name}</span><ConfirmAction action={removeEvidenceLabelAction} label="Remove" title="Remove this label from the Evidence?" consequence="This changes the current curation assignment; the label event remains available in history." hiddenFields={{ projectId, evidenceId, labelId: label.id }} confirmLabel="Remove label" /></div>{label.archivedAt && <div className="item-meta">Archived label retained for history.</div>}</article>)}</div>}{assignableLabels.length > 0 && <form action={assignEvidenceLabelAction} style={{ marginTop: 14 }}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="evidenceId" value={evidenceId} /><div className="field"><label htmlFor="assign-label">Assign active label</label><select id="assign-label" name="labelId" required defaultValue=""><option value="" disabled>Select a label</option>{assignableLabels.map((label) => <option key={label.id} value={label.id}>{label.name}</option>)}</select></div><button className="button secondary" type="submit">Assign label</button></form>}<div className="item-list" style={{ marginTop: 18 }}>{detail.labelHistory.length > 0 && detail.labelHistory.slice().reverse().map((event) => <article className="item" key={event.id}><div className="item-meta">{event.event} · label {labels.find((label) => label.id === event.labelId)?.name ?? event.labelId} · sequence {event.sequence}</div></article>)}</div></section>
 
-        <section className="card section-card"><div className="section-heading"><h2>Evidence Sets</h2><span className="count">{evidenceSets.length} active</span></div><p className="hint">Sets are researcher-defined organization. Review state and provenance remain independent.</p>{evidenceSets.length === 0 ? <div className="empty">No active Evidence Sets yet. <Link href={`/projects/${projectId}/evidence-sets`}>Create one →</Link></div> : <form action={addEvidenceToSetAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="evidenceId" value={evidenceId} /><div className="field"><label htmlFor="evidence-set">Add this Evidence to a set</label><select id="evidence-set" name="evidenceSetId" required defaultValue=""><option value="" disabled>Select an Evidence Set</option>{evidenceSets.map((item) => <option key={item.set.id} value={item.set.id}>{item.set.name} · {item.memberCount} members</option>)}</select></div><button className="button secondary" type="submit">Add to set</button></form>}<div className="item-list" style={{ marginTop: 18 }}>{evidenceSets.map((item) => <div className="item" key={item.set.id}><div className="item-row"><div><Link className="item-title" href={`/projects/${projectId}/evidence-sets/${item.set.id}`}>{item.set.name}</Link>{item.set.description && <div className="item-meta">{item.set.description}</div>}</div><span className="item-meta">{item.distinctPaperCount} {item.distinctPaperCount === 1 ? "Paper" : "Papers"}</span></div></div>)}</div></section>
+        <section className="card section-card"><div className="section-heading"><h2>Evidence Sets</h2><span className="count">{evidenceSets.totals.active} active Sets</span></div><p className="hint">Showing {evidenceSets.items.length} active Sets on this selector page. Sets are researcher-defined organization. Review state and provenance remain independent.</p><form method="get"><div className="field"><label htmlFor="set-query">Search active Sets</label><input id="set-query" type="search" name="setQuery" defaultValue={evidenceSets.query} maxLength={200} placeholder="Set name or purpose" /></div><button className="button ghost" type="submit">Search Sets</button></form>{evidenceSets.items.length === 0 ? <div className="empty">No active Evidence Sets match this search. <Link href={`/projects/${projectId}/evidence-sets`}>Browse all Evidence Sets →</Link></div> : <form action={addEvidenceToSelectedSetAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="evidenceId" value={evidenceId} /><div className="field"><label htmlFor="evidence-set">Add this Evidence to a set</label><select id="evidence-set" name="setRevision" required defaultValue=""><option value="" disabled>Select an Evidence Set</option>{evidenceSets.items.map((item) => <option key={item.set.id} value={`${item.set.id}.${item.currentRevisionId}`}>{item.set.name} · {item.memberCount} members</option>)}</select></div><button className="button secondary" type="submit">Add to set</button></form>}<div className="item-list" style={{ marginTop: 18 }}>{evidenceSets.items.map((item) => <div className="item" key={item.set.id}><div className="item-row"><div><Link className="item-title" href={`/projects/${projectId}/evidence-sets/${item.set.id}`}>{item.set.name}</Link>{item.set.description && <div className="item-meta">{item.set.description}</div>}</div><span className="item-meta">{item.distinctPaperCount} {item.distinctPaperCount === 1 ? "Paper" : "Papers"}</span></div></div>)}</div>{evidenceSets.nextCursor && <Link className="button ghost" href={`/projects/${projectId}/evidence/${evidenceId}?setQuery=${encodeURIComponent(evidenceSets.query)}&setCursor=${encodeURIComponent(evidenceSets.nextCursor)}`}>More active Sets</Link>}</section>
 
         <section className="card section-card full"><div className="section-heading"><h2>Used by</h2><span className="count">{detail.usage.counts.claimRevisions + detail.usage.counts.extractionRevisions + detail.usage.counts.synthesisRevisions} analytical paths</span></div>{detail.usage.extractionRevisions.length > 0 && <div className="item-list"><h3>Extracted observations</h3>{detail.usage.extractionRevisions.map((item) => <article className="item" key={item.id}>Version {item.sequence} · {item.fieldName} · {item.valueState}</article>)}</div>}{detail.usage.synthesisRevisions.length > 0 && <div className="item-list"><h3>Synthesis versions</h3>{detail.usage.synthesisRevisions.map((item) => <article className="item" key={item.id}>Version {item.sequence} · {item.title ?? item.statementText ?? "Synthesis"}</article>)}</div>}{detail.usage.claimRevisions.length > 0 && <div className="item-list"><h3>Claim versions</h3>{detail.usage.claimRevisions.map((item) => <article className="item" key={`${item.id}-${item.path}`}>Version {item.sequence} · {item.path} · {item.claimText ?? "Claim"}</article>)}</div>}{detail.usage.manuscriptPlacements.length > 0 && <div className="item-list"><h3>Manuscript placements</h3>{detail.usage.manuscriptPlacements.map((item) => <article className="item" key={item.id}>Placement retained in manuscript history{item.removedAt ? " · removed" : " · active"}</article>)}</div>}{detail.usage.counts.claimRevisions === 0 && detail.usage.counts.extractionRevisions === 0 && detail.usage.counts.synthesisRevisions === 0 && <div className="empty">This Evidence has no downstream analytical uses yet.</div>}</section>
       </div>

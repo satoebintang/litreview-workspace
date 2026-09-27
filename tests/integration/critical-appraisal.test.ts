@@ -73,7 +73,8 @@ describe("Slice 33 critical appraisal foundation", () => {
   const requiredProtectedTables = [
     "screening_decisions", "full_text_screening_decisions", "full_text_retrieval_attempts",
     "evidence", "evidence_review_decisions", "evidence_annotations", "evidence_label_events",
-    "evidence_set_memberships", "evidence_set_composition_revisions", "evidence_set_composition_members",
+    "evidence_set_membership_order_versions", "evidence_set_paper_member_counts",
+    "evidence_set_memberships", "evidence_set_composition_revisions",
     "extraction_values", "extraction_value_revisions", "extraction_revision_evidence",
     "ai_extraction_requests", "ai_extraction_request_pages", "ai_extraction_dispatches", "ai_extraction_results",
     "ai_extraction_result_groundings", "ai_extraction_decisions", "ai_extraction_decision_evidence",
@@ -342,7 +343,11 @@ describe("Slice 33 critical appraisal foundation", () => {
     const label = await services.createEvidenceLabel(projectId, { name: "Snapshot label" });
     await services.assignEvidenceLabel(projectId, evidence.id, label.id);
     const evidenceSet = (await services.createEvidenceSet(projectId, { name: "Snapshot Evidence Set" })).set;
-    await services.addEvidenceToSet(projectId, evidenceSet.id, { evidenceId: evidence.id });
+    const evidenceSetState = await services.getEvidenceSet(projectId, evidenceSet.id);
+    await services.addEvidenceToSet(projectId, evidenceSet.id, {
+      evidenceId: evidence.id,
+      expectedRevisionId: evidenceSetState.currentRevision.id,
+    });
 
     const field = await services.createExtractionField(projectId, { name: "Participants", fieldType: "number", required: true });
     const extraction = await services.reviseExtractionValue(projectId, paper.id, field.id, { value: 42, evidenceIds: [evidence.id] });

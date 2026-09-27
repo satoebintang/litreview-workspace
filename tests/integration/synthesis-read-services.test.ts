@@ -274,7 +274,11 @@ function instrumentAfterFirstSelect(base: Database, afterFirstSelect: () => Prom
     const replacementOption = await services!.createExtractionOption(project.id, { fieldId: field.id, label: "Current option label" });
     const exactSupport = await services!.reviseExtractionValue(project.id, paper.id, field.id, { value: archivedOption.id, evidenceIds: [evidence.id] });
     const set = (await services!.createEvidenceSet(project.id, { name: "History evidence set" })).set;
-    await services!.addEvidenceToSet(project.id, set.id, { evidenceId: evidence.id });
+    const setState = await services!.getEvidenceSet(project.id, set.id);
+    await services!.addEvidenceToSet(project.id, set.id, {
+      evidenceId: evidence.id,
+      expectedRevisionId: setState.currentRevision.id,
+    });
     const preparation = await services!.createSynthesisPreparation(project.id, { evidenceSetId: set.id, extractionFieldId: field.id });
     await services!.replaceSynthesisPreparationSelections(project.id, preparation.id, { extractionRevisionIds: [exactSupport.id] });
     const prepared = await services!.finalizeSynthesisPreparation(project.id, preparation.id, { statementText: "Prepared synthesis statement." });

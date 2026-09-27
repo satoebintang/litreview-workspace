@@ -300,8 +300,49 @@ used `screening_decisions_project_paper_sequence_idx`. The exact Project count
 scanned the Project's 50k Papers. The last page scanned and sorted all 50k
 rows for offset 49,950, which is expected OFFSET work; the first-page tie sort
 was incremental and did not spill. No essential missing index was shown, so
-the migration tail remains `0033_storage_materialization_recovery` and no
-`0034` migration was created. Evidence Set scaling remains deferred.
+the Slice 44 release checkpoint ended at
+`0033_storage_materialization_recovery`. Evidence Set scaling was carried into
+the separately approved Slice 45 work below.
+
+## Evidence Set composition and workspace
+
+Slice 45 migrates Evidence Set runtime composition from full ordered snapshots
+to immutable temporal singly linked versions in `0034_evidence_set_composition_timeline`.
+Stable Set, membership, and revision UUIDs remain intact; the released global
+revision `sequence` identity and displayed values are preserved, while a new
+per-Set `set_ordinal` governs temporal validity, latest-revision selection, and
+history paging. Existing synthesis pins still identify exact revision UUIDs.
+
+Ordinary add, remove, re-add, and one-step move update a bounded link
+neighborhood and per-Paper counter under the Set lock. Their tuple-change targets
+are 6, 5, 5, and 7 respectively. Database transition guards validate the exact
+predecessor and changed neighborhood without enumerating the active Set; only
+the retained full reorder compatibility operation is O(N). Current members,
+candidate search, composition history, and exact historical members use bounded
+revision-bound cursor pages. The retained Node 22.13.0/PostgreSQL 16.15
+benchmark measured those tuple deltas at 1k, 10k, and 50k. It also measured
+top-level SELECT counts of 5/6/5/5 and 10/10/9/12 statements in add/remove/
+re-add/move order. These meet the plan's add/remove limit of six SELECTs and
+move limit of five; tuple and query counts stayed constant across all three
+member sizes.
+
+Exact pinned reads preserve the exact revision UUID and never rewrite a
+composition. The final resolver bounds its recursive walk by the pinned
+revision's `member_count` and does not build a growing path array. It returned
+50,000 exact members/8,688,895 bytes in one statement at 50k; the service read
+took about 910 ms and its EXPLAIN completed at about 601 ms. Candidate pages
+return 20 results plus the continuation row with an 80-code-point excerpt. The
+benchmark verifies the exact 20 deep-page Evidence IDs within the seeded
+equal-timestamp group at all three sizes; the 50k candidate plan still scans
+Evidence and Paper rows and spills sort data.
+
+The migration backfills every legacy revision and proves exact ordered-member
+equivalence before retiring the snapshot source. The benchmark harness exercises
+1k/10k/50k member Sets and 10/100/1k revision histories; retained SQL counts,
+tuple deltas, payload measurements, and final-shape EXPLAIN plans are in
+[`docs/benchmarks/slice45-evidence-set-composition.json`](docs/benchmarks/slice45-evidence-set-composition.json).
+See [ADR 0045](docs/adr/0045-scalable-evidence-set-composition-and-workspace.md)
+for schema, compatibility, boundedness, and benchmark decisions.
 
 ## Claim ledger page
 

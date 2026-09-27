@@ -18,6 +18,7 @@ import {
   SYNTHESIS_SUGGESTION_CONTEXT_SELECTION_VERSION,
 } from "@/application/ai/synthesis-suggestion-provider";
 import { resolveSynthesisSuggestionGroundings } from "@/application/ai/synthesis-suggestion-grounding";
+import { resolveEvidenceSetCompositionRevisionMembers } from "@/application/evidence-set-composition-resolver";
 
 type Executor = Pick<Database, "execute">;
 type Outcome = "succeeded" | "no_candidate" | "provider_unavailable" | "failed" | "invalid_output" | "unresolvable_grounding" | "outcome_unknown";
@@ -233,16 +234,39 @@ export function createAiSynthesisSuggestionServices(
       order by s.created_at, s.extraction_revision_id
     `));
     if (supports.length < 1 || supports.length > 20) throw new DomainError("VALIDATION_ERROR", "Select between 1 and 20 extraction revisions before requesting AI synthesis");
-    const sourceRowsFound = rows(await tx.execute(sql`
-      select r.id as extraction_revision_id, r.paper_id, ere.evidence_id, m.id as membership_id, cm.sort_order as membership_sort_order, e.page_number, e.source_text, e.created_at as evidence_created_at, e.note as evidence_note_snapshot, e.id as evidence_identity, coalesce(rd.decision,'unreviewed') as evidence_review_state
-      from extraction_value_revisions r
-      join extraction_revision_evidence ere on ere.project_id=r.project_id and ere.revision_id=r.id
-      join evidence_set_memberships m on m.project_id=ere.project_id and m.evidence_id=ere.evidence_id and m.evidence_set_id=${String(prep.evidence_set_id)}::uuid
-      join evidence_set_composition_members cm on cm.project_id=m.project_id and cm.evidence_set_id=m.evidence_set_id and cm.membership_id=m.id and cm.composition_revision_id=${String(prep.evidence_set_composition_revision_id)}::uuid
+    const pinnedMembers = await resolveEvidenceSetCompositionRevisionMembers(
+      tx,
+      projectId,
+      String(prep.evidence_set_id),
+      String(prep.evidence_set_composition_revision_id),
+    );
+    const pinnedMembersJson = JSON.stringify(pinnedMembers.map((member) => ({
+      membership_id: member.membershipId,
+      evidence_id: member.evidenceId,
+      paper_id: member.paperId,
+      position: member.position,
+    })));
+    const sourceRowsFound = pinnedMembers.length === 0 ? [] : rows(await tx.execute(sql`
+      with pinned_members as (
+        select member.membership_id, member.evidence_id, member.position
+        from jsonb_to_recordset(${pinnedMembersJson}::jsonb)
+          as member(membership_id uuid, evidence_id uuid, paper_id uuid, position integer)
+      )
+      select r.id as extraction_revision_id, r.paper_id, ere.evidence_id,
+        pm.membership_id, pm.position as membership_sort_order,
+        e.page_number, e.source_text, e.created_at as evidence_created_at,
+        e.note as evidence_note_snapshot, e.id as evidence_identity,
+        coalesce(rd.decision,'unreviewed') as evidence_review_state
+      from pinned_members pm
+      join extraction_revision_evidence ere
+        on ere.project_id=${projectId}::uuid and ere.evidence_id=pm.evidence_id
+      join extraction_value_revisions r
+        on r.project_id=ere.project_id and r.id=ere.revision_id
       join evidence e on e.project_id=ere.project_id and e.id=ere.evidence_id
       left join lateral (select decision from evidence_review_decisions d where d.project_id=e.project_id and d.evidence_id=e.id order by d.sequence desc limit 1) rd on true
-      where r.project_id=${projectId}::uuid and r.id in (${sql.join(supports.map((support) => sql`${String(support.extraction_revision_id)}::uuid`), sql`, `)})
-      order by cm.sort_order, e.page_number, e.id
+      where r.project_id=${projectId}::uuid
+        and r.id in (${sql.join(supports.map((support) => sql`${String(support.extraction_revision_id)}::uuid`), sql`, `)})
+      order by pm.position, e.page_number, e.id
     `));
     const sourceBySupport = new Map<string, Record<string, unknown>[]>();
     const sourceOrdinalBySupport = new Map<string, number>();
