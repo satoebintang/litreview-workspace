@@ -374,6 +374,21 @@ to the computed candidate list. Project-wide retargeting is available only for
 the explicitly cleared state. Search controls do not change writer validation,
 Paper identity, or append-only resolution/history semantics.
 
+## Title/abstract screening queue
+
+The screening dashboard uses a Project-scoped page of compact Paper identity
+and current title/abstract state. Counts and the selected page share one
+read-only REPEATABLE READ snapshot. Queue order remains created_at ascending,
+then Paper UUID ascending. The queue defaults to 50 rows and clamps at 100.
+Start screening independently targets the first unscreened Paper, falling back
+to the first Paper in queue order.
+
+Detail navigation resolves one Paper's one-based position and immediate
+neighbors in one Project-scoped SELECT across all Project Papers, regardless
+of screening state. The compatibility full-list screening service remains
+available; extraction progress still uses its current-state dependency.
+Decision history and the complete per-Paper detail remain unchanged.
+
 ## Synthesis comparison page
 
 A bounded page for one active Extraction Field, with Project-wide extraction
