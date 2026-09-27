@@ -2046,7 +2046,7 @@
   "configHashes": [
     {
       "file": "package.json",
-      "sha256": "7f57ca2d13727efe8210fa103dd04b451624a3552511be3dfa98452d47864381"
+      "sha256": "4f5bec06397f914321d640e9144842cba736af9fde4c30e67197406f1570da5d"
     },
     {
       "file": "package-lock.json",

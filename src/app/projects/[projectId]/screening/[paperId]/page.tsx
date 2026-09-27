@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { recordScreeningDecisionAction } from "@/app/actions";
-import { reviewServices } from "@/app/server";
+import { reviewServices, screeningReadServices } from "@/app/server";
 import { DomainError } from "@/domain/errors";
 
 export default async function ScreeningPaperPage({ params, searchParams }: {
@@ -13,16 +13,16 @@ export default async function ScreeningPaperPage({ params, searchParams }: {
   let screening;
   try { screening = await reviewServices.getPaperScreening(projectId, paperId); }
   catch (error) { if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "CROSS_PROJECT_REFERENCE", "VALIDATION_ERROR"].includes(error.code)) notFound(); throw error; }
-  const papers = await reviewServices.listScreeningPapers(projectId);
-  const index = papers.findIndex((paper) => paper.id === paperId);
-  const previous = index > 0 ? papers[index - 1] : null;
-  const next = index >= 0 && index < papers.length - 1 ? papers[index + 1] : null;
+  let navigation: Awaited<ReturnType<typeof screeningReadServices.getScreeningPaperNavigation>>;
+  try { navigation = await screeningReadServices.getScreeningPaperNavigation(projectId, paperId); }
+  catch (error) { if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "VALIDATION_ERROR", "CROSS_PROJECT_REFERENCE"].includes(error.code)) notFound(); throw error; }
+  if (!navigation) notFound();
   const exclusionCriteria = screening.criteria.filter((criterion) => criterion.type === "exclusion" && !criterion.archivedAt);
   return <div className="project-page">
-    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Title/abstract screening · Paper {index + 1} of {papers.length}</p><h1>{screening.paper.title}</h1><p>{screening.paper.authors.join(", ") || "Author details not added"}{screening.paper.publicationYear ? ` · ${screening.paper.publicationYear}` : ""}{screening.paper.venue ? ` · ${screening.paper.venue}` : ""}</p></div><span className={`status screening-${screening.currentState}`}>{screening.currentState}</span></div>
+    <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Title/abstract screening · Paper {navigation.position} of {navigation.totalCount}</p><h1>{screening.paper.title}</h1><p>{screening.paper.authors.join(", ") || "Author details not added"}{screening.paper.publicationYear ? ` · ${screening.paper.publicationYear}` : ""}{screening.paper.venue ? ` · ${screening.paper.venue}` : ""}</p></div><span className={`status screening-${screening.currentState}`}>{screening.currentState}</span></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">Decision recorded in screening history.</div>}
       <div className="workspace-grid"><section className="card section-card"><div className="section-heading"><h2>Abstract</h2></div>{screening.paper.abstract ? <p className="abstract-text">{screening.paper.abstract}</p> : <div className="empty">No abstract was added for this paper.</div>}{screening.paper.doi && <p className="item-meta">DOI: {screening.paper.doi}</p>}
-        <div className="screening-nav">{previous ? <Link className="button ghost" href={`/projects/${projectId}/screening/${previous.id}`}>← Previous</Link> : <span />}{next ? <Link className="button ghost" href={`/projects/${projectId}/screening/${next.id}`}>Next →</Link> : <span />}</div>
+        <nav className="screening-nav" aria-label="Screening paper navigation">{navigation.previousPaperId ? <Link className="button ghost" href={`/projects/${projectId}/screening/${navigation.previousPaperId}`}>← Previous</Link> : <span />}{navigation.nextPaperId ? <Link className="button ghost" href={`/projects/${projectId}/screening/${navigation.nextPaperId}`}>Next →</Link> : <span />}</nav>
       </section>
       <section className="card section-card"><div className="section-heading"><h2>Record decision</h2></div><p className="hint">Each button adds an immutable history entry. Exclusions require a project-defined reason.</p>
         <form action={recordScreeningDecisionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="paperId" value={paperId} /><input type="hidden" name="decision" value="include" /><div className="field"><label htmlFor="include-note">Include note <span className="hint">optional</span></label><textarea id="include-note" name="note" placeholder="Why is this abstract relevant?" /></div><button className="button" type="submit">Include</button></form>
