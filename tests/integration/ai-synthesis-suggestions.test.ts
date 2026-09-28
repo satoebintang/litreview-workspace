@@ -15,7 +15,7 @@ describe("Slice 29 AI synthesis suggestions", () => {
   beforeAll(async () => { await migrate(db, { migrationsFolder: "./drizzle" }); });
   beforeEach(async () => { projectId = (await services.createProject({ title: `AI synthesis ${crypto.randomUUID()}` })).id; });
   afterAll(async () => {
-    await client.unsafe("TRUNCATE TABLE doi_lookup_resolutions, doi_lookup_dispatches, bibliographic_metadata_result_authors, bibliographic_metadata_http_attempts, bibliographic_metadata_fetch_results, bibliographic_metadata_fetches, doi_lookup_requests, pdf_intake_resolutions, pdf_intake_metadata_fields, pdf_intake_metadata_results, pdf_intakes, bibliographic_import_resolutions, bibliographic_import_records, bibliographic_imports, ai_synthesis_decisions, ai_synthesis_result_groundings, ai_synthesis_results, ai_synthesis_dispatches, ai_synthesis_request_sources, ai_synthesis_request_supports, ai_synthesis_requests, ai_extraction_batch_items, ai_extraction_batches, ai_extraction_decision_evidence, ai_extraction_decisions, ai_extraction_result_groundings, ai_extraction_results, ai_extraction_dispatches, ai_extraction_request_pages, ai_extraction_requests, manuscript_snapshot_warnings, manuscript_snapshot_claim_bibliography_members, manuscript_snapshot_bibliography_entries, manuscript_snapshot_claim_items, manuscript_snapshot_prose_items, manuscript_snapshot_items, manuscript_snapshot_sections, manuscript_snapshots, research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_revisions, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents, evidence_set_composition_members, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, appraisal_revision_response_evidence, appraisal_revision_responses, appraisal_revisions, appraisals, appraisal_framework_overall_judgement_options, appraisal_framework_response_options, appraisal_framework_items, appraisal_framework_sections, appraisal_framework_versions, appraisal_frameworks, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects");
+    await client.unsafe("TRUNCATE TABLE doi_lookup_resolutions, doi_lookup_dispatches, bibliographic_metadata_result_authors, bibliographic_metadata_http_attempts, bibliographic_metadata_fetch_results, bibliographic_metadata_fetches, doi_lookup_requests, pdf_intake_resolutions, pdf_intake_metadata_fields, pdf_intake_metadata_results, pdf_intakes, bibliographic_import_resolutions, bibliographic_import_records, bibliographic_imports, ai_synthesis_decisions, ai_synthesis_result_groundings, ai_synthesis_results, ai_synthesis_dispatches, ai_synthesis_request_sources, ai_synthesis_request_supports, ai_synthesis_requests, ai_extraction_batch_items, ai_extraction_batches, ai_extraction_decision_evidence, ai_extraction_decisions, ai_extraction_result_groundings, ai_extraction_results, ai_extraction_dispatches, ai_extraction_request_pages, ai_extraction_requests, manuscript_snapshot_warnings, manuscript_snapshot_claim_bibliography_members, manuscript_snapshot_bibliography_entries, manuscript_snapshot_claim_items, manuscript_snapshot_prose_items, manuscript_snapshot_items, manuscript_snapshot_sections, manuscript_snapshots, research_question_answer_claim_contexts, research_question_answer_synthesis_contexts, research_question_answers, research_question_extraction_field_events, research_question_evidence_set_events, research_question_synthesis_statement_events, research_question_claim_events, synthesis_interpretation_contradictions, synthesis_interpretation_questions, synthesis_interpretation_limitations, synthesis_interpretations, synthesis_preparation_selections, synthesis_preparations, retrieved_record_deduplication_decisions, retrieved_record_matches, retrieved_records, search_runs, search_strategies, search_sources, research_questions, manuscript_review_events, manuscript_review_threads, manuscript_claim_placement_events, manuscript_section_item_claims, manuscript_prose_revisions, manuscript_prose_blocks, manuscript_section_items, manuscript_claim_placements, manuscript_sections, manuscripts, claim_revision_synthesis_supports, claim_revision_extraction_supports, claim_revision_evidence_supports, claim_revisions, synthesis_revision_supports, synthesis_revisions, synthesis_statements, extraction_revision_evidence, extraction_value_revisions, extraction_values, extraction_options, extraction_fields, document_text_extraction_pages, document_text_extractions, full_text_screening_decisions, full_text_retrieval_attempts, full_text_screening_criteria, screening_decisions, screening_criteria, paper_full_text_preferences, full_text_documents,  evidence_set_membership_order_versions, evidence_set_paper_member_counts, evidence_set_composition_revisions, evidence_set_annotations, evidence_set_memberships, evidence_sets, evidence_label_events, evidence_annotations, appraisal_revision_response_evidence, appraisal_revision_responses, appraisal_revisions, appraisals, appraisal_framework_overall_judgement_options, appraisal_framework_response_options, appraisal_framework_items, appraisal_framework_sections, appraisal_framework_versions, appraisal_frameworks, evidence_review_decisions, evidence_labels, evidence, claims, papers, projects");
     await client.end();
   });
 
@@ -28,10 +28,18 @@ describe("Slice 29 AI synthesis suggestions", () => {
     const field = await services.createExtractionField(projectId, { name: "Outcome", fieldType: "short_text" });
     const revision = await services.reviseExtractionValue(projectId, paper.id, field.id, { value: "Improved", evidenceIds: [evidence.id] });
     const set = (await services.createEvidenceSet(projectId, { name: "Set" })).set;
-    await services.addEvidenceToSet(projectId, set.id, { evidenceId: evidence.id });
+    await addEvidenceToSet(set.id, evidence.id);
     const preparation = await services.createSynthesisPreparation(projectId, { evidenceSetId: set.id, extractionFieldId: field.id });
     await services.replaceSynthesisPreparationSelections(projectId, preparation.id, { extractionRevisionIds: [revision.id] });
     return { preparation, evidence, revision, field, set, paper };
+  }
+
+  async function addEvidenceToSet(setId: string, evidenceId: string) {
+    const current = await services.getEvidenceSet(projectId, setId);
+    return services.addEvidenceToSet(projectId, setId, {
+      evidenceId,
+      expectedRevisionId: current.currentRevision.id,
+    });
   }
 
   async function setupSupports(count: number, initialSelectionCount = count) {
@@ -52,7 +60,7 @@ describe("Slice 29 AI synthesis suggestions", () => {
     const set = (await services.createEvidenceSet(projectId, { name: "Set" })).set;
     // Deliberately reverse insertion order so source ordering is proven by the
     // frozen membership order rather than Evidence creation time.
-    for (const evidence of [...evidences].reverse()) await services.addEvidenceToSet(projectId, set.id, { evidenceId: evidence.id });
+    for (const evidence of [...evidences].reverse()) await addEvidenceToSet(set.id, evidence.id);
     const preparation = await services.createSynthesisPreparation(projectId, { evidenceSetId: set.id, extractionFieldId: field.id });
     await services.replaceSynthesisPreparationSelections(projectId, preparation.id, { extractionRevisionIds: revisions.slice(0, initialSelectionCount).map((revision) => revision.id) });
     return { preparation, field, set, papers, evidences, revisions };
@@ -295,6 +303,107 @@ describe("Slice 29 AI synthesis suggestions", () => {
     await services.reviseSynthesisStatement(projectId, existing.statement.id, { statementText: "Concurrent baseline", extractionRevisionIds: [first.revision.id] });
     await expect(ai.acceptAiSynthesisSuggestion({ projectId, requestId: String(began.requestId), mode: "accept" })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     expect(await client`select count(*)::int as count from synthesis_revisions where project_id=${projectId} and synthesis_statement_id=${existing.statement.id}`).toEqual([{ count: 2 }]);
+  });
+
+  it("rejects a direct-SQL AI source that was added after the preparation pin", async () => {
+    const paper = await services.addPaper(projectId, { title: "Pinned source study" });
+    await services.recordScreeningDecision(projectId, paper.id, { decision: "include" });
+    await services.recordFullTextRetrievalAttempt(projectId, paper.id, { outcome: "retrieved", attemptedAt: new Date() });
+    await services.recordFullTextScreeningDecision(projectId, paper.id, { decision: "include" });
+    const pinnedEvidence = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "Pinned passage.", pageNumber: 1 });
+    const laterEvidence = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "Later passage.", pageNumber: 2 });
+    const field = await services.createExtractionField(projectId, { name: "Outcome", fieldType: "short_text" });
+    const revision = await services.reviseExtractionValue(projectId, paper.id, field.id, {
+      value: "Improved",
+      evidenceIds: [pinnedEvidence.id, laterEvidence.id],
+    });
+    const set = (await services.createEvidenceSet(projectId, { name: "Pinned source set" })).set;
+    await addEvidenceToSet(set.id, pinnedEvidence.id);
+    const preparation = await services.createSynthesisPreparation(projectId, { evidenceSetId: set.id, extractionFieldId: field.id });
+    await services.replaceSynthesisPreparationSelections(projectId, preparation.id, { extractionRevisionIds: [revision.id] });
+    const ai = createAiSynthesisSuggestionServices(db, provider(), {
+      defaultModel: "fake-model",
+      defaultReasoningEffort: "low",
+      finalizePreparationInTransaction: services.finalizeSynthesisPreparationInTransaction,
+    });
+    const began = await ai.beginAiSynthesisSuggestion({
+      projectId,
+      preparationId: preparation.id,
+      idempotencyKey: crypto.randomUUID(),
+      externalTransmissionAcknowledged: true,
+      disclosureVersion: "openai-synthesis-transmission-v1",
+    });
+
+    await addEvidenceToSet(set.id, laterEvidence.id);
+    const latest = await services.getEvidenceSet(projectId, set.id);
+    const laterMembership = latest.members.find((member) => member.membership.evidenceId === laterEvidence.id);
+    expect(laterMembership).toBeDefined();
+
+    await expect(client.begin(async (tx) => {
+      const [request] = await tx`
+        insert into ai_synthesis_requests (
+          project_id, project_title_snapshot, preparation_id, evidence_set_id,
+          evidence_set_composition_revision_id, extraction_field_id,
+          target_synthesis_statement_id, target_baseline_synthesis_revision_id,
+          target_title_snapshot, target_statement_text_snapshot, idempotency_key,
+          source_state_hash, intent_hash, field_name_snapshot, field_description_snapshot,
+          field_type, provider, configured_model, configured_reasoning_effort,
+          prompt_version, response_schema_version, grounding_resolver_version,
+          context_selection_version, source_coverage_state, support_count, source_count,
+          source_character_count, source_byte_size, source_manifest_hash,
+          external_transmission_acknowledged, disclosure_version, undispatched_expires_at
+        )
+        select project_id, project_title_snapshot, preparation_id, evidence_set_id,
+          evidence_set_composition_revision_id, extraction_field_id,
+          target_synthesis_statement_id, target_baseline_synthesis_revision_id,
+          target_title_snapshot, target_statement_text_snapshot, gen_random_uuid(),
+          source_state_hash, intent_hash, field_name_snapshot, field_description_snapshot,
+          field_type, provider, configured_model, configured_reasoning_effort,
+          prompt_version, response_schema_version, grounding_resolver_version,
+          context_selection_version, source_coverage_state, support_count, 1,
+          char_length(${laterEvidence.sourceText}), octet_length(${laterEvidence.sourceText}),
+          source_manifest_hash, external_transmission_acknowledged, disclosure_version,
+          undispatched_expires_at
+        from ai_synthesis_requests
+        where project_id=${projectId}::uuid and id=${String(began.requestId)}::uuid
+        returning id
+      `;
+      await tx`
+        insert into ai_synthesis_request_supports (
+          project_id, request_id, extraction_revision_id, support_ordinal, paper_id,
+          extraction_field_id, extraction_value_id, field_type, value_state, text_value,
+          number_value, boolean_value, option_id, option_label_snapshot, researcher_note,
+          paper_title_snapshot, paper_publication_year_snapshot
+        )
+        select project_id, ${String(request.id)}::uuid, extraction_revision_id,
+          support_ordinal, paper_id, extraction_field_id, extraction_value_id,
+          field_type, value_state, text_value, number_value, boolean_value, option_id,
+          option_label_snapshot, researcher_note, paper_title_snapshot,
+          paper_publication_year_snapshot
+        from ai_synthesis_request_supports
+        where project_id=${projectId}::uuid and request_id=${String(began.requestId)}::uuid
+      `;
+      await tx`
+        insert into ai_synthesis_request_sources (
+          project_id, request_id, extraction_revision_id, evidence_id, paper_id,
+          source_ordinal, membership_id, membership_sort_order, page_number, source_text,
+          source_text_sha256, source_character_count, source_byte_size,
+          evidence_review_state, evidence_note_snapshot
+        )
+        select e.project_id, ${String(request.id)}::uuid, ${revision.id}::uuid,
+          e.id, e.paper_id, 0, ${laterMembership!.membership.id}::uuid,
+          ${laterMembership!.sortOrder}, e.page_number, e.source_text,
+          encode(sha256(convert_to(e.source_text, 'UTF8')), 'hex'), char_length(e.source_text),
+          octet_length(e.source_text), coalesce(rd.decision, 'unreviewed'), e.note
+        from evidence e
+        left join lateral (
+          select decision from evidence_review_decisions d
+          where d.project_id=e.project_id and d.evidence_id=e.id
+          order by d.sequence desc limit 1
+        ) rd on true
+        where e.project_id=${projectId}::uuid and e.id=${laterEvidence.id}::uuid
+      `;
+    })).rejects.toThrow("AI synthesis request source is outside the pinned composition");
   });
 
   it("freezes sources in membership, page, Evidence-ID order without creation-time tie breaking", async () => {

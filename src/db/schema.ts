@@ -15,7 +15,7 @@ import * as appraisalSchema from "./schema/appraisal";
 
 export { projects, papers } from "./schema/foundation";
 export { fullTextDocuments, paperFullTextPreferences, documentTextExtractions, documentTextExtractionPages, evidence, evidenceReviewDecisions, evidenceAnnotations, evidenceLabels, evidenceLabelEvents } from "./schema/documents-evidence";
-export { evidenceSets, evidenceSetMemberships, evidenceSetCompositionRevisions, evidenceSetCompositionMembers, evidenceSetAnnotations } from "./schema/evidence-sets";
+export { evidenceSets, evidenceSetMemberships, evidenceSetCompositionRevisions, evidenceSetMembershipOrderVersions, evidenceSetPaperMemberCounts, evidenceSetAnnotations } from "./schema/evidence-sets";
 export { claims, claimRevisions, claimRevisionEvidenceSupports } from "./schema/claims";
 export { screeningCriteria, screeningDecisions, fullTextScreeningCriteria, fullTextScreeningDecisions, fullTextRetrievalAttempts } from "./schema/screening";
 export { extractionFields, extractionOptions, extractionValues, extractionValueRevisions, extractionRevisionEvidence } from "./schema/extraction";
@@ -46,7 +46,8 @@ export const schema = {
   evidenceSets: evidenceSetsSchema.evidenceSets,
   evidenceSetMemberships: evidenceSetsSchema.evidenceSetMemberships,
   evidenceSetCompositionRevisions: evidenceSetsSchema.evidenceSetCompositionRevisions,
-  evidenceSetCompositionMembers: evidenceSetsSchema.evidenceSetCompositionMembers,
+  evidenceSetMembershipOrderVersions: evidenceSetsSchema.evidenceSetMembershipOrderVersions,
+  evidenceSetPaperMemberCounts: evidenceSetsSchema.evidenceSetPaperMemberCounts,
   evidenceSetAnnotations: evidenceSetsSchema.evidenceSetAnnotations,
   claims: claimsSchema.claims,
   claimRevisions: claimsSchema.claimRevisions,

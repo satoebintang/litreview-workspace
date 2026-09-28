@@ -4,10 +4,12 @@ import {
   appendEvidenceSetAnnotationSchema,
   createEvidenceSetSchema,
   evidenceSetMembershipInputSchema,
+  moveEvidenceSetMembershipSchema,
   reorderEvidenceSetSchema,
   updateEvidenceSetMetadataSchema,
   type AppendEvidenceSetAnnotationInput,
   type CreateEvidenceSetInput,
+  type MoveEvidenceSetMembershipInput,
   type ReorderEvidenceSetInput,
   type UpdateEvidenceSetMetadataInput,
 } from "@/domain/validation";
@@ -20,6 +22,7 @@ import type {
   EvidenceSetCompositionRevision,
   EvidenceSetMembership,
 } from "@/domain/types";
+import { resolveEvidenceSetCompositionRevisionMembers } from "@/application/evidence-set-composition-resolver";
 
 type SqlExecutor = Pick<Database, "execute">;
 type ReviewTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -32,6 +35,15 @@ function rows(value: unknown): Row[] {
 function ensureUuid(value: string, label: string) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
     throw new DomainError("VALIDATION_ERROR", `${label} must be a UUID`);
+  }
+  return value;
+}
+
+const STALE_COMPOSITION_MESSAGE = "This Evidence Set changed in another session. Reload the current composition before continuing.";
+
+function requireExpectedRevisionId(value: unknown): string {
+  if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    throw new DomainError("CONCURRENT_MODIFICATION", STALE_COMPOSITION_MESSAGE);
   }
   return value;
 }
@@ -160,6 +172,26 @@ type Snapshot = {
   members: SnapshotMember[];
 };
 
+type CurrentRevision = EvidenceSetCompositionRevision & {
+  setOrdinal: number;
+  previousRevisionId: string | null;
+  headMembershipId: string | null;
+  tailMembershipId: string | null;
+  memberCount: number;
+  distinctPaperCount: number;
+};
+
+function publicRevision(revision: CurrentRevision): EvidenceSetCompositionRevision {
+  return {
+    id: revision.id,
+    sequence: revision.sequence,
+    projectId: revision.projectId,
+    evidenceSetId: revision.evidenceSetId,
+    operationKind: revision.operationKind,
+    createdAt: revision.createdAt,
+  };
+}
+
 type Dependencies = {
   requireProject: (projectId: string) => Promise<unknown>;
   requireEvidence: (projectId: string, evidenceId: string) => Promise<unknown>;
@@ -189,47 +221,149 @@ export function createEvidenceSetServices(db: Database, dependencies: Dependenci
     if (!result[0]) throw new DomainError("CROSS_PROJECT_REFERENCE", "Evidence does not belong to this project");
   }
 
-  async function readCurrentSnapshot(executor: SqlExecutor, projectId: string, evidenceSetId: string): Promise<Snapshot> {
+  async function readCurrentRevision(executor: SqlExecutor, projectId: string, evidenceSetId: string): Promise<CurrentRevision> {
     const revisionRows = rows(await executor.execute(sql`
-      select id, sequence, project_id, evidence_set_id, operation_kind, created_at
+      select id, sequence, project_id, evidence_set_id, operation_kind, created_at,
+        set_ordinal, previous_revision_id, head_membership_id, tail_membership_id,
+        member_count, distinct_paper_count
       from evidence_set_composition_revisions
       where project_id=${projectId} and evidence_set_id=${evidenceSetId}
-      order by sequence desc
+      order by set_ordinal desc
       limit 1
     `));
-    if (!revisionRows[0]) throw new DomainError("DATABASE_CONSTRAINT", "Evidence Set has no composition snapshot");
-    const revision = mapRevision(revisionRows[0]);
-    const memberRows = rows(await executor.execute(sql`
-      select m.id, m.project_id, m.evidence_set_id, m.evidence_id, m.created_at, cm.sort_order
-      from evidence_set_composition_members cm
-      join evidence_set_memberships m
-        on m.project_id=cm.project_id and m.evidence_set_id=cm.evidence_set_id and m.id=cm.membership_id
-      where cm.project_id=${projectId} and cm.evidence_set_id=${evidenceSetId} and cm.composition_revision_id=${revision.id}
-      order by cm.sort_order
-    `));
-    return { revision, members: memberRows.map((row) => ({ membership: mapMembership(row), sortOrder: Number(row.sort_order) })) };
+    const row = revisionRows[0];
+    if (!row) throw new DomainError("DATABASE_CONSTRAINT", "Evidence Set has no composition revision");
+    return {
+      ...mapRevision(row),
+      setOrdinal: Number(row.set_ordinal),
+      previousRevisionId: row.previous_revision_id == null ? null : String(row.previous_revision_id),
+      headMembershipId: row.head_membership_id == null ? null : String(row.head_membership_id),
+      tailMembershipId: row.tail_membership_id == null ? null : String(row.tail_membership_id),
+      memberCount: Number(row.member_count),
+      distinctPaperCount: Number(row.distinct_paper_count),
+    };
   }
 
-  async function appendSnapshot(
+  async function readCurrentSnapshot(executor: SqlExecutor, projectId: string, evidenceSetId: string): Promise<Snapshot> {
+    const current = await readCurrentRevision(executor, projectId, evidenceSetId);
+    const revision: EvidenceSetCompositionRevision = {
+      id: current.id,
+      sequence: current.sequence,
+      projectId: current.projectId,
+      evidenceSetId: current.evidenceSetId,
+      operationKind: current.operationKind,
+      createdAt: current.createdAt,
+    };
+    const orderedMembers = await resolveEvidenceSetCompositionRevisionMembers(executor, projectId, evidenceSetId, current.id);
+    if (!orderedMembers.length) return { revision, members: [] };
+    const membershipRows = rows(await executor.execute(sql`
+      select id, project_id, evidence_set_id, evidence_id, created_at
+      from evidence_set_memberships
+      where project_id=${projectId} and evidence_set_id=${evidenceSetId}
+        and id in (${sql.join(orderedMembers.map((member) => sql`${member.membershipId}::uuid`), sql`, `)})
+    `));
+    const membershipById = new Map(membershipRows.map((row) => [String(row.id), mapMembership(row)]));
+    const members = orderedMembers.map((member) => {
+      const membership = membershipById.get(member.membershipId);
+      if (!membership) throw new DomainError("DATABASE_CONSTRAINT", "Evidence Set composition references a missing membership");
+      return { membership, sortOrder: member.position };
+    });
+    return { revision, members };
+  }
+
+  async function appendRevision(
     tx: ReviewTransaction,
     projectId: string,
     evidenceSetId: string,
     operationKind: EvidenceSetCompositionOperationKind,
-    members: SnapshotMember[],
+    targetMembershipId?: string,
+    moveDirection?: "up" | "down",
+    reorderedHeadMembershipId?: string,
+    reorderedTailMembershipId?: string,
   ) {
     const revisionRows = rows(await tx.execute(sql`
-      insert into evidence_set_composition_revisions (project_id, evidence_set_id, operation_kind)
-      values (${projectId}, ${evidenceSetId}, ${operationKind})
-      returning id, sequence, project_id, evidence_set_id, operation_kind, created_at
+      insert into evidence_set_composition_revisions (
+        project_id, evidence_set_id, operation_kind, target_membership_id, move_direction,
+        head_membership_id, tail_membership_id
+      )
+      values (
+        ${projectId}, ${evidenceSetId}, ${operationKind}, ${targetMembershipId ?? null},
+        ${moveDirection ?? null}, ${reorderedHeadMembershipId ?? null}, ${reorderedTailMembershipId ?? null}
+      )
+      returning id, sequence, project_id, evidence_set_id, operation_kind, created_at,
+        set_ordinal, previous_revision_id, head_membership_id, tail_membership_id,
+        member_count, distinct_paper_count
     `));
-    const revision = mapRevision(revisionRows[0]);
-    if (members.length) {
-      await tx.execute(sql`
-        insert into evidence_set_composition_members (project_id, evidence_set_id, composition_revision_id, membership_id, sort_order)
-        values ${sql.join(members.map((member) => sql`(${projectId}, ${evidenceSetId}, ${revision.id}, ${member.membership.id}, ${member.sortOrder})`), sql`, `)}
-      `);
+    const row = revisionRows[0];
+    return {
+      ...mapRevision(row),
+      setOrdinal: Number(row.set_ordinal),
+      previousRevisionId: row.previous_revision_id == null ? null : String(row.previous_revision_id),
+      headMembershipId: row.head_membership_id == null ? null : String(row.head_membership_id),
+      tailMembershipId: row.tail_membership_id == null ? null : String(row.tail_membership_id),
+      memberCount: Number(row.member_count),
+      distinctPaperCount: Number(row.distinct_paper_count),
+    } satisfies CurrentRevision;
+  }
+
+  function checkExpectedRevision(current: CurrentRevision, expectedRevisionId: string) {
+    if (current.id !== expectedRevisionId) {
+      throw new DomainError("CONCURRENT_MODIFICATION", STALE_COMPOSITION_MESSAGE);
     }
-    return revision;
+  }
+
+  function checkOptionalExpectedRevision(current: CurrentRevision, expectedRevisionId: string | undefined) {
+    if (expectedRevisionId !== undefined) checkExpectedRevision(current, expectedRevisionId);
+  }
+
+  async function closeOrderVersion(tx: ReviewTransaction, projectId: string, evidenceSetId: string, membershipId: string, ordinal: number) {
+    const result = rows(await tx.execute(sql`
+      update evidence_set_membership_order_versions
+      set valid_to_ordinal=${ordinal}
+      where project_id=${projectId} and evidence_set_id=${evidenceSetId}
+        and membership_id=${membershipId} and valid_to_ordinal is null
+      returning membership_id
+    `));
+    if (result.length !== 1) throw new DomainError("DATABASE_CONSTRAINT", "Expected one current Evidence Set order version to close");
+  }
+
+  async function insertOrderVersion(
+    tx: ReviewTransaction,
+    projectId: string,
+    evidenceSetId: string,
+    membershipId: string,
+    nextMembershipId: string | null,
+    ordinal: number,
+  ) {
+    await tx.execute(sql`
+      insert into evidence_set_membership_order_versions (
+        project_id, evidence_set_id, membership_id, next_membership_id,
+        valid_from_ordinal, valid_to_ordinal
+      ) values (
+        ${projectId}, ${evidenceSetId}, ${membershipId}, ${nextMembershipId}, ${ordinal}, null
+      )
+    `);
+  }
+
+  async function currentNext(tx: ReviewTransaction, projectId: string, evidenceSetId: string, membershipId: string) {
+    const result = rows(await tx.execute(sql`
+      select next_membership_id
+      from evidence_set_membership_order_versions
+      where project_id=${projectId} and evidence_set_id=${evidenceSetId}
+        and membership_id=${membershipId} and valid_to_ordinal is null
+    `));
+    if (!result.length) throw new DomainError("NOT_FOUND", "Evidence Set membership is not currently active");
+    return result[0].next_membership_id == null ? null : String(result[0].next_membership_id);
+  }
+
+  async function currentPredecessor(tx: ReviewTransaction, projectId: string, evidenceSetId: string, membershipId: string) {
+    const result = rows(await tx.execute(sql`
+      select membership_id
+      from evidence_set_membership_order_versions
+      where project_id=${projectId} and evidence_set_id=${evidenceSetId}
+        and next_membership_id=${membershipId} and valid_to_ordinal is null
+    `));
+    return result[0] ? String(result[0].membership_id) : null;
   }
 
   async function enrichEvidence(executor: SqlExecutor, projectId: string, evidenceIds: string[]) {
@@ -277,29 +411,72 @@ export function createEvidenceSetServices(db: Database, dependencies: Dependenci
   }
 
   async function listHistory(projectId: string, evidenceSetId: string) {
-    const revisions = rows(await db.execute(sql`
-      select id, sequence, project_id, evidence_set_id, operation_kind, created_at
-      from evidence_set_composition_revisions
-      where project_id=${projectId} and evidence_set_id=${evidenceSetId}
-      order by sequence
-    `)).map(mapRevision);
-    const revisionIds = revisions.map((revision) => revision.id);
-    const members = revisionIds.length ? rows(await db.execute(sql`
-      select cm.composition_revision_id, cm.membership_id, m.evidence_id, cm.sort_order
-      from evidence_set_composition_members cm
-      join evidence_set_memberships m
-        on m.project_id=cm.project_id and m.evidence_set_id=cm.evidence_set_id and m.id=cm.membership_id
-      where cm.project_id=${projectId} and cm.evidence_set_id=${evidenceSetId}
-        and cm.composition_revision_id in (${sql.join(revisionIds.map((id) => sql`${id}::uuid`), sql`, `)})
-      order by cm.composition_revision_id, cm.sort_order
-    `)) : [];
-    const membersByRevision = new Map<string, Array<{ membershipId: string; evidenceId: string; sortOrder: number }>>();
-    for (const row of members) {
-      const list = membersByRevision.get(String(row.composition_revision_id)) ?? [];
-      list.push({ membershipId: String(row.membership_id), evidenceId: String(row.evidence_id), sortOrder: Number(row.sort_order) });
-      membersByRevision.set(String(row.composition_revision_id), list);
+    const result = rows(await db.execute(sql`
+      with recursive composition_revisions as (
+        select r.id, r.sequence, r.project_id, r.evidence_set_id, r.operation_kind, r.created_at,
+          r.set_ordinal, r.head_membership_id, r.tail_membership_id, r.member_count
+        from evidence_set_composition_revisions r
+        where r.project_id=${projectId} and r.evidence_set_id=${evidenceSetId}
+      ), walk(revision_id, membership_id, next_membership_id, position, path) as (
+        select r.id, v.membership_id, v.next_membership_id, 1,
+          array[v.membership_id]::uuid[]
+        from composition_revisions r
+        join evidence_set_membership_order_versions v
+          on v.project_id=r.project_id and v.evidence_set_id=r.evidence_set_id
+         and v.membership_id=r.head_membership_id
+         and v.valid_from_ordinal <= r.set_ordinal
+         and (v.valid_to_ordinal is null or r.set_ordinal < v.valid_to_ordinal)
+        union all
+        select w.revision_id, next_version.membership_id, next_version.next_membership_id,
+          w.position + 1, w.path || next_version.membership_id
+        from walk w
+        join composition_revisions r on r.id=w.revision_id
+        join evidence_set_membership_order_versions next_version
+          on next_version.project_id=r.project_id and next_version.evidence_set_id=r.evidence_set_id
+         and next_version.membership_id=w.next_membership_id
+         and next_version.valid_from_ordinal <= r.set_ordinal
+         and (next_version.valid_to_ordinal is null or r.set_ordinal < next_version.valid_to_ordinal)
+        where w.next_membership_id is not null
+          and not w.next_membership_id = any(w.path)
+      )
+      select r.id, r.sequence, r.project_id, r.evidence_set_id, r.operation_kind, r.created_at,
+        r.member_count, r.tail_membership_id, w.membership_id, m.evidence_id, w.position
+      from composition_revisions r
+      left join walk w on w.revision_id=r.id
+      left join evidence_set_memberships m
+        on m.project_id=r.project_id and m.evidence_set_id=r.evidence_set_id and m.id=w.membership_id
+      order by r.set_ordinal, w.position
+    `));
+    const history = new Map<string, {
+      revision: EvidenceSetCompositionRevision;
+      expectedCount: number;
+      expectedTail: string | null;
+      members: Array<{ membershipId: string; evidenceId: string; sortOrder: number }>;
+    }>();
+    for (const row of result) {
+      const revisionId = String(row.id);
+      let entry = history.get(revisionId);
+      if (!entry) {
+        entry = {
+          revision: mapRevision(row),
+          expectedCount: Number(row.member_count),
+          expectedTail: row.tail_membership_id == null ? null : String(row.tail_membership_id),
+          members: [],
+        };
+        history.set(revisionId, entry);
+      }
+      if (row.membership_id != null) {
+        if (row.evidence_id == null) throw new DomainError("DATABASE_CONSTRAINT", "Evidence Set history references a missing Evidence membership");
+        entry.members.push({ membershipId: String(row.membership_id), evidenceId: String(row.evidence_id), sortOrder: Number(row.position) });
+      }
     }
-    return revisions.map((revision) => ({ revision, members: membersByRevision.get(revision.id) ?? [], evidenceIds: (membersByRevision.get(revision.id) ?? []).map((member) => member.evidenceId) }));
+    return [...history.values()].map((entry) => {
+      if (entry.members.length !== entry.expectedCount
+        || (entry.members.at(-1)?.membershipId ?? null) !== entry.expectedTail) {
+        throw new DomainError("DATABASE_CONSTRAINT", "Evidence Set history failed its exact member-count or tail invariant");
+      }
+      return { revision: entry.revision, members: entry.members, evidenceIds: entry.members.map((member) => member.evidenceId) };
+    });
   }
 
   async function relatedExtractionRevisions(projectId: string, evidenceIds: string[]) {
@@ -356,8 +533,11 @@ export function createEvidenceSetServices(db: Database, dependencies: Dependenci
             returning id, project_id, name, description, created_at, updated_at, archived_at
           `));
           const set = mapSet(setRows[0]);
-          const revision = await appendSnapshot(tx, projectId, set.id, "created", []);
-          return { set, revision };
+          const revision = await appendRevision(tx, projectId, set.id, "created");
+          return { set, revision: {
+            id: revision.id, sequence: revision.sequence, projectId: revision.projectId,
+            evidenceSetId: revision.evidenceSetId, operationKind: revision.operationKind, createdAt: revision.createdAt,
+          } };
         });
       } catch (error) {
         if (isConstraintError(error)) throw new DomainError("DATABASE_CONSTRAINT", "An active Evidence Set with this name already exists");
@@ -408,9 +588,10 @@ export function createEvidenceSetServices(db: Database, dependencies: Dependenci
       const result = rows(await db.execute(sql`
         with current_revisions as (
           select distinct on (project_id, evidence_set_id) project_id, evidence_set_id, id
+            , set_ordinal, member_count, distinct_paper_count
           from evidence_set_composition_revisions
           where project_id=${projectId}
-          order by project_id, evidence_set_id, sequence desc
+          order by project_id, evidence_set_id, set_ordinal desc
         ), current_review as (
           select distinct on (project_id, evidence_id) project_id, evidence_id, decision
           from evidence_review_decisions
@@ -418,19 +599,20 @@ export function createEvidenceSetServices(db: Database, dependencies: Dependenci
           order by project_id, evidence_id, sequence desc
         )
         select s.id, s.project_id, s.name, s.description, s.created_at, s.updated_at, s.archived_at,
-          count(cm.membership_id)::integer as member_count,
-          count(distinct e.paper_id)::integer as distinct_paper_count,
-          count(cm.membership_id) filter (where cr.decision is null)::integer as unreviewed_count,
-          count(cm.membership_id) filter (where cr.decision='needs_review')::integer as needs_review_count,
-          count(cm.membership_id) filter (where cr.decision='rejected')::integer as rejected_count
+          coalesce(rv.member_count, 0)::integer as member_count,
+          coalesce(rv.distinct_paper_count, 0)::integer as distinct_paper_count,
+          count(m.id) filter (where cr.decision is null)::integer as unreviewed_count,
+          count(m.id) filter (where cr.decision='needs_review')::integer as needs_review_count,
+          count(m.id) filter (where cr.decision='rejected')::integer as rejected_count
         from evidence_sets s
         left join current_revisions rv on rv.project_id=s.project_id and rv.evidence_set_id=s.id
-        left join evidence_set_composition_members cm on cm.project_id=rv.project_id and cm.evidence_set_id=rv.evidence_set_id and cm.composition_revision_id=rv.id
-        left join evidence_set_memberships m on m.project_id=cm.project_id and m.evidence_set_id=cm.evidence_set_id and m.id=cm.membership_id
+        left join evidence_set_membership_order_versions ov on ov.project_id=rv.project_id and ov.evidence_set_id=rv.evidence_set_id
+          and ov.valid_from_ordinal <= rv.set_ordinal and (ov.valid_to_ordinal is null or rv.set_ordinal < ov.valid_to_ordinal)
+        left join evidence_set_memberships m on m.project_id=ov.project_id and m.evidence_set_id=ov.evidence_set_id and m.id=ov.membership_id
         left join evidence e on e.project_id=m.project_id and e.id=m.evidence_id
         left join current_review cr on cr.project_id=e.project_id and cr.evidence_id=e.id
         where s.project_id=${projectId} ${includeArchived ? sql`` : sql`and s.archived_at is null`}
-        group by s.id
+        group by s.id, rv.member_count, rv.distinct_paper_count
         order by s.archived_at is not null, lower(s.name), s.id
       `));
       return result.map((row) => ({
@@ -460,53 +642,149 @@ export function createEvidenceSetServices(db: Database, dependencies: Dependenci
       return { set, currentRevision: snapshot.revision, members, annotations, compositionHistory: history, relatedExtractionRevisions: related };
     },
 
-    async addEvidenceToSet(projectId: string, evidenceSetId: string, input: { evidenceId: string }) {
+    async addEvidenceToSet(projectId: string, evidenceSetId: string, input: { evidenceId: string; expectedRevisionId: string }) {
       await requireProject(projectId); ensureUuid(evidenceSetId, "Evidence Set");
+      const expectedRevisionId = requireExpectedRevisionId(input?.expectedRevisionId);
       const parsed = evidenceSetMembershipInputSchema.safeParse(input);
       if (!parsed.success) throw new DomainError("VALIDATION_ERROR", "Evidence Set membership is invalid", parsed.error.issues);
       return db.transaction(async (tx) => {
         const set = await lockSet(tx, projectId, evidenceSetId);
         if (set.archivedAt) throw new DomainError("VALIDATION_ERROR", "Archived Evidence Sets cannot be changed");
+        const current = await readCurrentRevision(tx, projectId, evidenceSetId);
+        checkExpectedRevision(current, expectedRevisionId);
         await lockEvidence(tx, projectId, parsed.data.evidenceId);
-        const snapshot = await readCurrentSnapshot(tx, projectId, evidenceSetId);
-        if (snapshot.members.some((member) => member.membership.evidenceId === parsed.data.evidenceId)) {
+        const existing = rows(await tx.execute(sql`
+          select m.id, m.project_id, m.evidence_set_id, m.evidence_id, m.created_at,
+            exists(select 1 from evidence_set_membership_order_versions v
+              where v.project_id=m.project_id and v.evidence_set_id=m.evidence_set_id
+                and v.membership_id=m.id and v.valid_to_ordinal is null) as is_active,
+            exists(select 1 from evidence_set_membership_order_versions v
+              where v.project_id=m.project_id and v.evidence_set_id=m.evidence_set_id
+                and v.membership_id=m.id) as has_history
+          from evidence_set_memberships m
+          where m.project_id=${projectId} and m.evidence_set_id=${evidenceSetId}
+            and m.evidence_id=${parsed.data.evidenceId}
+          for update of m
+        `));
+        if (existing[0] && Boolean(existing[0].is_active)) {
           throw new DomainError("DUPLICATE_LINK", "Evidence is already in this Evidence Set");
         }
-        const existing = rows(await tx.execute(sql`
-          select id, project_id, evidence_set_id, evidence_id, created_at
-          from evidence_set_memberships
-          where project_id=${projectId} and evidence_set_id=${evidenceSetId} and evidence_id=${parsed.data.evidenceId}
-          for update
-        `));
+        if (existing[0] && !Boolean(existing[0].has_history)) {
+          throw new DomainError("DATABASE_CONSTRAINT", "Evidence Set contains an unactivated stable membership identity");
+        }
         const membership = existing[0] ? mapMembership(existing[0]) : mapMembership(rows(await tx.execute(sql`
           insert into evidence_set_memberships (project_id, evidence_set_id, evidence_id)
           values (${projectId}, ${evidenceSetId}, ${parsed.data.evidenceId})
           returning id, project_id, evidence_set_id, evidence_id, created_at
         `))[0]);
-        const wasPreviouslyActive = Boolean(rows(await tx.execute(sql`
-          select 1 from evidence_set_composition_members
-          where project_id=${projectId} and evidence_set_id=${evidenceSetId} and membership_id=${membership.id}
-          limit 1
-        `)).length);
-        const operationKind = wasPreviouslyActive ? "readded" : "added" as const;
-        const nextMembers = [...snapshot.members, { membership, sortOrder: snapshot.members.length + 1 }];
-        const revision = await appendSnapshot(tx, projectId, evidenceSetId, operationKind, nextMembers);
-        return { set, membership, revision };
+        const operationKind = existing[0] ? "readded" : "added";
+        const revision = await appendRevision(tx, projectId, evidenceSetId, operationKind, membership.id);
+        if (current.tailMembershipId) {
+          await closeOrderVersion(tx, projectId, evidenceSetId, current.tailMembershipId, revision.setOrdinal);
+          await insertOrderVersion(tx, projectId, evidenceSetId, current.tailMembershipId, membership.id, revision.setOrdinal);
+        }
+        await insertOrderVersion(tx, projectId, evidenceSetId, membership.id, null, revision.setOrdinal);
+        return { set, membership, revision: publicRevision(revision) };
       });
     },
 
-    async removeEvidenceFromSet(projectId: string, evidenceSetId: string, evidenceId: string) {
-      await requireProject(projectId); ensureUuid(evidenceSetId, "Evidence Set"); ensureUuid(evidenceId, "Evidence");
+    async removeEvidenceFromSet(
+      projectId: string,
+      evidenceSetId: string,
+      input: { evidenceId: string; expectedRevisionId: string },
+    ) {
+      await requireProject(projectId); ensureUuid(evidenceSetId, "Evidence Set");
+      const expectedRevisionId = requireExpectedRevisionId(input?.expectedRevisionId);
+      const parsedResult = evidenceSetMembershipInputSchema.safeParse(input);
+      if (!parsedResult.success) throw new DomainError("VALIDATION_ERROR", "Evidence Set membership removal is invalid", parsedResult.error.issues);
+      const parsed = parsedResult.data;
       return db.transaction(async (tx) => {
         const set = await lockSet(tx, projectId, evidenceSetId);
         if (set.archivedAt) throw new DomainError("VALIDATION_ERROR", "Archived Evidence Sets cannot be changed");
-        await lockEvidence(tx, projectId, evidenceId);
-        const snapshot = await readCurrentSnapshot(tx, projectId, evidenceSetId);
-        const index = snapshot.members.findIndex((member) => member.membership.evidenceId === evidenceId);
-        if (index < 0) throw new DomainError("NOT_FOUND", "Evidence is not currently in this Evidence Set");
-        const nextMembers = snapshot.members.filter((_, memberIndex) => memberIndex !== index).map((member, memberIndex) => ({ ...member, sortOrder: memberIndex + 1 }));
-        const revision = await appendSnapshot(tx, projectId, evidenceSetId, "removed", nextMembers);
-        return { set, membership: snapshot.members[index].membership, revision };
+        const current = await readCurrentRevision(tx, projectId, evidenceSetId);
+        checkExpectedRevision(current, expectedRevisionId);
+        await lockEvidence(tx, projectId, parsed.evidenceId);
+        const activeRows = rows(await tx.execute(sql`
+          select m.id, m.project_id, m.evidence_set_id, m.evidence_id, m.created_at,
+            v.next_membership_id
+          from evidence_set_memberships m
+          join evidence_set_membership_order_versions v
+            on v.project_id=m.project_id and v.evidence_set_id=m.evidence_set_id
+           and v.membership_id=m.id and v.valid_to_ordinal is null
+          where m.project_id=${projectId} and m.evidence_set_id=${evidenceSetId}
+            and m.evidence_id=${parsed.evidenceId}
+          for update of m
+        `));
+        if (!activeRows[0]) throw new DomainError("NOT_FOUND", "Evidence is not currently in this Evidence Set");
+        const membership = mapMembership(activeRows[0]);
+        const successor = activeRows[0].next_membership_id == null ? null : String(activeRows[0].next_membership_id);
+        const predecessor = await currentPredecessor(tx, projectId, evidenceSetId, membership.id);
+        const revision = await appendRevision(tx, projectId, evidenceSetId, "removed", membership.id);
+        await closeOrderVersion(tx, projectId, evidenceSetId, membership.id, revision.setOrdinal);
+        if (predecessor) {
+          await closeOrderVersion(tx, projectId, evidenceSetId, predecessor, revision.setOrdinal);
+          await insertOrderVersion(tx, projectId, evidenceSetId, predecessor, successor, revision.setOrdinal);
+        }
+        return { set, membership, revision: publicRevision(revision) };
+      });
+    },
+
+    async moveEvidenceSetMembership(projectId: string, evidenceSetId: string, input: MoveEvidenceSetMembershipInput) {
+      await requireProject(projectId); ensureUuid(evidenceSetId, "Evidence Set");
+      const expectedRevisionId = requireExpectedRevisionId((input as { expectedRevisionId?: unknown } | null)?.expectedRevisionId);
+      const parsed = moveEvidenceSetMembershipSchema.safeParse(input);
+      if (!parsed.success) throw new DomainError("VALIDATION_ERROR", "Evidence Set membership move is invalid", parsed.error.issues);
+      return db.transaction(async (tx) => {
+        const set = await lockSet(tx, projectId, evidenceSetId);
+        if (set.archivedAt) throw new DomainError("VALIDATION_ERROR", "Archived Evidence Sets cannot be changed");
+        const current = await readCurrentRevision(tx, projectId, evidenceSetId);
+        checkExpectedRevision(current, expectedRevisionId);
+        const target = parsed.data.membershipId;
+        const neighborhoodRows = rows(await tx.execute(sql`
+          select target.membership_id, target.next_membership_id,
+            predecessor.membership_id as previous_membership_id
+          from evidence_set_membership_order_versions target
+          left join evidence_set_membership_order_versions predecessor
+            on predecessor.project_id=target.project_id
+           and predecessor.evidence_set_id=target.evidence_set_id
+           and predecessor.next_membership_id=target.membership_id
+           and predecessor.valid_to_ordinal is null
+          where target.project_id=${projectId} and target.evidence_set_id=${evidenceSetId}
+            and target.membership_id=${target} and target.valid_to_ordinal is null
+          for update of target
+        `));
+        if (!neighborhoodRows[0]) throw new DomainError("NOT_FOUND", "Evidence Set membership is not currently active");
+        const targetNext = neighborhoodRows[0].next_membership_id == null ? null : String(neighborhoodRows[0].next_membership_id);
+        const targetPrevious = neighborhoodRows[0].previous_membership_id == null ? null : String(neighborhoodRows[0].previous_membership_id);
+
+        if (parsed.data.direction === "up" && !targetPrevious) {
+          return { set, revision: publicRevision(current), moved: false };
+        }
+        if (parsed.data.direction === "down" && !targetNext) {
+          return { set, revision: publicRevision(current), moved: false };
+        }
+
+        const changedLinks = new Map<string, string | null>();
+        if (parsed.data.direction === "up") {
+          const previousPrevious = await currentPredecessor(tx, projectId, evidenceSetId, targetPrevious!);
+          if (previousPrevious) changedLinks.set(previousPrevious, target);
+          changedLinks.set(target, targetPrevious!);
+          changedLinks.set(targetPrevious!, targetNext);
+        } else {
+          const nextNext = await currentNext(tx, projectId, evidenceSetId, targetNext!);
+          if (targetPrevious) changedLinks.set(targetPrevious, targetNext!);
+          changedLinks.set(targetNext!, target);
+          changedLinks.set(target, nextNext);
+        }
+
+        const revision = await appendRevision(tx, projectId, evidenceSetId, "moved", target, parsed.data.direction);
+        for (const membershipId of changedLinks.keys()) {
+          await closeOrderVersion(tx, projectId, evidenceSetId, membershipId, revision.setOrdinal);
+        }
+        for (const [membershipId, nextMembershipId] of changedLinks) {
+          await insertOrderVersion(tx, projectId, evidenceSetId, membershipId, nextMembershipId, revision.setOrdinal);
+        }
+        return { set, revision: publicRevision(revision), moved: true };
       });
     },
 
@@ -517,6 +795,9 @@ export function createEvidenceSetServices(db: Database, dependencies: Dependenci
       return db.transaction(async (tx) => {
         const set = await lockSet(tx, projectId, evidenceSetId);
         if (set.archivedAt) throw new DomainError("VALIDATION_ERROR", "Archived Evidence Sets cannot be changed");
+        if (parsed.data.expectedRevisionId !== undefined) ensureUuid(parsed.data.expectedRevisionId, "Composition revision");
+        const current = await readCurrentRevision(tx, projectId, evidenceSetId);
+        checkOptionalExpectedRevision(current, parsed.data.expectedRevisionId);
         const snapshot = await readCurrentSnapshot(tx, projectId, evidenceSetId);
         const expected = snapshot.members.map((member) => member.membership.evidenceId);
         if (parsed.data.evidenceIds.length !== expected.length || [...parsed.data.evidenceIds].sort().join(",") !== [...expected].sort().join(",")) {
@@ -527,8 +808,15 @@ export function createEvidenceSetServices(db: Database, dependencies: Dependenci
         }
         const membershipByEvidence = new Map(snapshot.members.map((member) => [member.membership.evidenceId, member.membership]));
         const nextMembers = parsed.data.evidenceIds.map((evidenceId, index) => ({ membership: membershipByEvidence.get(evidenceId)!, sortOrder: index + 1 }));
-        const revision = await appendSnapshot(tx, projectId, evidenceSetId, "reordered", nextMembers);
-        return { set, revision };
+        const orderedIds = nextMembers.map((member) => member.membership.id);
+        const revision = await appendRevision(tx, projectId, evidenceSetId, "reordered", undefined, undefined, orderedIds[0], orderedIds.at(-1));
+        for (const member of snapshot.members) {
+          await closeOrderVersion(tx, projectId, evidenceSetId, member.membership.id, revision.setOrdinal);
+        }
+        for (let index = 0; index < orderedIds.length; index += 1) {
+          await insertOrderVersion(tx, projectId, evidenceSetId, orderedIds[index], orderedIds[index + 1] ?? null, revision.setOrdinal);
+        }
+        return { set, revision: publicRevision(revision) };
       });
     },
 
@@ -559,13 +847,32 @@ export function createEvidenceSetServices(db: Database, dependencies: Dependenci
 
     async listCandidateEvidenceForSet(projectId: string, evidenceSetId: string) {
       await requireProject(projectId); ensureUuid(evidenceSetId, "Evidence Set");
-      const snapshot = await readCurrentSnapshot(db, projectId, evidenceSetId);
-      const activeIds = snapshot.members.map((member) => member.membership.evidenceId);
       const candidateRows = rows(await db.execute(sql`
         select e.id
         from evidence e
         where e.project_id=${projectId}
-          ${activeIds.length ? sql`and e.id not in (${sql.join(activeIds.map((id) => sql`${id}::uuid`), sql`, `)})` : sql``}
+          and not exists (
+            select 1
+            from evidence_set_composition_revisions current_revision
+            join evidence_set_membership_order_versions current_link
+              on current_link.project_id=current_revision.project_id
+             and current_link.evidence_set_id=current_revision.evidence_set_id
+             and current_link.valid_from_ordinal <= current_revision.set_ordinal
+             and (current_link.valid_to_ordinal is null or current_revision.set_ordinal < current_link.valid_to_ordinal)
+            join evidence_set_memberships current_membership
+              on current_membership.project_id=current_link.project_id
+             and current_membership.evidence_set_id=current_link.evidence_set_id
+             and current_membership.id=current_link.membership_id
+            where current_revision.project_id=${projectId}
+              and current_revision.evidence_set_id=${evidenceSetId}
+              and current_revision.set_ordinal=(
+                select max(latest.set_ordinal)
+                from evidence_set_composition_revisions latest
+                where latest.project_id=current_revision.project_id
+                  and latest.evidence_set_id=current_revision.evidence_set_id
+              )
+              and current_membership.evidence_id=e.id
+          )
         order by e.created_at, e.id
       `));
       return enrichEvidence(db, projectId, candidateRows.map((row) => String(row.id)));

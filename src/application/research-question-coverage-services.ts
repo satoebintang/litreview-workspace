@@ -252,55 +252,60 @@ export function createResearchQuestionCoverageServices(
 
     const setsById = new Map(setRows.map((s) => [s.id, s]));
 
-    // Query latest composition revision per evidence set
-    const compRevisions = await db.execute(sql`
-      select distinct on (evidence_set_id)
-        id as composition_revision_id, evidence_set_id, sequence
-      from evidence_set_composition_revisions
-      where project_id = ${projectId}
-        and evidence_set_id in (${sql.join(setIds.map((id) => sql`${id}::uuid`), sql`, `)})
-      order by evidence_set_id, sequence desc
-    `);
-
-    const compRevMap = new Map<string, string>();
-    const compRevIds: string[] = [];
-    for (const r of compRevisions as any[]) {
-      compRevMap.set(String(r.evidence_set_id), String(r.composition_revision_id));
-      compRevIds.push(String(r.composition_revision_id));
-    }
-
-    // If composition revisions exist, query member items and their current review status
-    let memberRows: any[] = [];
-    if (compRevIds.length > 0) {
-      memberRows = (await db.execute(sql`
-        with current_review as (
-          select distinct on (project_id, evidence_id) project_id, evidence_id, decision
-          from evidence_review_decisions
-          where project_id = ${projectId}
-          order by project_id, evidence_id, sequence desc
-        )
-        select
-          cm.composition_revision_id,
-          m.evidence_set_id,
-          m.evidence_id,
-          e.paper_id,
-          cr.decision as review_decision
-        from evidence_set_composition_members cm
+    // Resolve each linked Set's exact latest UUID/ordinal in one set-based
+    // aggregate. Only per-Set summaries cross into Node; member rows are not
+    // materialized or serialized for this summary projection.
+    const compositionRows = await db.execute(sql`
+      with latest_compositions as (
+        select distinct on (r.evidence_set_id)
+          r.id as composition_revision_id, r.evidence_set_id, r.set_ordinal
+        from evidence_set_composition_revisions r
+        where r.project_id = ${projectId}
+          and r.evidence_set_id in (${sql.join(setIds.map((id) => sql`${id}::uuid`), sql`, `)})
+        order by r.evidence_set_id, r.set_ordinal desc
+      ), active_members as (
+        select r.composition_revision_id, r.evidence_set_id, m.evidence_id, e.paper_id
+        from latest_compositions r
+        join evidence_set_membership_order_versions v
+          on v.project_id = ${projectId} and v.evidence_set_id = r.evidence_set_id
+          and v.valid_from_ordinal <= r.set_ordinal
+          and (v.valid_to_ordinal is null or r.set_ordinal < v.valid_to_ordinal)
         join evidence_set_memberships m
-          on m.project_id = cm.project_id and m.evidence_set_id = cm.evidence_set_id and m.id = cm.membership_id
+          on m.project_id = v.project_id and m.evidence_set_id = v.evidence_set_id and m.id = v.membership_id
         join evidence e on e.project_id = m.project_id and e.id = m.evidence_id
-        left join current_review cr on cr.project_id = e.project_id and cr.evidence_id = e.id
-        where cm.project_id = ${projectId}
-          and cm.composition_revision_id in (${sql.join(compRevIds.map((id) => sql`${id}::uuid`), sql`, `)})
-      `)) as any[];
-    }
+      ), current_review as (
+        select distinct on (d.project_id, d.evidence_id)
+          d.project_id, d.evidence_id, d.decision
+        from evidence_review_decisions d
+        where d.project_id = ${projectId}
+          and exists (select 1 from active_members am where am.evidence_id = d.evidence_id)
+        order by d.project_id, d.evidence_id, d.sequence desc
+      ), coverage_counts as (
+        select am.evidence_set_id,
+          count(*)::integer as member_count,
+          count(distinct am.paper_id)::integer as distinct_paper_count,
+          count(*) filter (where cr.decision = 'accepted')::integer as accepted_count,
+          count(*) filter (where cr.decision = 'needs_review')::integer as needs_review_count,
+          count(*) filter (where cr.decision = 'rejected')::integer as rejected_count,
+          count(*) filter (where cr.decision is null)::integer as unreviewed_count
+        from active_members am
+        left join current_review cr on cr.project_id = ${projectId} and cr.evidence_id = am.evidence_id
+        group by am.evidence_set_id
+      )
+      select latest.evidence_set_id, latest.composition_revision_id,
+        coalesce(counts.member_count, 0)::integer as member_count,
+        coalesce(counts.distinct_paper_count, 0)::integer as distinct_paper_count,
+        coalesce(counts.accepted_count, 0)::integer as accepted_count,
+        coalesce(counts.needs_review_count, 0)::integer as needs_review_count,
+        coalesce(counts.rejected_count, 0)::integer as rejected_count,
+        coalesce(counts.unreviewed_count, 0)::integer as unreviewed_count
+      from latest_compositions latest
+      left join coverage_counts counts on counts.evidence_set_id = latest.evidence_set_id
+    `) as any[];
 
-    const membersBySet = new Map<string, any[]>();
-    for (const r of memberRows) {
-      const setId = String(r.evidence_set_id);
-      const list = membersBySet.get(setId) ?? [];
-      list.push(r);
-      membersBySet.set(setId, list);
+    const coverageBySet = new Map<string, any>();
+    for (const row of compositionRows) {
+      coverageBySet.set(String(row.evidence_set_id), row);
     }
 
     const coverages: LinkedEvidenceSetCoverage[] = [];
@@ -309,35 +314,22 @@ export function createResearchQuestionCoverageServices(
       const set = setsById.get(setId);
       if (!set) continue;
 
-      const compRevId = compRevMap.get(setId) ?? null;
-      const members = membersBySet.get(setId) ?? [];
-
-      const distinctPapers = new Set<string>();
-      const reviewCounts = {
-        accepted: 0,
-        needsReview: 0,
-        unreviewed: 0,
-        rejected: 0,
-      };
-
-      for (const m of members) {
-        if (m.paper_id) distinctPapers.add(String(m.paper_id));
-        const decision = m.review_decision;
-        if (decision === "accepted") reviewCounts.accepted += 1;
-        else if (decision === "needs_review") reviewCounts.needsReview += 1;
-        else if (decision === "rejected") reviewCounts.rejected += 1;
-        else reviewCounts.unreviewed += 1;
-      }
+      const summary = coverageBySet.get(setId);
 
       coverages.push({
         evidenceSetId: set.id,
         name: set.name,
         description: set.description ?? null,
         archivedAt: set.archivedAt,
-        latestCompositionRevisionId: compRevId,
-        memberCount: members.length,
-        distinctPaperCount: distinctPapers.size,
-        reviewCounts,
+        latestCompositionRevisionId: summary?.composition_revision_id == null ? null : String(summary.composition_revision_id),
+        memberCount: Number(summary?.member_count ?? 0),
+        distinctPaperCount: Number(summary?.distinct_paper_count ?? 0),
+        reviewCounts: {
+          accepted: Number(summary?.accepted_count ?? 0),
+          needsReview: Number(summary?.needs_review_count ?? 0),
+          unreviewed: Number(summary?.unreviewed_count ?? 0),
+          rejected: Number(summary?.rejected_count ?? 0),
+        },
       });
     }
 

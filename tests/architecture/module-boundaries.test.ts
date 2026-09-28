@@ -446,8 +446,16 @@ beforeAll(() => {
 
 describe("bounded-context module boundaries", () => {
   it("keeps the schema façade exports and canonical schema key order", () => {
-    expect(moduleExports(schemaFacade)).toEqual([...fixture.schema.exports].sort());
-    expect(Object.keys(schema)).toEqual(fixture.schema.keys);
+    const expectedExports = [...fixture.schema.exports];
+    const expectedKeys = [...fixture.schema.keys];
+    const snapshotExportIndex = expectedExports.indexOf("evidenceSetCompositionMembers");
+    const snapshotKeyIndex = expectedKeys.indexOf("evidenceSetCompositionMembers");
+    expect(snapshotExportIndex).toBeGreaterThanOrEqual(0);
+    expect(snapshotKeyIndex).toBeGreaterThanOrEqual(0);
+    expectedExports.splice(snapshotExportIndex, 1, "evidenceSetMembershipOrderVersions", "evidenceSetPaperMemberCounts");
+    expectedKeys.splice(snapshotKeyIndex, 1, "evidenceSetMembershipOrderVersions", "evidenceSetPaperMemberCounts");
+    expect(moduleExports(schemaFacade)).toEqual(expectedExports.sort());
+    expect(Object.keys(schema)).toEqual(expectedKeys);
     expect(fixture.schema.exports).toHaveLength(113);
     expect(fixture.schema.keys).toHaveLength(112);
   });
@@ -470,12 +478,22 @@ describe("bounded-context module boundaries", () => {
     expect(fixture.services.coreMethods).toHaveLength(67);
   });
 
-  it("keeps the 137 action signatures and async forwarding façade frozen", () => {
+  it("keeps the Slice 45 action signatures and async forwarding façade frozen", () => {
+    const expectedActionExports = [
+      ...fixture.actions.exports,
+      "addEvidenceToSelectedSetAction",
+      "moveEvidenceSetMembershipAction",
+    ];
+    const expectedActionFunctions = [
+      ...fixture.actions.functions,
+      { name: "addEvidenceToSelectedSetAction", signature: "(form: FormData) => Promise<void>" },
+      { name: "moveEvidenceSetMembershipAction", signature: "(form: FormData) => Promise<void>" },
+    ];
     const facade = sourceFile(actionsFacade);
     expect(hasUseServerDirective(facade)).toBe(true);
     const exportedStatements = facade.statements.filter((statement) => hasModifier(statement, ts.SyntaxKind.ExportKeyword)
       || ts.isExportDeclaration(statement) || ts.isExportAssignment(statement));
-    expect(exportedStatements).toHaveLength(137);
+    expect(exportedStatements).toHaveLength(139);
     expect(exportedStatements.every((statement) => ts.isFunctionDeclaration(statement)
       && hasModifier(statement, ts.SyntaxKind.AsyncKeyword))).toBe(true);
 
@@ -489,8 +507,8 @@ describe("bounded-context module boundaries", () => {
     const wrappers = new Map(facade.statements
       .filter((statement): statement is ts.FunctionDeclaration => ts.isFunctionDeclaration(statement) && !!statement.name)
       .map((declaration) => [declaration.name!.text, declaration]));
-    expect([...wrappers.keys()].sort()).toEqual([...fixture.actions.exports].sort());
-    expect(wrappers.size).toBe(137);
+    expect([...wrappers.keys()].sort()).toEqual([...expectedActionExports].sort());
+    expect(wrappers.size).toBe(139);
 
     const implementationModules = new Set<string>();
     const implementationExports: string[] = [];
@@ -517,9 +535,9 @@ describe("bounded-context module boundaries", () => {
 
     }
     expect(implementationModules.size).toBe(16);
-    expect(implementationExports.sort()).toEqual([...fixture.actions.exports].sort());
+    expect(implementationExports.sort()).toEqual([...expectedActionExports].sort());
 
-    for (const expected of fixture.actions.functions) {
+    for (const expected of expectedActionFunctions) {
       const wrapper = wrappers.get(expected.name);
       const implementation = implementations.get(expected.name);
       expect(wrapper, `Missing façade wrapper ${expected.name}`).toBeDefined();
@@ -671,7 +689,15 @@ describe("bounded-context module boundaries", () => {
       if (!call) continue;
       const declaration = factoryDeclarationFromCall(call);
       factoryKeys.set(factory.source, factoryObjectKeys(declaration));
-      expect(factoryKeys.get(factory.source)).toEqual(factory.keys);
+      const reorderIndex = factory.keys.indexOf("reorderEvidenceSet");
+      const expectedKeys = factory.source === "evidenceSetServices" && reorderIndex >= 0
+        ? [
+            ...factory.keys.slice(0, reorderIndex),
+            "moveEvidenceSetMembership",
+            ...factory.keys.slice(reorderIndex),
+          ]
+        : factory.keys;
+      expect(factoryKeys.get(factory.source)).toEqual(expectedKeys);
     }
 
     const layers = [

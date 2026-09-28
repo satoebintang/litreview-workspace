@@ -14,6 +14,8 @@ const baseUrl = resolveDatabaseUrl();
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
 const migrationPath = path.join(migrationFolder, "0033_storage_materialization_recovery.sql");
 const migrationHash = createHash("sha256").update(fs.readFileSync(migrationPath)).digest("hex");
+const slice45MigrationPath = path.join(migrationFolder, "0034_evidence_set_composition_timeline.sql");
+const slice45MigrationHash = createHash("sha256").update(fs.readFileSync(slice45MigrationPath)).digest("hex");
 
 function databaseUrl(name: string) {
   const url = new URL(baseUrl);
@@ -34,11 +36,17 @@ function createPre0033MigrationFolder() {
   const target = path.join(tempRoot, "drizzle");
   fs.cpSync(migrationFolder, target, {
     recursive: true,
-    filter: (source) => !["0033_storage_materialization_recovery.sql", "0033_snapshot.json"].includes(path.basename(source)),
+    filter: (source) => {
+      const versionedFile = path.basename(source).match(/^(\d{4})_.+\.(?:sql|json)$/);
+      return !versionedFile || Number(versionedFile[1]) <= 32;
+    },
   });
   const journalPath = path.join(target, "meta", "_journal.json");
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as { entries: Array<{ tag: string }> };
-  journal.entries = journal.entries.filter((entry) => entry.tag !== "0033_storage_materialization_recovery");
+  journal.entries = journal.entries.filter((entry) => {
+    const version = entry.tag.match(/^(\d{4})_/);
+    return version != null && Number(version[1]) <= 32;
+  });
   fs.writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   return { tempRoot, folder: target };
 }
@@ -57,8 +65,9 @@ describe("Slice 41 storage materialization migration and database invariants", (
     const app = createDb(created.url);
     try {
       await migrate(app.db, { migrationsFolder: migrationFolder });
-      const [latest] = await app.client`select hash from drizzle.__drizzle_migrations order by id desc limit 1`;
-      expect(latest.hash).toBe(migrationHash);
+      const appliedHashes = await app.client`select hash from drizzle.__drizzle_migrations order by id`;
+      expect(appliedHashes.map((row) => row.hash)).toContain(migrationHash);
+      expect(appliedHashes.at(-1)?.hash).toBe(slice45MigrationHash);
       const defaults = await app.client`
         select table_name, column_default, is_nullable
         from information_schema.columns
@@ -271,8 +280,9 @@ describe("Slice 41 storage materialization migration and database invariants", (
         { table_name: "full_text_documents", column_default: null, is_nullable: "NO" },
         { table_name: "pdf_intakes", column_default: null, is_nullable: "NO" },
       ]);
-      const [latest] = await app.client`select hash from drizzle.__drizzle_migrations order by id desc limit 1`;
-      expect(latest.hash).toBe(migrationHash);
+      const appliedHashes = await app.client`select hash from drizzle.__drizzle_migrations order by id`;
+      expect(appliedHashes.map((row) => row.hash)).toContain(migrationHash);
+      expect(appliedHashes.at(-1)?.hash).toBe(slice45MigrationHash);
     } finally {
       await app.client.end();
       await created.admin.unsafe(`drop database if exists "${created.name}" with (force)`);

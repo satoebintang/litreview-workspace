@@ -38,10 +38,10 @@ test.describe("Slice 17 Evidence Sets", () => {
     await page.goto(`/projects/${projectId}/evidence`);
     await page.getByRole("link", { name: "Open Evidence detail →" }).click();
     await expect(page).toHaveURL(/\/evidence\/[0-9a-f-]+$/);
-    await page.locator("#evidence-set").selectOption(setId);
+    await page.locator("#evidence-set").selectOption({ label: "Primary outcomes (renamed) · 0 members" });
     await page.getByRole("button", { name: "Add to set" }).click();
     await expect(page.getByRole("status")).toHaveText("Evidence Set membership saved.");
-    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/evidence-sets/${setId}\\?saved=member$`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/evidence-sets/${setId}\\?saved=member&revisionId=[0-9a-f-]+$`));
 
     await page.goto(`/projects/${projectId}/evidence-sets/${setId}`);
     await expect(page.getByRole("article").getByText(/An exact passage retained in the set/)).toBeVisible();
@@ -53,7 +53,7 @@ test.describe("Slice 17 Evidence Sets", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Archive and freeze set" }).click();
     await expect(page.getByRole("status")).toHaveText("Evidence Set archived and frozen.");
     await expect(page.getByText("This set is frozen. Its composition and annotations remain readable, but no changes are allowed.", { exact: true })).toBeVisible();
-    await expect(page.getByText("created · sequence 1 · 0 active", { exact: true })).toBeVisible();
-    await expect(page.getByText("added · sequence 2 · 1 active", { exact: true })).toBeVisible();
+    await expect(page.getByText("created · sequence 1 · 0 Evidence", { exact: true })).toBeVisible();
+    await expect(page.getByText("added · sequence 2 · 1 Evidence", { exact: true })).toBeVisible();
   });
 });

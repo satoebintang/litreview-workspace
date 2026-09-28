@@ -120,11 +120,9 @@ test.describe("Slice 20 Research Questions Traceability", () => {
     await page.getByLabel("Purpose or theme").fill("Evidence of intrusion reduction");
     await page.getByRole("button", { name: "Create Evidence Set" }).click();
     await expect(page).toHaveURL(/\/evidence-sets\/[0-9a-f-]+\?saved=created$/);
-    const setId = new URL(page.url()).pathname.split("/").pop()!;
-
     await page.goto(`/projects/${projectId}/evidence`);
     await page.getByRole("link", { name: "Open Evidence detail →" }).click();
-    await page.locator("#evidence-set").selectOption(setId);
+    await page.locator("#evidence-set").selectOption({ label: "Defense Efficacy Set · 0 members" });
     await page.getByRole("button", { name: "Add to set" }).click();
     await expect(page.getByRole("status")).toHaveText("Evidence Set membership saved.");
 

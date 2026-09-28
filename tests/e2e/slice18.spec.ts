@@ -75,7 +75,7 @@ test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
 
     await page.goto(`/projects/${projectId}/evidence`);
     await page.getByRole("link", { name: "Open Evidence detail →" }).click();
-    await page.locator("#evidence-set").selectOption(setId);
+    await page.locator("#evidence-set").selectOption({ label: "Outcome Evidence Set · 0 members" });
     await page.getByRole("button", { name: "Add to set" }).click();
     await expect(page.getByRole("status")).toHaveText("Evidence Set membership saved.");
 
@@ -83,6 +83,10 @@ test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     await page.goto(`/projects/${projectId}/evidence-sets/${setId}`);
     await expect(page.getByRole("heading", { name: "Prepare synthesis workspace" })).toBeVisible();
     await expect(page.getByText("Effect Size", { exact: true })).toBeVisible();
+    const displayedRevision = await page.getByTestId("composition-revision").textContent();
+    const preparationForm = page.getByRole("button", { name: "Prepare synthesis →" }).locator("xpath=ancestor::form");
+    const submittedRevision = await preparationForm.locator('input[name="expectedRevisionId"]').inputValue();
+    expect(displayedRevision).toContain(submittedRevision);
     await page.getByRole("button", { name: "Prepare synthesis →" }).click();
 
     // 7. Workspace page

@@ -56,6 +56,7 @@ export async function createSynthesisPreparationAction(form: FormData) {
   try {
     preparation = await reviewServices.createSynthesisPreparation(projectId, {
       evidenceSetId,
+      expectedRevisionId: text(form, "expectedRevisionId"),
       extractionFieldId,
       workingTitle: optional(form, "workingTitle"),
       workingNote: optional(form, "workingNote"),
