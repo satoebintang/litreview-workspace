@@ -2,19 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   createResearchQuestionAction,
-  createRetrievedRecordAction,
   createSearchRunAction,
   createSearchSourceAction,
   createSearchStrategyAction,
 } from "@/app/actions";
 import { reviewServices } from "@/app/server";
+import { acquisitionReadServices } from "@/app/server";
 import { DomainError } from "@/domain/errors";
 
 type Question = { id: string; identifier: string; label: string; sortOrder: number; archivedAt: Date | null };
 type Criterion = { id: string; type: string; text: string; archivedAt: Date | null };
 type Source = { id: string; sourceKey: string; displayName: string; archivedAt: Date | null };
 type Strategy = { id: string; searchSourceId: string; name: string; queryText: string; filtersText: string | null; notes: string | null; archivedAt: Date | null };
-type Run = { id: string; sequence: number; searchSourceId: string; sourceKeySnapshot: string; sourceDisplayNameSnapshot: string; queryText: string; filtersTextSnapshot: string | null; reportedResultCount: number; executedAt: Date; notes: string | null };
 
 function dateInput(value: Date) {
   return value.toISOString().slice(0, 16);
@@ -22,20 +21,26 @@ function dateInput(value: Date) {
 
 export default async function ProtocolPage({ params, searchParams }: {
   params: Promise<{ projectId: string }>;
-  searchParams?: Promise<{ error?: string; saved?: string }>;
+  searchParams?: Promise<{ error?: string; saved?: string; cursor?: string }>;
 }) {
   const { projectId } = await params;
   const query = searchParams ? await searchParams : {};
   let project;
   try { project = await reviewServices.getProject(projectId); }
   catch (error) { if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "VALIDATION_ERROR"].includes(error.code)) notFound(); throw error; }
-  const [questions, criteria, sources, strategies, runs] = await Promise.all([
+  const [questions, criteria, sources, strategies] = await Promise.all([
     reviewServices.listResearchQuestions(projectId),
     reviewServices.listScreeningCriteria(projectId, true),
     reviewServices.listSearchSources(projectId),
     reviewServices.listSearchStrategies(projectId),
-    reviewServices.listSearchRuns(projectId),
-  ]) as unknown as [Question[], Criterion[], Source[], Strategy[], Run[]];
+  ]) as unknown as [Question[], Criterion[], Source[], Strategy[]];
+  let runPage;
+  let pageError: string | null = null;
+  try { runPage = await acquisitionReadServices.getSearchRunPage(projectId, { cursor: query.cursor }); }
+  catch (error) {
+    if (error instanceof DomainError && error.message === "Page link expired or invalid. Start from the first page.") pageError = error.message;
+    else throw error;
+  }
   const activeCriteria = criteria.filter((criterion) => !criterion.archivedAt);
   const activeSources = sources.filter((source) => !source.archivedAt);
   const activeStrategies = strategies.filter((strategy) => !strategy.archivedAt);
@@ -45,7 +50,7 @@ export default async function ProtocolPage({ params, searchParams }: {
 
   return <div className="project-page">
     <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Review protocol</p><h1>Protocol &amp; search</h1><p>{project.title} · preserve the exact history of every search.</p></div><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Link className="button secondary" href={`/projects/${projectId}/review-report`}>Open review report →</Link><Link className="button secondary" href={`/projects/${projectId}/screening`}>Open screening criteria →</Link></div></div>
-      {query.error && <div className="error-banner" role="alert">{query.error}</div>}{query.saved && <div className="success-note" role="status">Protocol updated.</div>}
+      {(query.error || pageError) && <div className="error-banner" role="alert">{pageError ?? query.error}</div>}{query.saved && <div className="success-note" role="status">Protocol updated.</div>}
 
        <div className="workspace-grid">
          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}><Link className="button ghost" href={`/projects/${projectId}/deduplication`}>Deduplication queue →</Link><Link className="button ghost" href={`/projects/${projectId}/review-flow`}>Review flow →</Link></div>
@@ -73,14 +78,12 @@ export default async function ProtocolPage({ params, searchParams }: {
           {activeStrategies.length > 0 && <div className="item-list" style={{ marginTop: 22 }}>{activeStrategies.map((strategy) => <article className="item" key={strategy.id}><div className="item-row"><div className="item-title">{strategy.name}</div><span className="status supported">{sourceById.get(strategy.searchSourceId)?.displayName ?? "Source"}</span></div><div className="quote">{strategy.queryText}</div>{strategy.filtersText && <div className="item-meta">Filters: {strategy.filtersText}</div>}</article>)}</div>}
         </section>
 
-        <section className="card section-card full"><div className="section-heading"><h2>Record a search run</h2><span className="count">{runs.length} immutable {runs.length === 1 ? "run" : "runs"}</span></div>
+        <section className="card section-card full"><div className="section-heading"><h2>Record a search run</h2><span className="count">Immutable history</span></div>
           <p className="hint">A run records source identity snapshots and the exact executed query. It can be corrected only by recording another run.</p>
           <form action={createSearchRunAction} className="extraction-form"><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="run-source">Source</label><select id="run-source" name="searchSourceId" required defaultValue={defaultSource?.id ?? ""}>{activeSources.map((source) => <option key={source.id} value={source.id}>{source.displayName}</option>)}</select></div><div className="field"><label htmlFor="run-strategy">Strategy</label><select id="run-strategy" name="strategyId" required defaultValue={defaultStrategy?.id ?? ""}>{activeStrategies.map((strategy) => <option key={strategy.id} value={strategy.id}>{strategy.name}</option>)}</select></div><div className="field"><label htmlFor="run-source-key">Source key snapshot</label><input id="run-source-key" name="sourceKeySnapshot" required defaultValue={defaultSource?.sourceKey ?? ""} placeholder="scopus" /></div><div className="field"><label htmlFor="run-source-name">Source name snapshot</label><input id="run-source-name" name="sourceDisplayNameSnapshot" required defaultValue={defaultSource?.displayName ?? ""} placeholder="Scopus" /></div><div className="field"><label htmlFor="run-query">Executed query</label><textarea id="run-query" name="queryText" required defaultValue={defaultStrategy?.queryText ?? ""} /></div><div className="field"><label htmlFor="run-filters">Filters snapshot</label><textarea id="run-filters" name="filtersTextSnapshot" defaultValue={defaultStrategy?.filtersText ?? ""} /></div><div className="field"><label htmlFor="run-count">Reported result count</label><input id="run-count" name="reportedResultCount" required type="number" min="0" defaultValue="0" /></div><div className="field"><label htmlFor="run-executed-at">Executed at</label><input id="run-executed-at" name="executedAt" required type="datetime-local" defaultValue={dateInput(new Date())} /></div><div className="field"><label htmlFor="run-notes">Run notes</label><textarea id="run-notes" name="notes" placeholder="Coverage, export details, or deviations" /></div><button className="button" type="submit" disabled={activeSources.length === 0 || activeStrategies.length === 0}>Record immutable run</button></form>
-          <div className="item-list" style={{ marginTop: 22 }}>{runs.length === 0 ? <div className="empty">No runs recorded yet.</div> : runs.map((run) => <Link className="item" key={run.id} href={`/projects/${projectId}/protocol/runs/${run.id}`}><div className="item-row"><div className="item-title">Run {run.sequence} · {run.sourceDisplayNameSnapshot}</div><span className="status supported">{run.reportedResultCount} results</span></div><div className="item-meta">{run.executedAt.toLocaleString()} · exact query recorded</div><div className="quote">{run.queryText}</div></Link>)}</div>
-        </section>
-
-        <section className="card section-card full"><div className="section-heading"><h2>Manual retrieved record</h2><span className="count">Attach a result to a recorded run</span></div>
-          {runs.length === 0 ? <div className="empty">Record a search run before adding retrieved records.</div> : <form action={createRetrievedRecordAction} className="extraction-form"><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="record-run">Search run</label><select id="record-run" name="searchRunId" required defaultValue={runs[0].id}>{runs.map((run) => <option key={run.id} value={run.id}>Run {run.sequence} · {run.sourceDisplayNameSnapshot}</option>)}</select></div><div className="field"><label htmlFor="record-source">Source</label><select id="record-source" name="searchSourceId" required defaultValue={runs[0].searchSourceId}>{activeSources.map((source) => <option key={source.id} value={source.id}>{source.displayName}</option>)}</select></div><div className="field"><label htmlFor="record-source-id">Source record ID <span className="hint">optional</span></label><input id="record-source-id" name="sourceRecordId" placeholder="database result identifier" /></div><div className="field"><label htmlFor="record-title">Title</label><input id="record-title" name="title" required placeholder="Retrieved paper title" /></div><div className="field"><label htmlFor="record-authors">Authors</label><input id="record-authors" name="authors" placeholder="First Author, Second Author" /></div><div className="field"><label htmlFor="record-year">Publication year</label><input id="record-year" name="publicationYear" type="number" min="1000" max="3000" placeholder="2024" /></div><div className="field"><label htmlFor="record-venue">Venue</label><input id="record-venue" name="venue" placeholder="Journal or conference" /></div><div className="field"><label htmlFor="record-doi">DOI</label><input id="record-doi" name="doi" placeholder="10.1234/example" /></div><div className="field"><label htmlFor="record-url">URL</label><input id="record-url" name="url" type="url" placeholder="https://doi.org/..." /></div><div className="field"><label htmlFor="record-abstract">Abstract</label><textarea id="record-abstract" name="abstract" /></div><div className="field"><label htmlFor="record-raw-citation">Raw citation</label><textarea id="record-raw-citation" name="rawCitation" placeholder="Preserve the source citation exactly as retrieved" /></div><div className="field"><label htmlFor="record-retrieved-at">Retrieved at</label><input id="record-retrieved-at" name="retrievedAt" required type="datetime-local" defaultValue={dateInput(new Date())} /></div><button className="button" type="submit">Add retrieved record</button></form>}
+          <div className="section-heading" style={{ marginTop: 22 }}><h2>SearchRun ledger</h2><span className="count">Newest runs first · 50 per page</span></div>
+          <div className="item-list">{runPage?.items.length === 0 || !runPage ? <div className="empty">No runs on this page. Return to the first page or record a run.</div> : runPage.items.map((run) => <Link className="item" key={run.id} href={`/projects/${projectId}/protocol/runs/${run.id}`}><div className="item-row"><div className="item-title">Run {run.sequence} · {run.sourceDisplayNameSnapshotPreview}</div><span className="status supported">{run.reportedResultCount} results</span></div><div className="item-meta">{run.sourceKeySnapshotPreview} · {run.executedAt.toLocaleString()}</div><div className="quote">{run.queryPreview}</div></Link>)}</div>
+          {runPage?.hasMore && runPage.nextCursor && <Link className="button secondary" style={{ marginTop: 14 }} href={`/projects/${projectId}/protocol?cursor=${encodeURIComponent(runPage.nextCursor)}`}>Next 50 SearchRuns →</Link>}
         </section>
       </div>
       <p className="footer-note">Search runs and match history are append-only. Source snapshots remain readable even if a project-local source is later renamed.</p>

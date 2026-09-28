@@ -154,6 +154,8 @@ export const retrievedRecords = pgTable(
     sourceExternalIdentity: uniqueIndex("retrieved_records_project_run_source_record_unique")
       .on(table.projectId, table.searchRunId, table.searchSourceId, table.sourceRecordId)
       .where(sql`${table.sourceRecordId} is not null`),
+    runOrder: index("retrieved_records_project_run_order_idx")
+      .on(table.projectId, table.searchRunId, table.retrievedAt.desc(), table.id.desc()),
     runOwnership: foreignKey({
       columns: [table.projectId, table.searchRunId],
       foreignColumns: [searchRuns.projectId, searchRuns.id],

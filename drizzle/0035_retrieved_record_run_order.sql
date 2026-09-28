@@ -1,0 +1,1 @@
+CREATE INDEX "retrieved_records_project_run_order_idx" ON "retrieved_records" USING btree ("project_id","search_run_id","retrieved_at" DESC NULLS LAST,"id" DESC NULLS LAST);

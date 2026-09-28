@@ -14,8 +14,8 @@ const baseUrl = resolveDatabaseUrl();
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
 const migrationPath = path.join(migrationFolder, "0033_storage_materialization_recovery.sql");
 const migrationHash = createHash("sha256").update(fs.readFileSync(migrationPath)).digest("hex");
-const slice45MigrationPath = path.join(migrationFolder, "0034_evidence_set_composition_timeline.sql");
-const slice45MigrationHash = createHash("sha256").update(fs.readFileSync(slice45MigrationPath)).digest("hex");
+const slice46MigrationPath = path.join(migrationFolder, "0035_retrieved_record_run_order.sql");
+const slice46MigrationHash = createHash("sha256").update(fs.readFileSync(slice46MigrationPath)).digest("hex");
 
 function databaseUrl(name: string) {
   const url = new URL(baseUrl);
@@ -67,7 +67,7 @@ describe("Slice 41 storage materialization migration and database invariants", (
       await migrate(app.db, { migrationsFolder: migrationFolder });
       const appliedHashes = await app.client`select hash from drizzle.__drizzle_migrations order by id`;
       expect(appliedHashes.map((row) => row.hash)).toContain(migrationHash);
-      expect(appliedHashes.at(-1)?.hash).toBe(slice45MigrationHash);
+      expect(appliedHashes.at(-1)?.hash).toBe(slice46MigrationHash);
       const defaults = await app.client`
         select table_name, column_default, is_nullable
         from information_schema.columns
@@ -282,7 +282,7 @@ describe("Slice 41 storage materialization migration and database invariants", (
       ]);
       const appliedHashes = await app.client`select hash from drizzle.__drizzle_migrations order by id`;
       expect(appliedHashes.map((row) => row.hash)).toContain(migrationHash);
-      expect(appliedHashes.at(-1)?.hash).toBe(slice45MigrationHash);
+      expect(appliedHashes.at(-1)?.hash).toBe(slice46MigrationHash);
     } finally {
       await app.client.end();
       await created.admin.unsafe(`drop database if exists "${created.name}" with (force)`);

@@ -18,6 +18,9 @@ const migration0033Hash = createHash("sha256")
 const migration0034Hash = createHash("sha256")
   .update(fs.readFileSync(path.join(migrationFolder, "0034_evidence_set_composition_timeline.sql")))
   .digest("hex");
+const migration0035Hash = createHash("sha256")
+  .update(fs.readFileSync(path.join(migrationFolder, "0035_retrieved_record_run_order.sql")))
+  .digest("hex");
 
 function databaseUrl(name: string) {
   const url = new URL(baseUrl);
@@ -41,11 +44,16 @@ function createPre0034MigrationFolder() {
     filter: (source) => ![
       "0034_evidence_set_composition_timeline.sql",
       "0034_snapshot.json",
+      "0035_retrieved_record_run_order.sql",
+      "0035_snapshot.json",
     ].includes(path.basename(source)),
   });
   const journalPath = path.join(target, "meta", "_journal.json");
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as { entries: Array<{ tag: string }> };
-  journal.entries = journal.entries.filter((entry) => entry.tag !== "0034_evidence_set_composition_timeline");
+  journal.entries = journal.entries.filter((entry) => ![
+    "0034_evidence_set_composition_timeline",
+    "0035_retrieved_record_run_order",
+  ].includes(entry.tag));
   fs.writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   return { tempRoot, folder: target };
 }
@@ -54,6 +62,12 @@ function createFailing0034MigrationFolder() {
   const tempRoot = fs.mkdtempSync(path.join(tmpdir(), "litreview-slice45-failed0034-"));
   const target = path.join(tempRoot, "drizzle");
   fs.cpSync(migrationFolder, target, { recursive: true });
+  fs.rmSync(path.join(target, "0035_retrieved_record_run_order.sql"));
+  fs.rmSync(path.join(target, "meta", "0035_snapshot.json"));
+  const journalPath = path.join(target, "meta", "_journal.json");
+  const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as { entries: Array<{ tag: string }> };
+  journal.entries = journal.entries.filter((entry) => entry.tag !== "0035_retrieved_record_run_order");
+  fs.writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   fs.appendFileSync(
     path.join(target, "0034_evidence_set_composition_timeline.sql"),
     "\n--> statement-breakpoint\nDO $slice45_rollback_proof$ BEGIN RAISE EXCEPTION 'Slice 45 migration rollback proof'; END $slice45_rollback_proof$;\n",
@@ -240,8 +254,9 @@ describe("Slice 45 populated 0033 forward migration", () => {
       ]);
 
       await migrate(app.db, { migrationsFolder: migrationFolder });
-      const [postTail] = await app.client`select hash from drizzle.__drizzle_migrations order by id desc limit 1`;
-      expect(postTail.hash).toBe(migration0034Hash);
+      const appliedHashes = await app.client`select hash from drizzle.__drizzle_migrations order by id`;
+      expect(appliedHashes.map((row) => row.hash)).toContain(migration0034Hash);
+      expect(appliedHashes.at(-1)?.hash).toBe(migration0035Hash);
 
       const [retiredSnapshot] = await app.client`select to_regclass('public.evidence_set_composition_members') as table_name`;
       expect(retiredSnapshot.table_name).toBeNull();

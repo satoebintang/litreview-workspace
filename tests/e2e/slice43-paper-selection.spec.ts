@@ -42,27 +42,32 @@ async function seedProtocolRun(recordTitles: string[], includeSharedDoi = false)
         retrievedAt: new Date(),
       }));
     }
-    return { projectId: project.id, runId: run.id, records, firstPaper, secondPaper };
+    const duplicateCandidate = includeSharedDoi
+      ? await services.addPaper(project.id, { title: `DOI candidate ${suffix}`, doi: "10.1000/slice43-shared", publicationYear: 2024 })
+      : null;
+    return { projectId: project.id, runId: run.id, records, firstPaper, secondPaper, duplicateCandidate };
   } finally {
     await database.client.end();
   }
 }
 
 test.describe("Slice 43 canonical Paper selection", () => {
-  test("links and relinks protocol records with exact titles and a Project-wide exclusion", async ({ page }) => {
+  test("links, relinks, and unlinks from one exact RetrievedRecord with a Project-wide exclusion", async ({ page }) => {
     const recordTitle = `Protocol selector record ${randomUUID()}`;
-    const fixture = await seedProtocolRun([recordTitle]);
-    await page.goto(`/projects/${fixture.projectId}/protocol/runs/${fixture.runId}`);
+    const fixture = await seedProtocolRun([recordTitle], true);
+    const recordId = fixture.records[0]!.id;
+    const recordUrl = `/projects/${fixture.projectId}/protocol/runs/${fixture.runId}/records/${recordId}`;
+    await page.goto(recordUrl);
 
-    const retrievedRecords = page.locator("section.card.section-card").filter({ hasText: "Retrieved records" });
-    const record = retrievedRecords.locator("article.item").filter({ hasText: recordTitle }).first();
-    const linkForm = record.locator("form").nth(1);
+    const matchSection = page.locator("section.card.section-card").filter({ hasText: "Current Paper match" });
+    const linkForm = matchSection.locator("form").nth(1);
     await selectPaper(fixture.firstPaper.title, linkForm);
-    await linkForm.getByRole("button", { name: "Link existing Paper" }).click();
-    await expect(page).toHaveURL(new RegExp(`/protocol/runs/${fixture.runId}\\?saved=linked$`));
-    await expect(record.getByText(`Current Paper: ${fixture.firstPaper.title}`)).toBeVisible();
+    await linkForm.getByRole("button", { name: "Link Paper" }).click();
+    await expect(page).toHaveURL(new RegExp(`/protocol/runs/${fixture.runId}/records/${recordId}\\?saved=linked$`));
+    await expect(matchSection.getByText(fixture.firstPaper.title)).toBeVisible();
+    await expect(page.locator("section.card.section-card").filter({ hasText: "Duplicate candidates" })).toContainText(fixture.duplicateCandidate!.title);
 
-    const relinkForm = record.locator("form").nth(1);
+    const relinkForm = matchSection.locator("form").nth(1);
     const relinkButton = relinkForm.getByRole("button", { name: "Relink", exact: true });
     await expect(relinkButton).toBeDisabled();
     const relinkPicker = relinkForm.locator(".paper-picker");
@@ -74,57 +79,30 @@ test.describe("Slice 43 canonical Paper selection", () => {
     await selectPaper(fixture.secondPaper.title, relinkForm);
     await expect(relinkButton).toBeEnabled();
     await relinkButton.click();
-    await expect(page).toHaveURL(new RegExp(`/protocol/runs/${fixture.runId}\\?saved=relinked$`));
-    await expect(record.getByText(`Current Paper: ${fixture.secondPaper.title}`)).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/protocol/runs/${fixture.runId}/records/${recordId}\\?saved=relinked$`));
+    await expect(matchSection.getByText(fixture.secondPaper.title)).toBeVisible();
 
     const history = page.locator("section.card.section-card").filter({ hasText: "Match history" });
-    const historyRecord = history.locator("article.item").filter({ hasText: recordTitle });
-    await expect(historyRecord).toContainText(`linked → ${fixture.firstPaper.title}`);
-    await expect(historyRecord).toContainText(`unlinked → ${fixture.firstPaper.title}`);
-    await expect(historyRecord).toContainText(`linked → ${fixture.secondPaper.title}`);
+    await expect(history).toContainText(fixture.firstPaper.title);
+    await expect(history).toContainText(fixture.secondPaper.title);
+    await matchSection.getByRole("button", { name: "Unlink current Paper" }).click();
+    await expect(page).toHaveURL(new RegExp(`/protocol/runs/${fixture.runId}/records/${recordId}\\?saved=unlinked$`));
+    await expect(matchSection.getByText("unmatched")).toBeVisible();
   });
 
-  test("keeps 50 record pickers unloaded until explicit keyboard search and gives each input a unique ID", async ({ page }) => {
+  test("keeps the 50-row RetrievedRecord ledger free of row-level PaperPickers", async ({ page }) => {
     const suffix = randomUUID();
     const titles = Array.from({ length: 50 }, (_, index) => `Multi selector record ${index + 1} ${suffix}`);
     const fixture = await seedProtocolRun(titles);
-    const postRequests: string[] = [];
-    page.on("request", (request) => {
-      if (request.method() === "POST") postRequests.push(request.url());
-    });
     await page.goto(`/projects/${fixture.projectId}/protocol/runs/${fixture.runId}`);
 
     const pickers = page.locator(".paper-picker");
-    const searchboxes = pickers.getByRole("searchbox");
-    await expect(pickers).toHaveCount(50);
+    await expect(pickers).toHaveCount(0);
+    await expect(page.locator("section.card.section-card").filter({ hasText: "RetrievedRecords" }).locator("a.item")).toHaveCount(50);
     await expect(page.locator(".evidence-paper-results")).toHaveCount(0);
-    const ids = await searchboxes.evaluateAll((elements) => elements.map((element) => (element as HTMLInputElement).id));
-    expect(ids).toHaveLength(50);
-    expect(new Set(ids).size).toBe(50);
-
-    await searchboxes.first().focus();
-    await searchboxes.nth(25).focus();
-    await searchboxes.last().focus();
-    await page.waitForTimeout(100);
-    expect(postRequests).toHaveLength(0);
-    await expect(page.locator(".evidence-paper-results")).toHaveCount(0);
-
-    const firstPicker = pickers.first();
-    const firstSearch = firstPicker.getByRole("searchbox");
-    await firstSearch.fill(fixture.firstPaper.title);
-    await firstSearch.press("Enter");
-    const firstResult = firstPicker.locator(".claim-support-result-row").filter({ hasText: fixture.firstPaper.title });
-    await expect(firstResult).toBeVisible();
-    await expect(firstPicker.getByRole("status")).toContainText("showing 1–1 of 1 Papers");
-    const selectButton = firstResult.getByRole("button", { name: "Select", exact: true });
-    await selectButton.focus();
-    await selectButton.press("Enter");
-    await expect(firstPicker.locator('input[type="hidden"][name="paperId"]')).toHaveValue(fixture.firstPaper.id);
-    await expect(firstPicker.locator(".evidence-paper-selection")).toContainText(`Selected Paper: ${fixture.firstPaper.title}`);
-
-    await firstSearch.fill("x".repeat(201));
-    await firstSearch.press("Enter");
-    await expect(firstPicker.getByRole("alert")).toContainText("cannot exceed 200 Unicode code points");
+    await page.getByRole("link", { name: new RegExp(titles[0]!) }).click();
+    await expect(page.locator(".paper-picker")).toHaveCount(1);
+    await expect(page.locator(".paper-picker").getByRole("searchbox")).toBeVisible();
   });
 
   test("uses the picker for same-work resolution and keeps empty selection required", async ({ page }) => {

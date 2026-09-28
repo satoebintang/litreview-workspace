@@ -7,6 +7,7 @@ import { createExtractionReadServices } from "@/application/extraction-read-serv
 import { createEvidenceWorkspaceReadServices } from "@/application/evidence-workspace-read-services";
 import { createPaperCollectionReadServices } from "@/application/paper-collection-read-services";
 import { createPaperSelectionReadServices } from "@/application/paper-selection-read-services";
+import { createAcquisitionReadServices } from "@/application/acquisition-read-services";
 import { createEvidenceSetWorkspaceReadServices } from "@/application/evidence-set-workspace-read-services";
 import { createSynthesisReadServices } from "@/application/synthesis-read-services";
 import { boundPdfIntakeDiagnostic, type PdfMetadataInspection, type PdfMetadataProposal } from "@/application/pdf-intake-services";
@@ -138,6 +139,7 @@ export const extractionReadServices = createExtractionReadServices(database.db);
 export const evidenceWorkspaceReadServices = createEvidenceWorkspaceReadServices(database.db);
 export const paperCollectionReadServices = createPaperCollectionReadServices(database.db);
 export const paperSelectionReadServices = createPaperSelectionReadServices(database.db);
+export const acquisitionReadServices = createAcquisitionReadServices(database.db);
 export const evidenceSetWorkspaceReadServices = createEvidenceSetWorkspaceReadServices(database.db);
 export const synthesisReadServices = createSynthesisReadServices(database.db);
 
