@@ -18,31 +18,26 @@ test.describe("Slice 10 deduplication and review flow", () => {
     await page.getByLabel("Reported result count").fill("12");
     await page.getByRole("button", { name: "Record immutable run" }).click();
 
-    const runOptions = page.getByLabel("Search run").locator("option");
-    const runOne = await runOptions.filter({ hasText: "Run 1" }).getAttribute("value");
-    const runTwo = await runOptions.filter({ hasText: "Run 2" }).getAttribute("value");
-    const recordSource = page.locator("#record-source");
-    const sourceId = await recordSource.locator("option").first().getAttribute("value");
-    expect(runOne).toBeTruthy();
-    expect(runTwo).toBeTruthy();
-    expect(sourceId).toBeTruthy();
+    const runHref = async (sequence: number) => {
+      const href = await page.getByRole("link", { name: new RegExp(`Run ${sequence} ·`) }).getAttribute("href");
+      expect(href).toBeTruthy();
+      return href!;
+    };
+    const runOne = await runHref(1);
+    const runTwo = await runHref(2);
+    const addRecord = async (href: string, input: { sourceId: string; title: string; doi?: string; year?: string }) => {
+      await page.goto(href);
+      await page.getByLabel("Source record ID optional").fill(input.sourceId);
+      await page.getByLabel("Title", { exact: true }).fill(input.title);
+      if (input.doi) await page.getByLabel("DOI").fill(input.doi);
+      if (input.year) await page.getByLabel("Publication year").fill(input.year);
+      await page.getByRole("button", { name: "Add retrieved record" }).click();
+      await expect(page).toHaveURL(/\/records\/[0-9a-f-]+\?saved=record/);
+      await expect(page.getByText("RetrievedRecord added.", { exact: true })).toBeVisible();
+    };
 
-    await page.getByLabel("Search run").selectOption(runOne!);
-    await recordSource.selectOption(sourceId!);
-    await page.getByLabel("Source record ID").fill("A");
-    await page.getByLabel("Title", { exact: true }).fill("Intervention outcomes");
-    await page.getByLabel("DOI").fill("10.1000/shared-work");
-    await page.getByRole("button", { name: "Add retrieved record" }).click();
-    await expect(page.getByText(/Protocol updated/)).toBeVisible();
-    await expect(page.getByLabel("Source record ID optional")).toHaveValue("");
-    await page.getByLabel("Search run").selectOption(runTwo!);
-    await recordSource.selectOption(sourceId!);
-    await page.getByLabel("Source record ID").fill("B");
-    await page.getByLabel("Title", { exact: true }).fill("Intervention outcomes (database copy)");
-    await page.getByLabel("DOI").fill("https://doi.org/10.1000/shared-work");
-    await page.getByRole("button", { name: "Add retrieved record" }).click();
-    await expect(page.getByText(/Protocol updated/)).toBeVisible();
-    await expect(page.getByLabel("Source record ID optional")).toHaveValue("");
+    await addRecord(runOne, { sourceId: "A", title: "Intervention outcomes", doi: "10.1000/shared-work" });
+    await addRecord(runTwo, { sourceId: "B", title: "Intervention outcomes (database copy)", doi: "https://doi.org/10.1000/shared-work" });
 
     await page.goto(`/projects/${projectId}/deduplication`);
     await expect(page.getByText("Intervention outcomes", { exact: true })).toBeVisible();
@@ -58,23 +53,8 @@ test.describe("Slice 10 deduplication and review flow", () => {
     await page.goto(`/projects/${projectId}/review-flow`);
     await expect(page.locator(".screening-stat", { hasText: "Resolved records" }).getByText("2")).toBeVisible();
 
-    await page.goto(`/projects/${projectId}/protocol`);
-    await page.getByLabel("Search run").selectOption(runOne!);
-    await recordSource.selectOption(sourceId!);
-    await page.getByLabel("Source record ID").fill("C");
-    await page.getByLabel("Title", { exact: true }).fill("Unrelated study");
-    await page.getByLabel("Publication year").fill("2022");
-    await page.getByRole("button", { name: "Add retrieved record" }).click();
-    await expect(page.getByText(/Protocol updated/)).toBeVisible();
-    await expect(page.getByLabel("Source record ID optional")).toHaveValue("");
-    await page.getByLabel("Search run").selectOption(runTwo!);
-    await recordSource.selectOption(sourceId!);
-    await page.getByLabel("Source record ID").fill("D");
-    await page.getByLabel("Title", { exact: true }).fill("Unrelated study");
-    await page.getByLabel("Publication year").fill("2022");
-    await page.getByRole("button", { name: "Add retrieved record" }).click();
-    await expect(page.getByText(/Protocol updated/)).toBeVisible();
-    await expect(page.getByLabel("Source record ID optional")).toHaveValue("");
+    await addRecord(runOne, { sourceId: "C", title: "Unrelated study", year: "2022" });
+    await addRecord(runTwo, { sourceId: "D", title: "Unrelated study", year: "2022" });
 
     await page.goto(`/projects/${projectId}/deduplication`);
     const unrelated = page.locator("article.item", { hasText: "Unrelated study" }).first();

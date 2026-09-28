@@ -226,6 +226,10 @@ export function createReviewReportingServices(db: Database, flowServices: { getR
       const [summary, context, exclusionReasons, fullTextExclusionReasons] = await Promise.all([flowServices.getReviewFlowSummary(projectId), repository.context(projectId), repository.exclusionReasons(projectId), repository.fullTextExclusionReasons(projectId)]);
       return buildReviewReportProjection({ summary, context, exclusionReasons, fullTextExclusionReasons });
     },
+    async getInteractiveReviewReport(projectId: string) {
+      const [summary, context, exclusionReasons, fullTextExclusionReasons] = await Promise.all([flowServices.getReviewFlowSummary(projectId), repository.context(projectId, false), repository.exclusionReasons(projectId), repository.fullTextExclusionReasons(projectId)]);
+      return buildReviewReportProjection({ summary, context, exclusionReasons, fullTextExclusionReasons });
+    },
     async listReviewReportContributors(projectId: string, selector: ReviewReportContributorSelector): Promise<ReviewReportContributorResult> {
       return repository.contributors(projectId, selector);
     },

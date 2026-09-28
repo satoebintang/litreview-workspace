@@ -4,6 +4,12 @@
 
 The canonical downstream research identity used by screening, retrieval, full-text eligibility, extraction, synthesis, and manuscript work.
 
+## Acquisition browsing
+
+Protocol SearchRuns and RetrievedRecords use bounded cursor pages. SearchRun cursors pin the Project sequence high-water; RetrievedRecord cursors pin a database `created_at` epoch, the exact Run, page size, and normalized search state. Match-history cursors pin the record's event sequence. Duplicate-candidate cursors pin both a Paper insertion epoch and a Project-wide match-event sequence so sibling current matches are resolved at that same event boundary. These epochs are not cross-request MVCC snapshots; late commits at or before an epoch may appear on a later page. See `docs/adr/0046-scalable-acquisition-search-runs-and-retrieved-records.md`.
+
+The exact RetrievedRecord detail owns complete source metadata, bounded history and candidate pages, and one PaperPicker workflow. Legacy acquisition projections and writers remain available. The normal Review Report uses compact acquisition aggregates; the explicit Markdown export retains all SearchRun snapshots and historical source labels. `0035_retrieved_record_run_order` is supported by the paired final-query plans in `docs/benchmarks/slice46-acquisition-read-paths.json`.
+
 ## Extraction canonical-write lock order
 
 Within an Extraction canonical-write transaction, when multiple Extraction-

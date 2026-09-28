@@ -79,5 +79,18 @@ describe("Slice 11 review report projection", () => {
     const renamedMarkdown = serializeReviewFlowMarkdown(afterRename);
     expect(renamedMarkdown).toContain(`#### ${first.displayName} (${first.sourceKey})`);
     expect(renamedMarkdown).toContain("Current SearchSource configuration: Renamed current source");
+
+    const renamedSource = await services.getSearchSource(projectId, first.id);
+    await services.createSearchRun(projectId, { searchSourceId: first.id, sourceKeySnapshot: renamedSource.sourceKey, sourceDisplayNameSnapshot: renamedSource.displayName, strategyId: strategyA.id, queryText: "alpha", reportedResultCount: 2, executedAt: new Date("2026-01-03T00:00:00Z") });
+    const interactive = await services.getInteractiveReviewReport(projectId);
+    const compactSource = interactive.identification.bySource.find((source: any) => source.source.id === first.id)!;
+    expect(interactive.identification.runs).toEqual([]);
+    expect(compactSource.observedSnapshots).toEqual([{ sourceKey: first.sourceKey, displayName: first.displayName }]);
+    expect(compactSource.historicalSnapshotCount).toBe(2);
+    const complete = await services.getReviewReport(projectId);
+    const completeMarkdown = serializeReviewFlowMarkdown(complete);
+    expect(complete.identification.runs).toHaveLength(3);
+    expect(completeMarkdown).toContain(`- Historical run labels: ${first.displayName} [${first.sourceKey}]; Renamed current source [${first.sourceKey}]`);
+    expect(completeMarkdown).toContain("## Immutable SearchRun Appendix");
   });
 });

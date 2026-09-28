@@ -332,6 +332,9 @@ export async function createSearchRunAction(  form: Parameters<typeof actionsPro
 export async function createRetrievedRecordAction(  form: Parameters<typeof actionsProtocolSearch.createRetrievedRecordAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.createRetrievedRecordAction>>> {
   return actionsProtocolSearch.createRetrievedRecordAction(form);
 }
+export async function createRetrievedRecordForRunAction(form: Parameters<typeof actionsProtocolSearch.createRetrievedRecordForRunAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.createRetrievedRecordForRunAction>>> {
+  return actionsProtocolSearch.createRetrievedRecordForRunAction(form);
+}
 export async function createPaperFromRetrievedRecordAction(  form: Parameters<typeof actionsProtocolSearch.createPaperFromRetrievedRecordAction>[0]): Promise<Awaited<ReturnType<typeof actionsProtocolSearch.createPaperFromRetrievedRecordAction>>> {
   return actionsProtocolSearch.createPaperFromRetrievedRecordAction(form);
 }

@@ -28,13 +28,16 @@ test.describe("Slice 9 protocol and search acquisition", () => {
     await expect(page.getByText("intervention AND outcome", { exact: false })).toBeVisible();
 
     await page.goto(`/projects/${projectId}/protocol`);
-    await page.getByLabel("Source record ID").fill("record-1");
+    const runHref = await page.getByRole("link", { name: /Run \d+ ·/ }).first().getAttribute("href");
+    expect(runHref).toBeTruthy();
+    await page.goto(runHref!);
+    await page.getByLabel("Source record ID optional").fill("record-1");
     await page.getByLabel("Title", { exact: true }).fill("Intervention outcomes");
     await page.getByRole("button", { name: "Add retrieved record" }).click();
-    await expect(page.getByText(/Protocol updated/)).toBeVisible();
-    await page.getByRole("link", { name: /Run \d+/ }).first().click();
+    await expect(page).toHaveURL(/\/records\/[0-9a-f-]+\?saved=record/);
+    await expect(page.getByText("RetrievedRecord added.", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Create Paper from record" }).click();
-    await expect(page.getByText(/Paper created and linked/)).toBeVisible();
-    await expect(page.getByText("linked", { exact: true })).toBeVisible();
+    await expect(page.getByText("Paper created and linked.", { exact: true })).toBeVisible();
+    await expect(page.locator(".section-heading").filter({ hasText: "Current Paper match" }).locator(".status")).toHaveText("linked");
   });
 });

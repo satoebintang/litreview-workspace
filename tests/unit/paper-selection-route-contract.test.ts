@@ -32,10 +32,12 @@ describe("Slice 43 Paper selection route query guards", () => {
     expect(dedupPage).toMatch(/pair\.decision === "different_work" && samePaper[\s\S]*?<PaperPicker[\s\S]*?excludePaperId=\{samePaper\}[\s\S]*?required/);
   });
 
-  it("preserves exact Project-scoped titles and the defensive fallback on protocol history", () => {
-    const protocolPage = source(routeFiles[2]);
-    expect(protocolPage).toContain("getPaperOptionsByIds(projectId, referencedPaperIds)");
-    expect(protocolPage).toMatch(/paperById\.get\(event\.paperId\)\?\.title \?\? "Paper"/);
-    expect(protocolPage).toMatch(/paperById\.get\(match\.paperId\)\?\.title \?\? "Paper"/);
+  it("renders the current Paper title from the exact detail read without another Paper query", () => {
+    const protocolPage = source("src/app/projects/[projectId]/protocol/runs/[runId]/records/[recordId]/page.tsx");
+    const acquisitionReads = source("src/application/acquisition-read-services.ts");
+    expect(protocolPage).toContain("detail.currentMatch.paperTitle");
+    expect(protocolPage).not.toContain("getPaperOptionsByIds");
+    expect(acquisitionReads).toContain("paper.title as paper_title");
+    expect(acquisitionReads).toContain("paperTitle: String(row.paper_title)");
   });
 });

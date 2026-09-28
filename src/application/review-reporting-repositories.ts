@@ -15,14 +15,14 @@ export class ReviewReportingRepository {
     this.deduplicationRepository = new DeduplicationDecisionRepository(db);
   }
 
-  async context(projectId: string): Promise<ReviewReportContext> {
+  async context(projectId: string, includeCompleteAcquisition = true): Promise<ReviewReportContext> {
     const [projectRows, questions, criteria, fullTextCriteria, sources, runs, overlapRows] = await Promise.all([
       this.db.execute(sql`select id, title from projects where id = ${projectId}`),
       this.db.select().from(researchQuestions).where(and(eq(researchQuestions.projectId, projectId), sql`${researchQuestions.archivedAt} is null`)).orderBy(asc(researchQuestions.sortOrder), asc(researchQuestions.id)),
       this.db.select().from(screeningCriteria).where(eq(screeningCriteria.projectId, projectId)).orderBy(asc(screeningCriteria.sortOrder), asc(screeningCriteria.id)),
       this.db.select().from(fullTextScreeningCriteria).where(eq(fullTextScreeningCriteria.projectId, projectId)).orderBy(asc(fullTextScreeningCriteria.sortOrder), asc(fullTextScreeningCriteria.id)),
-      this.sourceAggregates(projectId),
-      this.runs(projectId),
+      includeCompleteAcquisition ? this.sourceAggregates(projectId) : this.interactiveSourceAggregates(projectId),
+      includeCompleteAcquisition ? this.runs(projectId) : Promise.resolve([] as ReviewReportRun[]),
       this.db.execute(sql`
         with latest_matches as (
           select distinct on (project_id, retrieved_record_id) project_id, retrieved_record_id, paper_id, action
@@ -104,6 +104,59 @@ export class ReviewReportingRepository {
     return (sourceRows as unknown as Array<Record<string, unknown>>).map((row) => ({
       source: { id: stringValue(row.id), projectId: stringValue(row.project_id), sourceKey: stringValue(row.source_key), displayName: stringValue(row.display_name), baseUrl: row.base_url == null ? null : stringValue(row.base_url), notes: row.notes == null ? null : stringValue(row.notes), createdAt: row.created_at as Date, updatedAt: row.updated_at as Date, archivedAt: row.archived_at as Date | null },
       observedSnapshots: snapshots.get(stringValue(row.id)) ?? [],
+      historicalSnapshotCount: (snapshots.get(stringValue(row.id)) ?? []).length,
+      runCount: numberValue(row.run_count), reportedResults: numberValue(row.reported_results), retrievedRecords: numberValue(row.retrieved_records), currentlyResolvedRecords: numberValue(row.currently_resolved_records), acquisitionDerivedPapers: numberValue(row.acquisition_derived_papers),
+    }));
+  }
+
+  async interactiveSourceAggregates(projectId: string): Promise<ReviewReportSource[]> {
+    const rows = await this.db.execute(sql`
+      with latest_matches as (
+        select distinct on (project_id, retrieved_record_id) project_id, retrieved_record_id, paper_id, action
+        from retrieved_record_matches where project_id = ${projectId}
+        order by project_id, retrieved_record_id, sequence desc
+      ), run_aggregates as (
+        select search_source_id, count(*)::int as run_count,
+          coalesce(sum(reported_result_count), 0)::int as reported_results
+        from search_runs where project_id = ${projectId} group by search_source_id
+      ), record_aggregates as (
+        select sr.search_source_id,
+          count(distinct rr.id)::int as retrieved_records,
+          count(distinct case when lm.action = 'linked' then rr.id end)::int as currently_resolved_records,
+          count(distinct case when lm.action = 'linked' then lm.paper_id end)::int as acquisition_derived_papers
+        from search_runs sr
+        left join retrieved_records rr on rr.project_id = sr.project_id and rr.search_run_id = sr.id and rr.search_source_id = sr.search_source_id
+        left join latest_matches lm on lm.project_id = rr.project_id and lm.retrieved_record_id = rr.id
+        where sr.project_id = ${projectId} group by sr.search_source_id
+      ), snapshot_pairs as (
+        select distinct search_source_id, source_key_snapshot, source_display_name_snapshot
+        from search_runs where project_id = ${projectId}
+      ), snapshot_counts as (
+        select search_source_id, count(*)::int as snapshot_count from snapshot_pairs group by search_source_id
+      ), first_snapshots as (
+        select distinct on (search_source_id) search_source_id, source_key_snapshot, source_display_name_snapshot
+        from search_runs where project_id = ${projectId} order by search_source_id, sequence, id
+      )
+      select s.id, s.project_id, s.source_key, s.display_name, s.base_url, s.notes, s.created_at, s.updated_at, s.archived_at,
+        ra.run_count, ra.reported_results,
+        coalesce(da.retrieved_records, 0)::int as retrieved_records,
+        coalesce(da.currently_resolved_records, 0)::int as currently_resolved_records,
+        coalesce(da.acquisition_derived_papers, 0)::int as acquisition_derived_papers,
+        fs.source_key_snapshot as earliest_source_key_snapshot,
+        fs.source_display_name_snapshot as earliest_source_display_name_snapshot,
+        coalesce(sc.snapshot_count, 0)::int as historical_snapshot_count
+      from search_sources s
+      join run_aggregates ra on ra.search_source_id = s.id
+      left join record_aggregates da on da.search_source_id = s.id
+      left join first_snapshots fs on fs.search_source_id = s.id
+      left join snapshot_counts sc on sc.search_source_id = s.id
+      where s.project_id = ${projectId}
+      order by s.source_key, s.id
+    `);
+    return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({
+      source: { id: stringValue(row.id), projectId: stringValue(row.project_id), sourceKey: stringValue(row.source_key), displayName: stringValue(row.display_name), baseUrl: row.base_url == null ? null : stringValue(row.base_url), notes: row.notes == null ? null : stringValue(row.notes), createdAt: row.created_at as Date, updatedAt: row.updated_at as Date, archivedAt: row.archived_at as Date | null },
+      observedSnapshots: row.earliest_source_key_snapshot == null ? [] : [{ sourceKey: stringValue(row.earliest_source_key_snapshot), displayName: stringValue(row.earliest_source_display_name_snapshot) }],
+      historicalSnapshotCount: numberValue(row.historical_snapshot_count),
       runCount: numberValue(row.run_count), reportedResults: numberValue(row.reported_results), retrievedRecords: numberValue(row.retrieved_records), currentlyResolvedRecords: numberValue(row.currently_resolved_records), acquisitionDerivedPapers: numberValue(row.acquisition_derived_papers),
     }));
   }

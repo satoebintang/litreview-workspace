@@ -483,17 +483,19 @@ describe("bounded-context module boundaries", () => {
       ...fixture.actions.exports,
       "addEvidenceToSelectedSetAction",
       "moveEvidenceSetMembershipAction",
+      "createRetrievedRecordForRunAction",
     ];
     const expectedActionFunctions = [
       ...fixture.actions.functions,
       { name: "addEvidenceToSelectedSetAction", signature: "(form: FormData) => Promise<void>" },
       { name: "moveEvidenceSetMembershipAction", signature: "(form: FormData) => Promise<void>" },
+      { name: "createRetrievedRecordForRunAction", signature: "(form: FormData) => Promise<void>" },
     ];
     const facade = sourceFile(actionsFacade);
     expect(hasUseServerDirective(facade)).toBe(true);
     const exportedStatements = facade.statements.filter((statement) => hasModifier(statement, ts.SyntaxKind.ExportKeyword)
       || ts.isExportDeclaration(statement) || ts.isExportAssignment(statement));
-    expect(exportedStatements).toHaveLength(139);
+    expect(exportedStatements).toHaveLength(140);
     expect(exportedStatements.every((statement) => ts.isFunctionDeclaration(statement)
       && hasModifier(statement, ts.SyntaxKind.AsyncKeyword))).toBe(true);
 
@@ -508,7 +510,7 @@ describe("bounded-context module boundaries", () => {
       .filter((statement): statement is ts.FunctionDeclaration => ts.isFunctionDeclaration(statement) && !!statement.name)
       .map((declaration) => [declaration.name!.text, declaration]));
     expect([...wrappers.keys()].sort()).toEqual([...expectedActionExports].sort());
-    expect(wrappers.size).toBe(139);
+    expect(wrappers.size).toBe(140);
 
     const implementationModules = new Set<string>();
     const implementationExports: string[] = [];
@@ -696,6 +698,8 @@ describe("bounded-context module boundaries", () => {
             "moveEvidenceSetMembership",
             ...factory.keys.slice(reorderIndex),
           ]
+        : factory.source === "reportingServices"
+          ? ["getReviewReport", "getInteractiveReviewReport", "listReviewReportContributors"]
         : factory.keys;
       expect(factoryKeys.get(factory.source)).toEqual(expectedKeys);
     }

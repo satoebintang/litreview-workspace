@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { reviewServices } from "../server";
 import { fail, optional, text, verbatimText } from "../action-helpers";
+import { DomainError } from "@/domain/errors";
 
 // Slice 9 acquisition actions intentionally stay thin: validation, project
 // ownership, and immutable history are owned by reviewServices.
@@ -51,33 +52,66 @@ export async function createRetrievedRecordAction(form: FormData) {
   redirect(`/projects/${projectId}/protocol?saved=record`);
 }
 
+async function requireRecordForRun(projectId: string, runId: string, recordId: string) {
+  const run = await reviewServices.getSearchRun(projectId, runId);
+  const record = await reviewServices.getRetrievedRecord(projectId, recordId);
+  if (record.searchRunId !== run.id) throw new DomainError("CROSS_PROJECT_REFERENCE", "Retrieved record does not belong to this SearchRun");
+  return { run, record };
+}
+
+export async function createRetrievedRecordForRunAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const runId = text(form, "runId");
+  let record;
+  try {
+    const run = await reviewServices.getSearchRun(projectId, runId);
+    const authorText = text(form, "authors");
+    record = await reviewServices.createRetrievedRecord(projectId, {
+      searchRunId: run.id,
+      searchSourceId: run.searchSourceId,
+      sourceRecordId: optional(form, "sourceRecordId"),
+      title: text(form, "title"),
+      authors: authorText ? authorText.split(",").map((author) => author.trim()).filter(Boolean) : [],
+      abstract: optional(form, "abstract"), doi: optional(form, "doi"), url: optional(form, "url"),
+      publicationYear: text(form, "publicationYear") ? Number(text(form, "publicationYear")) : undefined,
+      venue: optional(form, "venue"), rawCitation: optional(form, "rawCitation"),
+      retrievedAt: text(form, "retrievedAt") || new Date().toISOString(),
+    });
+  } catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}`, error); }
+  redirect(`/projects/${projectId}/protocol/runs/${runId}/records/${record.id}?saved=record`);
+}
+
 export async function createPaperFromRetrievedRecordAction(form: FormData) {
   const projectId = text(form, "projectId"); const recordId = text(form, "recordId");
+  const runId = text(form, "runId");
   let result;
-  try { result = await reviewServices.createPaperFromRetrievedRecord(projectId, recordId, { title: optional(form, "title"), bibliographicNote: optional(form, "bibliographicNote") }); }
-  catch (error) { fail(`/projects/${projectId}/protocol/runs/${text(form, "runId")}`, error); }
-  redirect(`/projects/${projectId}/protocol/runs/${text(form, "runId")}?saved=paper&paperId=${encodeURIComponent(result.paper.id)}`);
+  try { await requireRecordForRun(projectId, runId, recordId); result = await reviewServices.createPaperFromRetrievedRecord(projectId, recordId, { title: optional(form, "title"), bibliographicNote: optional(form, "bibliographicNote") }); }
+  catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}/records/${recordId}`, error); }
+  redirect(`/projects/${projectId}/protocol/runs/${runId}/records/${recordId}?saved=paper&paperId=${encodeURIComponent(result.paper.id)}`);
 }
 
 export async function linkRetrievedRecordToPaperAction(form: FormData) {
   const projectId = text(form, "projectId"); const runId = text(form, "runId");
-  try { await reviewServices.linkRetrievedRecordToPaper(projectId, text(form, "recordId"), text(form, "paperId")); }
-  catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}`, error); }
-  redirect(`/projects/${projectId}/protocol/runs/${runId}?saved=linked`);
+  const recordId = text(form, "recordId");
+  try { await requireRecordForRun(projectId, runId, recordId); await reviewServices.linkRetrievedRecordToPaper(projectId, recordId, text(form, "paperId")); }
+  catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}/records/${recordId}`, error); }
+  redirect(`/projects/${projectId}/protocol/runs/${runId}/records/${recordId}?saved=linked`);
 }
 
 export async function unlinkRetrievedRecordFromPaperAction(form: FormData) {
   const projectId = text(form, "projectId"); const runId = text(form, "runId");
-  try { await reviewServices.unlinkRetrievedRecordFromPaper(projectId, text(form, "recordId"), text(form, "paperId")); }
-  catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}`, error); }
-  redirect(`/projects/${projectId}/protocol/runs/${runId}?saved=unlinked`);
+  const recordId = text(form, "recordId");
+  try { await requireRecordForRun(projectId, runId, recordId); await reviewServices.unlinkRetrievedRecordFromPaper(projectId, recordId, text(form, "paperId")); }
+  catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}/records/${recordId}`, error); }
+  redirect(`/projects/${projectId}/protocol/runs/${runId}/records/${recordId}?saved=unlinked`);
 }
 
 export async function relinkRetrievedRecordAction(form: FormData) {
   const projectId = text(form, "projectId"); const runId = text(form, "runId");
-  try { await reviewServices.relinkRetrievedRecord(projectId, text(form, "recordId"), text(form, "fromPaperId"), text(form, "toPaperId")); }
-  catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}`, error); }
-  redirect(`/projects/${projectId}/protocol/runs/${runId}?saved=relinked`);
+  const recordId = text(form, "recordId");
+  try { await requireRecordForRun(projectId, runId, recordId); await reviewServices.relinkRetrievedRecord(projectId, recordId, text(form, "fromPaperId"), text(form, "toPaperId")); }
+  catch (error) { fail(`/projects/${projectId}/protocol/runs/${runId}/records/${recordId}`, error); }
+  redirect(`/projects/${projectId}/protocol/runs/${runId}/records/${recordId}?saved=relinked`);
 }
 
 function deduplicationPairPath(projectId: string, leftRecordId: string, rightRecordId: string) {

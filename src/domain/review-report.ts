@@ -113,6 +113,7 @@ export type ReviewReportRun = SearchRun & {
 export type ReviewReportSource = {
   source: SearchSource;
   observedSnapshots: Array<{ sourceKey: string; displayName: string }>;
+  historicalSnapshotCount: number;
   runCount: number;
   reportedResults: number;
   retrievedRecords: number;
