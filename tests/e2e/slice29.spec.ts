@@ -94,16 +94,19 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
     await page.getByRole("button", { name: "Prepare synthesis →" }).click();
     await expect(page).toHaveURL(/\/synthesis\/preparations\/[0-9a-f-]+$/);
     const preparationId = new URL(page.url()).pathname.split("/").pop()!;
-    await page.getByRole("checkbox", { name: "Select candidate observation from Study Alpha" }).check();
-    await page.getByRole("button", { name: "Save candidate selections" }).click();
+    const candidate = page.locator('[data-testid="synthesis-preparation-candidate"]').filter({ hasText: "Study Alpha" });
+    await candidate.getByRole("button", { name: "Select", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Candidate revision selected." })).toBeVisible();
+    await expect(candidate.getByRole("button", { name: "Deselect", exact: true })).toBeVisible();
 
     // Begin and execute a test-fake request. Provider success alone must not
     // create canonical synthesis state.
-    await page.getByRole("checkbox", { name: /selected values.*may be transmitted/i }).check();
+    await page.getByRole("checkbox", { name: /selected values, paper metadata.*may be sent/i }).check();
     await page.getByRole("button", { name: "Suggest synthesis with AI" }).click();
     await expect(page).toHaveURL(new RegExp(`/synthesis/preparations/${preparationId}\\?saved=ai-requested$`));
     const history = page.locator("section", { hasText: "AI suggestion history" });
-    const firstRequest = history.locator(".item").first();
+    await history.getByRole("link", { name: "Open exact AI request" }).first().click();
+    const firstRequest = page;
     await firstRequest.getByRole("button", { name: "Generate suggestion" }).click();
     await expect(page.getByText("Deterministic AI synthesis suggestion", { exact: true })).toBeVisible();
     await expect(page.getByText("Frozen grounding locators", { exact: false })).toBeVisible();
@@ -114,25 +117,31 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
     const db = await getTestDbClient();
     let statementId = "";
     let synthesisRevisionId = "";
+    let acceptedRequestId = "";
     try {
       const [beforeDecision] = await db`select count(*)::int as count from synthesis_revisions where project_id=${projectId}`;
       expect(Number(beforeDecision.count)).toBe(0);
       await firstRequest.getByRole("button", { name: "Reject" }).click();
-      await expect(page.getByRole("status")).toContainText("AI synthesis suggestion rejected.");
+      await expect(page).toHaveURL(/\/ai-requests\/[0-9a-f-]+\?saved=ai-rejected$/);
+      await expect(page.getByRole("status").filter({ hasText: "AI synthesis suggestion rejected." })).toBeVisible();
       const [afterReject] = await db`select count(*)::int as count from synthesis_revisions where project_id=${projectId}`;
       expect(Number(afterReject.count)).toBe(0);
 
       // Regenerate, edit, and accept through the same canonical preparation seam.
-      await page.getByRole("checkbox", { name: /selected values.*may be transmitted/i }).check();
+      await page.getByRole("link", { name: "Return to preparation →" }).click();
+      await page.getByRole("checkbox", { name: /selected values, paper metadata.*may be sent/i }).check();
       await page.getByRole("button", { name: "Suggest synthesis with AI" }).click();
-      const secondRequest = history.locator(".item").first();
-      await secondRequest.getByRole("button", { name: "Generate suggestion" }).click();
-      await expect(secondRequest.getByText("Deterministic AI synthesis suggestion", { exact: true })).toBeVisible();
-      await secondRequest.locator('input[id^="ai-title-"]').fill("Researcher edited title");
-      await secondRequest.locator('textarea[id^="ai-statement-"]').fill("Researcher edited statement from the frozen source.");
-      await secondRequest.locator('textarea[id^="ai-note-"]').fill("Researcher acceptance note.");
-      await secondRequest.getByRole("button", { name: "Edit and accept" }).click();
-      await expect(page).toHaveURL(new RegExp(`/synthesis/preparations/${preparationId}\\?saved=ai-accepted$`));
+      const secondHistory = page.locator("section", { hasText: "AI suggestion history" });
+      const pendingRequest = secondHistory.locator("article.item").filter({ hasText: "Pending" });
+      await pendingRequest.getByRole("link", { name: "Open exact AI request" }).click();
+      await page.getByRole("button", { name: "Generate suggestion" }).click();
+      await expect(page.getByText("Deterministic AI synthesis suggestion", { exact: true })).toBeVisible();
+      await page.locator("#ai-title").fill("Researcher edited title");
+      await page.locator("#ai-statement").fill("Researcher edited statement from the frozen source.");
+      await page.locator("#ai-note").fill("Researcher acceptance note.");
+      await page.getByRole("button", { name: "Edit and accept" }).click();
+      await expect(page).toHaveURL(/\/ai-requests\/[0-9a-f-]+\?saved=ai-accepted$/);
+      acceptedRequestId = new URL(page.url()).pathname.split("/").pop()!;
       const [prep] = await db`select target_synthesis_statement_id, finalized_synthesis_revision_id from synthesis_preparations where project_id=${projectId} and id=${preparationId}`;
       statementId = String(prep.target_synthesis_statement_id);
       synthesisRevisionId = String(prep.finalized_synthesis_revision_id);
@@ -147,6 +156,7 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
     }
 
     // Normal synthesis detail/history remains the canonical surface.
+    await page.getByRole("link", { name: "Return to preparation →" }).click();
     await page.getByRole("link", { name: "View finalized synthesis statement →" }).click();
     await expect(page).toHaveURL(new RegExp(`/synthesis/${statementId}$`));
     await expect(page.getByRole("heading", { name: "Complete synthesis history" })).toBeVisible();
@@ -185,11 +195,13 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
       await driftDb.end();
     }
     await page.goto(`/projects/${projectId}/synthesis/preparations/${preparationId}`);
-    await history.locator("details").evaluateAll((nodes) => nodes.forEach((node) => { (node as HTMLDetailsElement).open = true; }));
-    await expect(history.getByText("Study Alpha", { exact: true }).first()).toBeVisible();
-    await expect(history.locator("li").filter({ hasText: maliciousSource }).first()).toBeVisible();
-    await expect(history.getByText("Current mutable title", { exact: true })).not.toBeVisible();
-    await expect(history.getByText("rejected", { exact: true }).last()).toBeVisible();
-    await expect(history.getByText("accepted", { exact: true }).last()).toBeVisible();
+    const finalHistory = page.locator("section", { hasText: "AI suggestion history" });
+    await expect(finalHistory.getByText("rejected", { exact: true })).toBeVisible();
+    await expect(finalHistory.getByText("accepted", { exact: true })).toBeVisible();
+    await page.goto(`/projects/${projectId}/synthesis/preparations/${preparationId}/ai-requests/${acceptedRequestId}`);
+    await expect(page.getByRole("heading", { name: "Frozen supports" })).toBeVisible();
+    await expect(page.getByText("Study Alpha", { exact: true })).toBeVisible();
+    await expect(page.locator(".quote").filter({ hasText: maliciousSource }).first()).toBeVisible();
+    await expect(page.getByText("Current mutable title", { exact: true })).toHaveCount(0);
   });
 });

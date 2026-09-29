@@ -93,16 +93,18 @@ test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     await expect(page).toHaveURL(/\/synthesis\/preparations\/[0-9a-f-]+$/);
     const prepId = new URL(page.url()).pathname.split("/").pop()!;
     await expect(page.getByText("Pinned Evidence Set: Outcome Evidence Set")).toBeVisible();
-    await expect(page.getByText("Field: Effect Size")).toBeVisible();
-    await expect(page.getByText("Primary outcome was significantly enhanced by 42%.")).toBeVisible();
+    await expect(page.getByText(/^Extraction Field: Effect Size \(/)).toBeVisible();
     await expect(page.getByText("42% enhancement")).toBeVisible();
 
-    // 8. Select candidate observation
-    await page.getByRole("checkbox", { name: "Select candidate observation from Study Alpha" }).check();
-    await page.getByRole("button", { name: "Save candidate selections" }).click();
-    await expect(page).toHaveURL(new RegExp(`/synthesis/preparations/${prepId}\\?saved=selections$`));
-    await expect(page.getByRole("status")).toHaveText("Candidate selections updated.");
-    await expect(page.getByText("1 of 1 selected")).toBeVisible();
+    // 8. Inspect exact provenance, then select the candidate observation.
+    const candidate = page.locator('[data-testid="synthesis-preparation-candidate"]').filter({ hasText: "Study Alpha" });
+    await candidate.getByRole("link", { name: "View exact provenance" }).click();
+    await expect(page.getByText("Connecting Evidence: 1 · direct Evidence: 1", { exact: true })).toBeVisible();
+    await expect(page.locator(".quote").filter({ hasText: "Primary outcome was significantly enhanced by 42%." }).first()).toBeVisible();
+    await page.getByRole("link", { name: "Return to preparation →" }).click();
+    await candidate.getByRole("button", { name: "Select", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Candidate revision selected." })).toBeVisible();
+    await expect(candidate.getByText("Selected", { exact: true })).toBeVisible();
 
     // 9. Finalize synthesis preparation
     await page.locator("#final-title").fill("Cross-study effect size synthesis");

@@ -57,6 +57,7 @@ import {
 import { createEvidenceCurationServices } from "./evidence-curation-services";
 import { createEvidenceSetServices } from "./evidence-set-services";
 import { createSynthesisPreparationServices } from "./synthesis-preparation-services";
+import { createSynthesisPreparationReadServices } from "./synthesis-preparation-read-services";
 import { createSynthesisInterpretationServices } from "./synthesis-interpretation-services";
 import {
   createResearchQuestionTraceabilityServices,
@@ -214,6 +215,7 @@ export function createReviewServices(db: Database, options: {
     synthesisSupportRepo,
     extractionFieldRepo,
   });
+  const synthesisPreparationReadServices = createSynthesisPreparationReadServices(db);
   const synthesisInterpretationServices = getSynthesisInterpretationServices();
   const traceabilityServices = createResearchQuestionTraceabilityServices(db);
   const coverageServices = createResearchQuestionCoverageServices(db, traceabilityServices.repo);
@@ -318,6 +320,7 @@ export function createReviewServices(db: Database, options: {
     criticalAppraisalServices,
     evidenceSetServices,
     synthesisPreparationServices,
+    synthesisPreparationReadServices,
     synthesisInterpretationServices,
     traceabilityServices,
     coverageServices,
@@ -334,6 +337,7 @@ export function createReviewServices(db: Database, options: {
     typeof criticalAppraisalServices &
     typeof evidenceSetServices &
     typeof synthesisPreparationServices &
+    typeof synthesisPreparationReadServices &
     typeof synthesisInterpretationServices &
     ResearchQuestionTraceabilityServices &
     ResearchQuestionCoverageServices &

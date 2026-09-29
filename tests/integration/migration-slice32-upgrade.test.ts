@@ -15,8 +15,8 @@ const baseUrl = resolveDatabaseUrl();
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
 const migrationPath = path.join(migrationFolder, "0033_storage_materialization_recovery.sql");
 const migrationHash = createHash("sha256").update(fs.readFileSync(migrationPath)).digest("hex");
-const slice46MigrationPath = path.join(migrationFolder, "0035_retrieved_record_run_order.sql");
-const slice46MigrationHash = createHash("sha256").update(fs.readFileSync(slice46MigrationPath)).digest("hex");
+const currentTailMigrationPath = path.join(migrationFolder, "0036_ai_synthesis_preparation_history.sql");
+const currentTailMigrationHash = createHash("sha256").update(fs.readFileSync(currentTailMigrationPath)).digest("hex");
 
 function databaseUrl(name: string) {
   const url = new URL(baseUrl);
@@ -147,7 +147,7 @@ describe("Slice 34 hot-path migration boundary", () => {
     try {
       await migrate(db.db, { migrationsFolder: migrationFolder });
       const [latest] = await db.client`select hash from drizzle.__drizzle_migrations order by id desc limit 1`;
-      expect(latest.hash).toBe(slice46MigrationHash);
+      expect(latest.hash).toBe(currentTailMigrationHash);
       const indexes = await comparisonIndexState(db.db);
       expect([...indexes.keys()]).toEqual([
         "retrieved_records_project_doi_comparison_idx",
@@ -182,7 +182,7 @@ describe("Slice 34 hot-path migration boundary", () => {
       const afterData = await researchDataFingerprint(db.db, projectId);
       const afterIndexes = await comparisonIndexState(db.db);
       expect(appliedHashes.map((row) => row.hash)).toContain(migrationHash);
-      expect(appliedHashes.at(-1)?.hash).toBe(slice46MigrationHash);
+      expect(appliedHashes.at(-1)?.hash).toBe(currentTailMigrationHash);
       expect(afterData).toEqual(beforeData);
       expect(afterIndexes.get("retrieved_records_project_title_comparison_idx")).toBe(beforeIndexes.get("retrieved_records_project_title_comparison_idx"));
       expect(afterIndexes.has("retrieved_records_project_source_record_comparison_idx")).toBe(true);

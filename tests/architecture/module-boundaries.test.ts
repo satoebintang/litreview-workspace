@@ -478,24 +478,28 @@ describe("bounded-context module boundaries", () => {
     expect(fixture.services.coreMethods).toHaveLength(67);
   });
 
-  it("keeps the Slice 45 action signatures and async forwarding façade frozen", () => {
+  it("keeps accepted action signatures and the async forwarding façade frozen", () => {
     const expectedActionExports = [
       ...fixture.actions.exports,
       "addEvidenceToSelectedSetAction",
       "moveEvidenceSetMembershipAction",
       "createRetrievedRecordForRunAction",
+      "selectSynthesisPreparationRevisionAction",
+      "deselectSynthesisPreparationRevisionAction",
     ];
     const expectedActionFunctions = [
       ...fixture.actions.functions,
       { name: "addEvidenceToSelectedSetAction", signature: "(form: FormData) => Promise<void>" },
       { name: "moveEvidenceSetMembershipAction", signature: "(form: FormData) => Promise<void>" },
       { name: "createRetrievedRecordForRunAction", signature: "(form: FormData) => Promise<void>" },
+      { name: "selectSynthesisPreparationRevisionAction", signature: "(form: FormData) => Promise<void>" },
+      { name: "deselectSynthesisPreparationRevisionAction", signature: "(form: FormData) => Promise<void>" },
     ];
     const facade = sourceFile(actionsFacade);
     expect(hasUseServerDirective(facade)).toBe(true);
     const exportedStatements = facade.statements.filter((statement) => hasModifier(statement, ts.SyntaxKind.ExportKeyword)
       || ts.isExportDeclaration(statement) || ts.isExportAssignment(statement));
-    expect(exportedStatements).toHaveLength(140);
+    expect(exportedStatements).toHaveLength(142);
     expect(exportedStatements.every((statement) => ts.isFunctionDeclaration(statement)
       && hasModifier(statement, ts.SyntaxKind.AsyncKeyword))).toBe(true);
 
@@ -510,7 +514,7 @@ describe("bounded-context module boundaries", () => {
       .filter((statement): statement is ts.FunctionDeclaration => ts.isFunctionDeclaration(statement) && !!statement.name)
       .map((declaration) => [declaration.name!.text, declaration]));
     expect([...wrappers.keys()].sort()).toEqual([...expectedActionExports].sort());
-    expect(wrappers.size).toBe(140);
+    expect(wrappers.size).toBe(142);
 
     const implementationModules = new Set<string>();
     const implementationExports: string[] = [];
