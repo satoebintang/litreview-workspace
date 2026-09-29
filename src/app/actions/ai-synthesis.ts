@@ -29,27 +29,30 @@ export async function executeAiSynthesisSuggestionAction(form: FormData) {
   const projectId = text(form, "projectId");
   const preparationId = text(form, "preparationId");
   const requestId = text(form, "requestId");
-  try { await aiSynthesisServices.executeAiSynthesisSuggestion(requestId, projectId); }
-  catch (error) { fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error); }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}`);
+  const detailPath = `/projects/${projectId}/synthesis/preparations/${preparationId}/ai-requests/${requestId}`;
+  try { await aiSynthesisServices.executeAiSynthesisSuggestion(requestId, projectId, preparationId); }
+  catch (error) { fail(detailPath, error); }
+  redirect(detailPath);
 }
 
 export async function expireAiSynthesisSuggestionAction(form: FormData) {
   const projectId = text(form, "projectId");
   const preparationId = text(form, "preparationId");
   const requestId = text(form, "requestId");
-  try { await aiSynthesisServices.expireAiSynthesisSuggestion(requestId, projectId); }
-  catch (error) { fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error); }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}`);
+  const detailPath = `/projects/${projectId}/synthesis/preparations/${preparationId}/ai-requests/${requestId}`;
+  try { await aiSynthesisServices.expireAiSynthesisSuggestion(requestId, projectId, preparationId); }
+  catch (error) { fail(detailPath, error); }
+  redirect(detailPath);
 }
 
 export async function rejectAiSynthesisSuggestionAction(form: FormData) {
   const projectId = text(form, "projectId");
   const preparationId = text(form, "preparationId");
   const requestId = text(form, "requestId");
-  try { await aiSynthesisServices.rejectAiSynthesisSuggestion(projectId, requestId); }
-  catch (error) { fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error); }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=ai-rejected`);
+  const detailPath = `/projects/${projectId}/synthesis/preparations/${preparationId}/ai-requests/${requestId}`;
+  try { await aiSynthesisServices.rejectAiSynthesisSuggestion(projectId, requestId, preparationId); }
+  catch (error) { fail(detailPath, error); }
+  redirect(`${detailPath}?saved=ai-rejected`);
 }
 
 export async function acceptAiSynthesisSuggestionAction(form: FormData) {
@@ -61,13 +64,14 @@ export async function acceptAiSynthesisSuggestionAction(form: FormData) {
     await aiSynthesisServices.acceptAiSynthesisSuggestion({
       projectId,
       requestId,
+      preparationId,
       mode,
       title: optional(form, "title") ?? null,
       statementText: verbatimText(form, "statementText"),
       researcherNote: optional(form, "researcherNote") ?? null,
     });
   } catch (error) {
-    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
+    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}/ai-requests/${requestId}`, error);
   }
-  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=ai-accepted`);
+  redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}/ai-requests/${requestId}?saved=ai-accepted`);
 }

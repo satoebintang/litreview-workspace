@@ -5,6 +5,17 @@ import type { ConvergenceState, LimitationCategory } from "@/domain/types";
 import { reviewServices } from "../server";
 import { fail, optional, text, verbatimText } from "../action-helpers";
 
+function preparationCandidateReturnLocation(projectId: string, preparationId: string, form: FormData, saved: string) {
+  const query = new URLSearchParams({ saved });
+  const filter = form.get("candidateFilter");
+  if (filter === "all" || filter === "selected" || filter === "selectable" || filter === "ineligible") {
+    query.set("candidateFilter", filter);
+  }
+  const cursor = form.get("candidateCursor");
+  if (typeof cursor === "string" && cursor.length <= 4096 && cursor.length > 0) query.set("candidateCursor", cursor);
+  return `/projects/${projectId}/synthesis/preparations/${preparationId}?${query.toString()}`;
+}
+
 function synthesisRevisionInput(form: FormData) {
   return {
     title: optional(form, "title"),
@@ -98,6 +109,30 @@ export async function replaceSynthesisPreparationSelectionsAction(form: FormData
     fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
   }
   redirect(`/projects/${projectId}/synthesis/preparations/${preparationId}?saved=selections`);
+}
+
+export async function selectSynthesisPreparationRevisionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const preparationId = text(form, "preparationId");
+  const extractionRevisionId = text(form, "extractionRevisionId");
+  try {
+    await reviewServices.selectSynthesisPreparationRevision(projectId, preparationId, { extractionRevisionId });
+  } catch (error) {
+    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
+  }
+  redirect(preparationCandidateReturnLocation(projectId, preparationId, form, "selected"));
+}
+
+export async function deselectSynthesisPreparationRevisionAction(form: FormData) {
+  const projectId = text(form, "projectId");
+  const preparationId = text(form, "preparationId");
+  const extractionRevisionId = text(form, "extractionRevisionId");
+  try {
+    await reviewServices.deselectSynthesisPreparationRevision(projectId, preparationId, { extractionRevisionId });
+  } catch (error) {
+    fail(`/projects/${projectId}/synthesis/preparations/${preparationId}`, error);
+  }
+  redirect(preparationCandidateReturnLocation(projectId, preparationId, form, "deselected"));
 }
 
 export async function abandonSynthesisPreparationAction(form: FormData) {

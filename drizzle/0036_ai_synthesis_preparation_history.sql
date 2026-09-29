@@ -1,0 +1,1 @@
+CREATE INDEX "ai_synthesis_requests_project_preparation_created_id_idx" ON "ai_synthesis_requests" USING btree ("project_id","preparation_id","created_at" DESC NULLS LAST,"id" DESC NULLS LAST);

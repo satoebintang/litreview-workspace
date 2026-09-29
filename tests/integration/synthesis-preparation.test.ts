@@ -232,6 +232,110 @@ describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     expect(ws.candidates.find((c) => c.extractionRevision.id === revB.id)?.selected).toBe(true);
   });
 
+  it("selects and deselects one exact revision idempotently, including after eligibility drifts", async () => {
+    const paper = await includedPaper("Incremental selection");
+    const evidence = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "Pinned passage", pageNumber: 1 });
+    const field = await services.createExtractionField(projectId, { name: "Incremental field", fieldType: "short_text" });
+    const revision = await services.reviseExtractionValue(projectId, paper.id, field.id, { value: "Selected value", evidenceIds: [evidence.id] });
+    const otherField = await services.createExtractionField(projectId, { name: "Other incremental field", fieldType: "short_text" });
+    const wrongFieldRevision = await services.reviseExtractionValue(projectId, paper.id, otherField.id, { value: "Wrong field", evidenceIds: [evidence.id] });
+
+    const set = (await services.createEvidenceSet(projectId, { name: "Incremental set" })).set;
+    await addEvidenceToSet(set.id, evidence.id);
+    const preparation = await services.createSynthesisPreparation(projectId, {
+      evidenceSetId: set.id,
+      extractionFieldId: field.id,
+    });
+
+    const unreachablePaper = await includedPaper("Incremental unreachable");
+    const unreachableEvidence = await services.recordEvidence(projectId, { paperId: unreachablePaper.id, sourceText: "Not pinned", pageNumber: 1 });
+    const unreachableRevision = await services.reviseExtractionValue(projectId, unreachablePaper.id, field.id, {
+      value: "Unreachable value",
+      evidenceIds: [unreachableEvidence.id],
+    });
+
+    await expect(services.selectSynthesisPreparationRevision(projectId, preparation.id, {
+      extractionRevisionId: wrongFieldRevision.id,
+    })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    await expect(services.selectSynthesisPreparationRevision(projectId, preparation.id, {
+      extractionRevisionId: unreachableRevision.id,
+    })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    const exclusionCriterion = await services.createFullTextScreeningCriterion(projectId, { text: "Not finally included" });
+    await services.recordFullTextScreeningDecision(projectId, paper.id, {
+      decision: "exclude",
+      exclusionCriterionId: exclusionCriterion.id,
+    });
+    await expect(services.selectSynthesisPreparationRevision(projectId, preparation.id, {
+      extractionRevisionId: revision.id,
+    })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    await services.recordFullTextScreeningDecision(projectId, paper.id, { decision: "include" });
+
+    const currentSet = await services.getEvidenceSet(projectId, set.id);
+    await services.removeEvidenceFromSet(projectId, set.id, {
+      evidenceId: evidence.id,
+      expectedRevisionId: currentSet.currentRevision.id,
+    });
+
+    await expect(services.selectSynthesisPreparationRevision(projectId, preparation.id, {
+      extractionRevisionId: revision.id,
+    })).resolves.toBe(revision.id);
+    const afterInsert = await client`
+      select updated_at, xmin::text as version
+      from synthesis_preparations
+      where project_id=${projectId}::uuid and id=${preparation.id}::uuid
+    `;
+
+    await services.reviseExtractionValue(projectId, paper.id, field.id, { state: "cleared", researcherNote: "Drift after selection" });
+    await expect(services.selectSynthesisPreparationRevision(projectId, preparation.id, {
+      extractionRevisionId: revision.id,
+    })).resolves.toBe(revision.id);
+    const afterDuplicate = await client`
+      select updated_at, xmin::text as version
+      from synthesis_preparations
+      where project_id=${projectId}::uuid and id=${preparation.id}::uuid
+    `;
+    expect(afterDuplicate).toEqual(afterInsert);
+
+    await expect(services.deselectSynthesisPreparationRevision(projectId, preparation.id, {
+      extractionRevisionId: revision.id,
+    })).resolves.toBe(true);
+    const afterDelete = await client`
+      select updated_at, xmin::text as version
+      from synthesis_preparations
+      where project_id=${projectId}::uuid and id=${preparation.id}::uuid
+    `;
+    await expect(services.deselectSynthesisPreparationRevision(projectId, preparation.id, {
+      extractionRevisionId: revision.id,
+    })).resolves.toBe(false);
+    const afterAbsentDelete = await client`
+      select updated_at, xmin::text as version
+      from synthesis_preparations
+      where project_id=${projectId}::uuid and id=${preparation.id}::uuid
+    `;
+    expect(afterAbsentDelete).toEqual(afterDelete);
+  });
+
+  it("distinguishes a missing project from a missing preparation for one-item selection commands", async () => {
+    const missingProjectId = crypto.randomUUID();
+    const missingPreparationId = crypto.randomUUID();
+    const extractionRevisionId = crypto.randomUUID();
+
+    await expect(services.selectSynthesisPreparationRevision(missingProjectId, missingPreparationId, {
+      extractionRevisionId,
+    })).rejects.toMatchObject({ code: "PROJECT_NOT_FOUND" });
+    await expect(services.deselectSynthesisPreparationRevision(missingProjectId, missingPreparationId, {
+      extractionRevisionId,
+    })).rejects.toMatchObject({ code: "PROJECT_NOT_FOUND" });
+
+    await expect(services.selectSynthesisPreparationRevision(projectId, missingPreparationId, {
+      extractionRevisionId,
+    })).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
+    await expect(services.deselectSynthesisPreparationRevision(projectId, missingPreparationId, {
+      extractionRevisionId,
+    })).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
+  });
+
   it("finalizes a synthesis preparation to a new statement with exact supports", async () => {
     const paper = await includedPaper("Paper 1");
     const ev = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "Text", pageNumber: 1 });

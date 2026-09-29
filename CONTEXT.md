@@ -96,6 +96,25 @@ A Paper is finally included only when its current title/abstract decision is `in
 
 A persistent, researcher-controlled workspace session scoped to one pinned Evidence Set composition revision and one ExtractionField. It derives reachable candidate ExtractionRevisions and stores mutable working selections without altering analytical support provenance.
 
+The interactive workspace uses a cursor-paged preparation ledger and candidate
+ledger, exact candidate provenance routes, and separate connecting-versus-direct
+Evidence pages. Candidate membership means a finalized revision for the pinned
+Field linked to at least one Evidence item in the exact pinned composition;
+current screening, cleared-value, and curation facts annotate selectability and
+warnings without removing reachable candidates or silently dropping drifted
+selections. Candidate cursors pin the candidate-finalization time and the exact
+preparation, composition, Field, order, and filter. Selection forms add or
+remove one exact revision per request. The database validates the pinned
+temporal composition chain; normal candidate and selection paths do not return
+the full member set to application memory. Finalization remains proportional to
+selected supports. See `docs/adr/0047-scalable-synthesis-preparation-workspace.md`.
+
+AI request history is cursor-paged, with exact request audit detail on a nested
+preparation route. Requests retain their frozen support and Evidence manifests
+after later selection changes. The target-statement picker loads bounded
+options only after explicit Browse/Search and can resolve the current target by
+exact ID. Released full-workspace APIs remain available for compatibility.
+
 ## Preparation context
 
 Workflow metadata recording that an exact SynthesisRevision was finalized from a SynthesisPreparation session, linking the source Evidence Set and pinned composition sequence while remaining structurally separate from formal supports.

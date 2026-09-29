@@ -581,6 +581,7 @@
         "criticalAppraisalServices",
         "evidenceSetServices",
         "synthesisPreparationServices",
+        "synthesisPreparationReadServices",
         "synthesisInterpretationServices",
         "traceabilityServices",
         "coverageServices",
@@ -932,10 +933,25 @@
           "listSynthesisPreparations",
           "getSynthesisPreparationWorkspace",
           "updateSynthesisPreparation",
+          "selectSynthesisPreparationRevision",
+          "deselectSynthesisPreparationRevision",
           "replaceSynthesisPreparationSelections",
           "abandonSynthesisPreparation",
           "finalizeSynthesisPreparation",
           "getSynthesisPreparationContextForRevision"
+        ]
+      },
+      {
+        "source": "synthesisPreparationReadServices",
+        "keys": [
+          "listSynthesisPreparationLedger",
+          "getSynthesisPreparationHeader",
+          "listSynthesisPreparationCandidates",
+          "getSynthesisPreparationCandidate",
+          "listSynthesisPreparationConnectingEvidence",
+          "listSynthesisPreparationDirectEvidence",
+          "listSynthesisTargetStatementOptions",
+          "resolveSynthesisTargetStatement"
         ]
       },
       {
@@ -2046,7 +2062,7 @@
   "configHashes": [
     {
       "file": "package.json",
-      "sha256": "85b2d4d8493650c4220a933d6a8c394e39f6a221bd583d55b4842faa26ebde66"
+      "sha256": "d374eb7aee91ba9dda8a292e24c3163f6f33639da2384dd6e136a70c727a9b62"
     },
     {
       "file": "package-lock.json",

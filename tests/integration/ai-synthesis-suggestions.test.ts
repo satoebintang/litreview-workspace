@@ -5,7 +5,7 @@ import { createDb } from "@/db/client";
 import { sql } from "drizzle-orm";
 import { createReviewServices } from "@/application/services";
 import { createAiSynthesisSuggestionServices } from "@/application/ai-synthesis-suggestion-services";
-import type { ProviderSynthesisSuggestionResult, SynthesisSuggestionProvider } from "@/application/ai/synthesis-suggestion-provider";
+import { AI_SYNTHESIS_LIMITS, type ProviderSynthesisSuggestionResult, type SynthesisSuggestionProvider } from "@/application/ai/synthesis-suggestion-provider";
 
 const { db, client } = createDb(process.env.DATABASE_URL ?? "postgres://litreview:litreview@localhost:5432/litreview");
 const services = createReviewServices(db);
@@ -48,7 +48,7 @@ describe("Slice 29 AI synthesis suggestions", () => {
     const evidences = [] as Array<{ id: string }>;
     const revisions = [] as Array<{ id: string }>;
     for (const index of Array.from({ length: count }, (_, value) => value)) {
-      const title = `Study ${String.fromCharCode(65 + index)}`;
+      const title = `${crypto.randomUUID()} support ${index + 1}`;
       const paper = await services.addPaper(projectId, { title });
       await services.recordScreeningDecision(projectId, paper.id, { decision: "include" });
       await services.recordFullTextRetrievalAttempt(projectId, paper.id, { outcome: "retrieved", attemptedAt: new Date() });
@@ -68,6 +68,161 @@ describe("Slice 29 AI synthesis suggestions", () => {
 
   async function setupTwoSupports() { return setupSupports(2); }
   async function setupThreeSupports() { return setupSupports(3, 2); }
+
+  it("preserves the minimum-support validation when no preparation selections exist", async () => {
+    const { preparation } = await setup();
+    await services.replaceSynthesisPreparationSelections(projectId, preparation.id, { extractionRevisionIds: [] });
+    const ai = createAiSynthesisSuggestionServices(db, provider(), {
+      defaultModel: "fake-model",
+      defaultReasoningEffort: "low",
+      finalizePreparationInTransaction: services.finalizeSynthesisPreparationInTransaction,
+    });
+
+    await expect(ai.beginAiSynthesisSuggestion({
+      projectId,
+      preparationId: preparation.id,
+      idempotencyKey: crypto.randomUUID(),
+      externalTransmissionAcknowledged: true,
+      disclosureVersion: "openai-synthesis-transmission-v1",
+    })).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      message: `Select between ${AI_SYNTHESIS_LIMITS.minSupports} and ${AI_SYNTHESIS_LIMITS.maxSupports} extraction revisions before requesting AI synthesis`,
+    });
+    await expect(client`select count(*)::int as count from ai_synthesis_requests where project_id=${projectId}::uuid and preparation_id=${preparation.id}::uuid`)
+      .resolves.toEqual([{ count: 0 }]);
+  });
+
+  it("preflights up to maxSupports plus one before support or Evidence content hydration", async () => {
+    const { preparation, revisions } = await setupSupports(101);
+    const storedSelections = await client`select count(*)::int as count from synthesis_preparation_selections where project_id=${projectId}::uuid and preparation_id=${preparation.id}::uuid`;
+    expect(storedSelections).toEqual([{ count: 101 }]);
+
+    const observedRowCounts: number[] = [];
+    let observedStatementCount = 0;
+    const originalTransaction = db.transaction.bind(db);
+    const observedDb = Object.assign(Object.create(db), {
+      transaction: (callback: (tx: unknown) => Promise<unknown>, config?: unknown) => originalTransaction(async (tx) => {
+        const observedTx = new Proxy(tx, {
+          get(target, property, receiver) {
+            if (property === "execute") return async (...args: Parameters<typeof tx.execute>) => {
+              const result = await tx.execute(...args);
+              observedStatementCount += 1;
+              observedRowCounts.push(Number((result as unknown as { length?: number }).length ?? 0));
+              return result;
+            };
+            const value = Reflect.get(target, property, receiver);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+        return callback(observedTx);
+      }, config as never),
+    }) as typeof db;
+    const providerValue = provider();
+    const suggest = vi.spyOn(providerValue, "suggest");
+    const ai = createAiSynthesisSuggestionServices(observedDb, providerValue, {
+      defaultModel: "fake-model",
+      defaultReasoningEffort: "low",
+      finalizePreparationInTransaction: services.finalizeSynthesisPreparationInTransaction,
+    });
+    const beginInput = (idempotencyKey: string) => ({
+      projectId,
+      preparationId: preparation.id,
+      idempotencyKey,
+      externalTransmissionAcknowledged: true,
+      disclosureVersion: "openai-synthesis-transmission-v1",
+    });
+
+    await services.replaceSynthesisPreparationSelections(projectId, preparation.id, {
+      extractionRevisionIds: revisions.slice(0, AI_SYNTHESIS_LIMITS.maxSupports).map(({ id }) => id),
+    });
+    const exactLimit = await ai.beginAiSynthesisSuggestion(beginInput(crypto.randomUUID()));
+    const exactLimitDetail = await ai.getAiSynthesisSuggestion(String(exactLimit.requestId), projectId) as unknown as {
+      request: { supportCount: number };
+      supports: Array<Record<string, unknown>>;
+    };
+    expect(exactLimitDetail.request.supportCount).toBe(AI_SYNTHESIS_LIMITS.maxSupports);
+    expect(exactLimitDetail.supports).toHaveLength(AI_SYNTHESIS_LIMITS.maxSupports);
+    const expectedSupportOrder = await client`
+      select extraction_revision_id::text as id
+      from synthesis_preparation_selections
+      where project_id=${projectId}::uuid and preparation_id=${preparation.id}::uuid
+      order by created_at, extraction_revision_id
+    `;
+    expect(exactLimitDetail.supports.map((support) => String(support.extraction_revision_id)))
+      .toEqual(expectedSupportOrder.map(({ id }) => String(id)));
+
+    for (const selectionCount of [AI_SYNTHESIS_LIMITS.maxSupports + 1, revisions.length]) {
+      await services.replaceSynthesisPreparationSelections(projectId, preparation.id, {
+        extractionRevisionIds: revisions.slice(0, selectionCount).map(({ id }) => id),
+      });
+      observedStatementCount = 0;
+      observedRowCounts.length = 0;
+      const idempotencyKey = crypto.randomUUID();
+      await expect(ai.beginAiSynthesisSuggestion(beginInput(idempotencyKey))).rejects.toMatchObject({
+        code: "VALIDATION_ERROR",
+        message: `Select between ${AI_SYNTHESIS_LIMITS.minSupports} and ${AI_SYNTHESIS_LIMITS.maxSupports} extraction revisions before requesting AI synthesis`,
+      });
+
+      // Only the locked preparation and at most maxSupports + 1 compact selection IDs were read.
+      // A support-content or pinned Evidence query would be an additional execute call.
+      expect(observedStatementCount).toBe(2);
+      expect(observedRowCounts).toEqual([1, AI_SYNTHESIS_LIMITS.maxSupports + 1]);
+      expect(suggest).not.toHaveBeenCalled();
+      await expect(client`
+        select
+          (select count(*)::int from ai_synthesis_requests where project_id=${projectId}::uuid and preparation_id=${preparation.id}::uuid) as request_count,
+          (select count(*)::int from ai_synthesis_requests where project_id=${projectId}::uuid and idempotency_key=${idempotencyKey}::uuid) as attempted_request_count,
+          (select count(*)::int from ai_synthesis_request_supports where project_id=${projectId}::uuid and request_id in (select id from ai_synthesis_requests where project_id=${projectId}::uuid and idempotency_key=${idempotencyKey}::uuid)) as support_count,
+          (select count(*)::int from ai_synthesis_request_sources where project_id=${projectId}::uuid and request_id in (select id from ai_synthesis_requests where project_id=${projectId}::uuid and idempotency_key=${idempotencyKey}::uuid)) as source_count
+      `).resolves.toEqual([{ request_count: 1, attempted_request_count: 0, support_count: 0, source_count: 0 }]);
+    }
+  }, 120_000);
+
+  it("fails closed before creating an AI request when its pinned temporal chain is cyclic", async () => {
+    const { preparation, set } = await setupSupports(2, 1);
+    const [pinned] = await client<{ setOrdinal: string; headMembershipId: string; tailMembershipId: string }[]>`
+      select revision.set_ordinal::text as "setOrdinal",
+        revision.head_membership_id::text as "headMembershipId",
+        revision.tail_membership_id::text as "tailMembershipId"
+      from synthesis_preparations p
+      join evidence_set_composition_revisions revision
+        on revision.project_id=p.project_id and revision.evidence_set_id=p.evidence_set_id
+       and revision.id=p.evidence_set_composition_revision_id
+      where p.project_id=${projectId}::uuid and p.id=${preparation.id}::uuid
+    `;
+    expect(pinned).toBeDefined();
+
+    await client.begin(async (tx) => {
+      await tx.unsafe("alter table evidence_set_membership_order_versions disable trigger user");
+      try {
+        await tx`
+          update evidence_set_membership_order_versions
+          set next_membership_id=${pinned.headMembershipId}::uuid
+          where project_id=${projectId}::uuid and evidence_set_id=${set.id}::uuid
+            and membership_id=${pinned.tailMembershipId}::uuid
+            and valid_from_ordinal<=${pinned.setOrdinal}::bigint
+            and (valid_to_ordinal is null or ${pinned.setOrdinal}::bigint<valid_to_ordinal)
+        `;
+      } finally {
+        await tx.unsafe("alter table evidence_set_membership_order_versions enable trigger user");
+      }
+    });
+
+    const ai = createAiSynthesisSuggestionServices(db, provider(), {
+      defaultModel: "fake-model",
+      defaultReasoningEffort: "low",
+      finalizePreparationInTransaction: services.finalizeSynthesisPreparationInTransaction,
+    });
+    await expect(ai.beginAiSynthesisSuggestion({
+      projectId,
+      preparationId: preparation.id,
+      idempotencyKey: crypto.randomUUID(),
+      externalTransmissionAcknowledged: true,
+      disclosureVersion: "openai-synthesis-transmission-v1",
+    })).rejects.toMatchObject({ code: "DATABASE_CONSTRAINT" });
+    expect(await client`select count(*)::int as count from ai_synthesis_requests where project_id=${projectId}::uuid and preparation_id=${preparation.id}::uuid`)
+      .toEqual([{ count: 0 }]);
+  });
 
   function provider(result?: ProviderSynthesisSuggestionResult | ((input: Parameters<SynthesisSuggestionProvider["suggest"]>[0]) => ProviderSynthesisSuggestionResult | Promise<ProviderSynthesisSuggestionResult>)): SynthesisSuggestionProvider {
     return {
@@ -109,6 +264,51 @@ describe("Slice 29 AI synthesis suggestions", () => {
     expect((supports as unknown as Array<Record<string, unknown>>).map((row) => String(row.extraction_revision_id))).toEqual([revision.id]);
     await expect(ai.acceptAiSynthesisSuggestion({ projectId, requestId: String(began.requestId), mode: "accept" })).resolves.toMatchObject({ decision: { decision: "accepted" } });
     await expect(ai.rejectAiSynthesisSuggestion(projectId, String(began.requestId))).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+  });
+
+  it("uses selected-support order to break shared Evidence ties in frozen manifests and detail reads", async () => {
+    const { preparation, evidence, revision, field, paper } = await setup();
+    const laterRevision = await services.reviseExtractionValue(projectId, paper.id, field.id, {
+      value: "Improved in the later revision",
+      evidenceIds: [evidence.id],
+    });
+    await services.replaceSynthesisPreparationSelections(projectId, preparation.id, {
+      extractionRevisionIds: [revision.id, laterRevision.id],
+    });
+    const expectedSupportOrder = await client`
+      select extraction_revision_id::text as id
+      from synthesis_preparation_selections
+      where project_id=${projectId}::uuid and preparation_id=${preparation.id}::uuid
+      order by created_at, extraction_revision_id
+    `;
+    const idempotencyKey = crypto.randomUUID();
+    const beginInput = {
+      projectId,
+      preparationId: preparation.id,
+      idempotencyKey,
+      externalTransmissionAcknowledged: true,
+      disclosureVersion: "openai-synthesis-transmission-v1",
+    };
+    const ai = createAiSynthesisSuggestionServices(db, provider(), {
+      defaultModel: "fake-model",
+      defaultReasoningEffort: "low",
+      finalizePreparationInTransaction: services.finalizeSynthesisPreparationInTransaction,
+    });
+
+    const began = await ai.beginAiSynthesisSuggestion(beginInput);
+    const detail = await ai.getAiSynthesisSuggestion(String(began.requestId), projectId) as unknown as {
+      sources: Array<Record<string, unknown>>;
+    };
+    expect(detail.sources.map((source) => String(source.extraction_revision_id)))
+      .toEqual(expectedSupportOrder.map(({ id }) => String(id)));
+    expect(detail.sources.map((source) => String(source.evidence_id))).toEqual([evidence.id, evidence.id]);
+    expect(detail.sources.map((source) => Number(source.source_ordinal))).toEqual([0, 0]);
+
+    // Recomputing the same frozen context must retain its source-state/manifest hash.
+    await expect(ai.beginAiSynthesisSuggestion(beginInput)).resolves.toMatchObject({
+      requestId: began.requestId,
+      created: false,
+    });
   });
 
   it("freezes and accepts an existing target with its baseline revision", async () => {
@@ -413,6 +613,150 @@ describe("Slice 29 AI synthesis suggestions", () => {
     const detail = await ai.getAiSynthesisSuggestion(String(began.requestId), projectId) as unknown as { sources: Array<Record<string, unknown>> };
     expect(detail.sources.map((source) => String(source.evidence_id))).toEqual([evidences[1].id, evidences[0].id]);
     expect(detail.sources.map((source) => Number(source.membership_sort_order))).toEqual([1, 2]);
+  });
+
+  it("keeps pinned-chain traversal in PostgreSQL and returns only selected connecting Evidence", async () => {
+    const paper = await services.addPaper(projectId, { title: "Large pinned set" });
+    await services.recordScreeningDecision(projectId, paper.id, { decision: "include" });
+    await services.recordFullTextRetrievalAttempt(projectId, paper.id, { outcome: "retrieved", attemptedAt: new Date() });
+    await services.recordFullTextScreeningDecision(projectId, paper.id, { decision: "include" });
+    const evidences = [] as Array<{ id: string }>;
+    for (let index = 0; index < 40; index += 1) {
+      evidences.push(await services.recordEvidence(projectId, {
+        paperId: paper.id,
+        sourceText: index === 0 ? "The selected source." : `Unselected pinned source ${index}.`,
+        pageNumber: index + 1,
+      }));
+    }
+    const field = await services.createExtractionField(projectId, { name: "Outcome", fieldType: "short_text" });
+    const revision = await services.reviseExtractionValue(projectId, paper.id, field.id, { value: "Improved", evidenceIds: [evidences[0].id] });
+    const set = (await services.createEvidenceSet(projectId, { name: "Large pinned set" })).set;
+    for (const evidence of evidences) await addEvidenceToSet(set.id, evidence.id);
+    const preparation = await services.createSynthesisPreparation(projectId, { evidenceSetId: set.id, extractionFieldId: field.id });
+    await services.replaceSynthesisPreparationSelections(projectId, preparation.id, { extractionRevisionIds: [revision.id] });
+
+    const returnedRowCounts: number[] = [];
+    const originalTransaction = db.transaction.bind(db);
+    const observedDb = Object.assign(Object.create(db), {
+      transaction: (callback: (tx: unknown) => Promise<unknown>, config?: unknown) => originalTransaction(async (tx) => {
+        const observedTx = new Proxy(tx, {
+          get(target, property, receiver) {
+            if (property === "execute") return async (...args: Parameters<typeof tx.execute>) => {
+              const result = await tx.execute(...args);
+              returnedRowCounts.push(Number((result as unknown as { length?: number }).length ?? 0));
+              return result;
+            };
+            const value = Reflect.get(target, property, receiver);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+        return callback(observedTx);
+      }, config as never),
+    }) as typeof db;
+    const ai = createAiSynthesisSuggestionServices(observedDb, provider(), {
+      defaultModel: "fake-model",
+      defaultReasoningEffort: "low",
+      finalizePreparationInTransaction: services.finalizeSynthesisPreparationInTransaction,
+    });
+    const began = await ai.beginAiSynthesisSuggestion({ projectId, preparationId: preparation.id, idempotencyKey: crypto.randomUUID(), externalTransmissionAcknowledged: true, disclosureVersion: "openai-synthesis-transmission-v1" });
+    expect(Math.max(...returnedRowCounts)).toBeLessThan(evidences.length);
+    const detail = await ai.getAiSynthesisSuggestion(String(began.requestId), projectId) as unknown as { request: Record<string, unknown>; sources: Array<Record<string, unknown>> };
+    expect(detail.sources).toHaveLength(1);
+    expect(String(detail.sources[0].evidence_id)).toBe(evidences[0].id);
+    expect(Number(detail.sources[0].membership_sort_order)).toBe(1);
+    expect(detail.request.contextSelectionVersion).toBeDefined();
+    expect(detail.request.sourceStateHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("bounds AI history with one scoped page query and a keyset cursor", async () => {
+    const { preparation, field, set } = await setup();
+    const otherPreparation = await services.createSynthesisPreparation(projectId, { evidenceSetId: set.id, extractionFieldId: field.id });
+    const longModel = "m".repeat(150);
+    const ai = createAiSynthesisSuggestionServices(db, provider(), {
+      defaultModel: longModel,
+      defaultReasoningEffort: "low",
+      finalizePreparationInTransaction: services.finalizeSynthesisPreparationInTransaction,
+    });
+    const requestIds: string[] = [];
+    for (let index = 0; index < 26; index += 1) {
+      const began = await ai.beginAiSynthesisSuggestion({ projectId, preparationId: preparation.id, idempotencyKey: crypto.randomUUID(), externalTransmissionAcknowledged: true, disclosureVersion: "openai-synthesis-transmission-v1" });
+      requestIds.push(String(began.requestId));
+      await ai.executeAiSynthesisSuggestion(String(began.requestId), projectId);
+      if (index === 25) await ai.rejectAiSynthesisSuggestion(projectId, String(began.requestId));
+    }
+
+    const firstPageQuery = vi.spyOn(db, "execute");
+    const firstPage = await ai.listAiSynthesisSuggestionHistoryPage(projectId, preparation.id);
+    expect(firstPageQuery).toHaveBeenCalledTimes(1);
+    firstPageQuery.mockRestore();
+    expect(firstPage.items).toHaveLength(25);
+    expect(firstPage.pageSize).toBe(25);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.nextCursor).toBeTruthy();
+    expect(firstPage.items[0].model).toHaveLength(100);
+    expect(firstPage.items[0]).toMatchObject({ provider: "openai", outcome: "succeeded", candidateState: "present", supportCount: 1, sourceCount: 1, groundingCount: 1 });
+    expect(firstPage.items[0]).not.toHaveProperty("supports");
+    expect(firstPage.items[0]).not.toHaveProperty("sources");
+    expect(firstPage.items[0]).not.toHaveProperty("groundings");
+    expect(firstPage.items[0]).not.toHaveProperty("sourceStateHash");
+    expect(firstPage.items[0]).not.toHaveProperty("sourceManifestHash");
+    expect(firstPage.items.find((item) => item.requestId === requestIds[25])).toMatchObject({ decision: "rejected", resultingSynthesisRevisionId: null });
+
+    const secondPageQuery = vi.spyOn(db, "execute");
+    const secondPage = await ai.listAiSynthesisSuggestionHistoryPage(projectId, preparation.id, { cursor: firstPage.nextCursor });
+    expect(secondPageQuery).toHaveBeenCalledTimes(1);
+    secondPageQuery.mockRestore();
+    expect(secondPage.items).toHaveLength(1);
+    expect(secondPage.hasMore).toBe(false);
+    expect(secondPage.nextCursor).toBeNull();
+    expect(secondPage.items[0].requestId).toBe(requestIds[0]);
+    expect(new Set([...firstPage.items, ...secondPage.items].map((item) => item.requestId)).size).toBe(26);
+    await expect(ai.listAiSynthesisSuggestionHistoryPage(projectId, otherPreparation.id, { cursor: firstPage.nextCursor })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+  });
+
+  it("rejects exact AI detail under a different preparation in the same Project", async () => {
+    const { preparation, field, set } = await setup();
+    const otherPreparation = await services.createSynthesisPreparation(projectId, { evidenceSetId: set.id, extractionFieldId: field.id });
+    const ai = createAiSynthesisSuggestionServices(db, provider(), { defaultModel: "fake-model", defaultReasoningEffort: "low", finalizePreparationInTransaction: services.finalizeSynthesisPreparationInTransaction });
+    const began = await ai.beginAiSynthesisSuggestion({ projectId, preparationId: preparation.id, idempotencyKey: crypto.randomUUID(), externalTransmissionAcknowledged: true, disclosureVersion: "openai-synthesis-transmission-v1" });
+
+    await expect(ai.getAiSynthesisSuggestion(String(began.requestId), projectId, otherPreparation.id)).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
+    const detail = await ai.getAiSynthesisSuggestion(String(began.requestId), projectId, preparation.id) as unknown as { request: Record<string, unknown> };
+    expect(detail.request.preparationId).toBe(preparation.id);
+  });
+
+  it("scopes AI mutations to the exact preparation before side effects", async () => {
+    const { preparation, field, set } = await setup();
+    const otherPreparation = await services.createSynthesisPreparation(projectId, { evidenceSetId: set.id, extractionFieldId: field.id });
+    const aiProvider = provider();
+    const suggest = vi.spyOn(aiProvider, "suggest");
+    const ai = createAiSynthesisSuggestionServices(db, aiProvider, {
+      defaultModel: "fake-model",
+      defaultReasoningEffort: "low",
+      finalizePreparationInTransaction: services.finalizeSynthesisPreparationInTransaction,
+    });
+    const began = await ai.beginAiSynthesisSuggestion({ projectId, preparationId: preparation.id, idempotencyKey: crypto.randomUUID(), externalTransmissionAcknowledged: true, disclosureVersion: "openai-synthesis-transmission-v1" });
+    const requestId = String(began.requestId);
+
+    await expect(ai.executeAiSynthesisSuggestion(requestId, projectId, otherPreparation.id)).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
+    await expect(ai.expireAiSynthesisSuggestion(requestId, projectId, otherPreparation.id)).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
+    await expect(ai.rejectAiSynthesisSuggestion(projectId, requestId, otherPreparation.id)).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
+    expect(suggest).not.toHaveBeenCalled();
+    await expect(client`
+      select
+        (select count(*)::int from ai_synthesis_dispatches where project_id=${projectId}::uuid and request_id=${requestId}::uuid) as dispatch_count,
+        (select count(*)::int from ai_synthesis_results where project_id=${projectId}::uuid and request_id=${requestId}::uuid) as result_count,
+        (select count(*)::int from ai_synthesis_decisions where project_id=${projectId}::uuid and request_id=${requestId}::uuid) as decision_count
+    `).resolves.toEqual([{ dispatch_count: 0, result_count: 0, decision_count: 0 }]);
+
+    await expect(ai.executeAiSynthesisSuggestion(requestId, projectId, preparation.id)).resolves.toMatchObject({ outcome: "succeeded" });
+    await expect(ai.acceptAiSynthesisSuggestion({ projectId, requestId, preparationId: otherPreparation.id, mode: "accept" })).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
+    expect(suggest).toHaveBeenCalledTimes(1);
+    await expect(client`
+      select
+        (select count(*)::int from synthesis_revisions where project_id=${projectId}::uuid) as synthesis_revision_count,
+        (select count(*)::int from ai_synthesis_decisions where project_id=${projectId}::uuid and request_id=${requestId}::uuid) as decision_count
+    `).resolves.toEqual([{ synthesis_revision_count: 0, decision_count: 0 }]);
   });
 
   it("rejects acceptance when the Preparation selection set changes to a different revision with the same count", async () => {

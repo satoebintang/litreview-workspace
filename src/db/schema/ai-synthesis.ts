@@ -9,6 +9,7 @@ import {
   primaryKey,
   check,
   boolean,
+  index,
   numeric,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -59,6 +60,9 @@ export const aiSynthesisRequests = pgTable(
   (table) => ({
     projectIdentity: unique("ai_synthesis_requests_project_id_id_unique").on(table.projectId, table.id),
     projectIdempotency: unique("ai_synthesis_requests_project_idempotency_key_unique").on(table.projectId, table.idempotencyKey),
+    preparationHistoryOrder: index("ai_synthesis_requests_project_preparation_created_id_idx").on(
+      table.projectId, table.preparationId, table.createdAt.desc(), table.id.desc(),
+    ),
     projectOwnership: foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "ai_synthesis_requests_project_fk" }).onDelete("restrict"),
     preparationOwnership: foreignKey({ columns: [table.projectId, table.preparationId], foreignColumns: [synthesisPreparations.projectId, synthesisPreparations.id], name: "ai_synthesis_requests_preparation_fk" }).onDelete("restrict"),
     evidenceSetOwnership: foreignKey({ columns: [table.projectId, table.evidenceSetId], foreignColumns: [evidenceSets.projectId, evidenceSets.id], name: "ai_synthesis_requests_evidence_set_fk" }).onDelete("restrict"),

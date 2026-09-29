@@ -3,15 +3,25 @@ import { notFound } from "next/navigation";
 import { reviewServices } from "@/app/server";
 import { DomainError } from "@/domain/errors";
 
+type SearchParams = { cursor?: string; error?: string };
+
+function pageHref(projectId: string, cursor?: string | null) {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  const query = params.toString();
+  return `/projects/${projectId}/synthesis/preparations${query ? `?${query}` : ""}`;
+}
+
 export default async function SynthesisPreparationsListPage({
   params,
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams?: Promise<{ error?: string; saved?: string }>;
+  searchParams?: Promise<SearchParams>;
 }) {
   const { projectId } = await params;
   const query = searchParams ? await searchParams : {};
+
   let project;
   try {
     project = await reviewServices.getProject(projectId);
@@ -20,97 +30,118 @@ export default async function SynthesisPreparationsListPage({
     throw error;
   }
 
-  const preparations = await reviewServices.listSynthesisPreparations(projectId);
+  let ledger;
+  let cursorNotice: string | undefined;
+  try {
+    ledger = await reviewServices.listSynthesisPreparationLedger(projectId, {
+      cursor: query.cursor,
+      pageSize: 50,
+    });
+  } catch (error) {
+    if (query.cursor && error instanceof DomainError && error.code === "VALIDATION_ERROR") {
+      cursorNotice = error.message;
+      ledger = await reviewServices.listSynthesisPreparationLedger(projectId, { pageSize: 50 });
+    } else if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "CROSS_PROJECT_REFERENCE", "NOT_FOUND"].includes(error.code)) {
+      notFound();
+    } else {
+      throw error;
+    }
+  }
+
+  if (!ledger) notFound();
+  const nextHref = pageHref(projectId, ledger.nextCursor);
+  const firstHref = pageHref(projectId);
 
   return (
     <div className="project-page">
-      <div className="container workspace"><div className="workspace-header">
+      <div className="container workspace">
+        <div className="workspace-header">
           <div>
             <p className="eyebrow">Synthesis preparation</p>
             <h1>{project.title}</h1>
             <p>
-              Researcher-controlled workspaces connecting pinned Evidence Set compositions and ExtractionFields into stable comparison surfaces.
+              Researcher-controlled workspaces connect an exact pinned Evidence Set composition to an Extraction Field.
             </p>
           </div>
           <Link className="button ghost" href={`/projects/${projectId}/evidence-sets`}>
             Browse Evidence Sets →
           </Link>
         </div>
-        {query.error && (
+
+        {query.error && <div className="error-banner" role="alert">{query.error}</div>}
+        {cursorNotice && (
           <div className="error-banner" role="alert">
-            {query.error}
+            {cursorNotice} The ledger has returned to its first page.
           </div>
         )}
-        <div className="workspace-grid">
-          <section className="card section-card full">
-            <div className="section-heading">
+
+        <section className="card section-card">
+          <div className="section-heading">
+            <div>
               <h2>Preparation workspaces</h2>
-              <span className="count">{preparations.length} total</span>
+              <p className="hint">Showing at most {ledger.pageSize} preparations on this page.</p>
             </div>
-            {preparations.length === 0 ? (
-              <div className="empty">
-                No synthesis preparations found. Start one from an active <Link href={`/projects/${projectId}/evidence-sets`} style={{ textDecoration: "underline" }}>Evidence Set</Link>.
-              </div>
-            ) : (
-              <div className="item-list">
-                {preparations.map((prep) => (
-                  <article className="item item-row" key={prep.id}>
-                    <div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <div className="item-title">
-                          {prep.workingTitle ?? "Untitled preparation"}
-                        </div>
-                        <span
-                          className={`status ${
-                            prep.status === "active"
-                              ? "supported"
-                              : prep.status === "finalized"
-                              ? "supported"
-                              : "stale"
-                          }`}
-                        >
-                          {prep.status === "active"
-                            ? "● Active"
-                            : prep.status === "finalized"
-                            ? "✓ Finalized"
-                            : "Abandoned"}
-                        </span>
-                        {prep.sourceSetChanged && (
-                          <span className="status stale">
-                            Evidence Set updated
-                          </span>
-                        )}
-                      </div>
-                      <div className="item-meta">
-                        Set: {prep.evidenceSetName} (pinned seq {prep.pinnedCompositionSequence}) · Field: {prep.extractionFieldName} ({prep.extractionFieldType})
-                      </div>
-                      <div className="item-meta">
-                        {prep.selectedCount} of {prep.candidateCount} candidates selected
-                        {prep.workingNote ? ` · Note: ${prep.workingNote}` : ""}
-                      </div>
-                      {prep.targetSynthesisStatementId && (
-                        <div className="item-meta">
-                          Target statement:{" "}
-                          <Link href={`/projects/${projectId}/synthesis/${prep.targetSynthesisStatementId}`}>
-                            View statement
-                          </Link>
-                        </div>
-                      )}
+            <span className="count">{ledger.items.length} shown{ledger.hasMore ? " · more available" : ""}</span>
+          </div>
+
+          {ledger.items.length === 0 ? (
+            <div className="empty">
+              No synthesis preparations found. Start one from an active{" "}
+              <Link href={`/projects/${projectId}/evidence-sets`} style={{ textDecoration: "underline" }}>Evidence Set</Link>.
+            </div>
+          ) : (
+            <div className="item-list">
+              {ledger.items.map((prep) => (
+                <article className="item item-row" key={prep.id}>
+                  <div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <Link className="item-title" href={`/projects/${projectId}/synthesis/preparations/${prep.id}`}>
+                        {prep.workingTitlePreview ?? "Untitled preparation"}{prep.workingTitleTruncated ? "…" : ""}
+                      </Link>
+                      <span className={`status ${prep.status === "abandoned" ? "stale" : "supported"}`}>
+                        {prep.status === "active" ? "● Active" : prep.status === "finalized" ? "✓ Finalized" : "Abandoned"}
+                      </span>
+                      {prep.evidenceSetArchivedAt && <span className="status stale">Evidence Set archived</span>}
+                      {prep.sourceSetChanged && <span className="status stale">Source Set changed since pinned revision</span>}
                     </div>
-                    <Link
-                      className="button ghost"
-                      href={`/projects/${projectId}/synthesis/preparations/${prep.id}`}
-                    >
-                      Open workspace →
-                    </Link>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
+                    <div className="item-meta">
+                      Set: {prep.evidenceSetName} (pinned sequence {prep.pinnedCompositionSequence}) · Field: {prep.extractionFieldName} ({prep.extractionFieldType})
+                    </div>
+                    <div className="item-meta">
+                      {prep.selectedCount} selected · {prep.createdAt.toLocaleString()}
+                      {prep.workingNotePreview ? ` · Note: ${prep.workingNotePreview}${prep.workingNoteTruncated ? "…" : ""}` : ""}
+                    </div>
+                    {prep.targetSynthesisStatementId && (
+                      <div className="item-meta">
+                        Target statement:{" "}
+                        <Link href={`/projects/${projectId}/synthesis/${prep.targetSynthesisStatementId}`}>
+                          {prep.targetSynthesisStatementTitle ?? "Open statement"}
+                        </Link>
+                        {prep.targetSynthesisCurrentRevisionState && ` · ${prep.targetSynthesisCurrentRevisionState}`}
+                      </div>
+                    )}
+                    <div className="item-meta">
+                      Exact pin: <Link href={`/projects/${projectId}/evidence-sets/${prep.evidenceSetId}/history/${prep.pinnedCompositionRevisionId}`}>
+                        composition revision {prep.pinnedCompositionRevisionId}
+                      </Link>
+                    </div>
+                  </div>
+                  <Link className="button ghost" href={`/projects/${projectId}/synthesis/preparations/${prep.id}`}>
+                    Open workspace →
+                  </Link>
+                </article>
+              ))}
+            </div>
+          )}
+
+          <div className="item-row" style={{ marginTop: 18 }}>
+            {query.cursor && <Link className="button ghost" href={firstHref}>First page</Link>}
+            {ledger.nextCursor && <Link className="button secondary" href={nextHref}>Next page</Link>}
+          </div>
+        </section>
+
         <p className="footer-note">
-          Preparation workspaces are workflow context, not analytical provenance. Supports remain strictly attached to exact ExtractionRevisions upon finalization.
+          Preparation workspaces are workflow context. Finalized synthesis supports retain exact ExtractionRevision identities.
         </p>
       </div>
     </div>

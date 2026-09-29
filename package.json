@@ -15,6 +15,7 @@
     "benchmark:paper-selection-read-paths": "tsx scripts/benchmark-paper-selection-read-paths.ts",
     "benchmark:acquisition-read-paths": "tsx scripts/benchmark-acquisition-read-paths.ts",
     "benchmark:screening-read-paths": "tsx scripts/benchmark-screening-read-paths.ts",
+    "benchmark:synthesis-preparation-read-paths": "tsx scripts/benchmark-synthesis-preparation-read-paths.ts",
     "benchmark:storage-recovery": "tsx scripts/benchmark-storage-recovery.ts",
     "e2e:server": "tsx tests/e2e/playwright-server.ts",
     "typecheck": "tsc --noEmit",

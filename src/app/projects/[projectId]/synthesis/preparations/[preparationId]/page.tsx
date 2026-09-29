@@ -1,72 +1,84 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  acceptAiSynthesisSuggestionAction,
   abandonSynthesisPreparationAction,
   beginAiSynthesisSuggestionAction,
-  executeAiSynthesisSuggestionAction,
-  expireAiSynthesisSuggestionAction,
+  deselectSynthesisPreparationRevisionAction,
   finalizeSynthesisPreparationAction,
-  rejectAiSynthesisSuggestionAction,
-  replaceSynthesisPreparationSelectionsAction,
+  selectSynthesisPreparationRevisionAction,
   updateSynthesisPreparationAction,
 } from "@/app/actions";
 import { aiSynthesisProviderAvailable, aiSynthesisServices, reviewServices } from "@/app/server";
 import { DomainError } from "@/domain/errors";
-import type { SynthesisCandidate } from "@/domain/types";
-import { AuditDetails, ConfirmAction } from "@/components";
+import { ConfirmAction } from "@/components";
 import { humanizeWorkspaceToken } from "@/application/project-workspace-labels";
 
-function displayCandidateValue(candidate: SynthesisCandidate) {
-  const rev = candidate.extractionRevision;
-  if (rev.valueState !== "present") return rev.valueState.replaceAll("_", " ");
-  return (
-    rev.textValue ??
-    rev.numberValue ??
-    (rev.booleanValue === null
-      ? rev.optionId
-        ? "Selected option"
-        : "—"
-      : rev.booleanValue
-      ? "Yes"
-      : "No")
-  );
+type SearchParams = {
+  candidateCursor?: string;
+  candidateFilter?: string;
+  targetBrowse?: string;
+  targetQuery?: string;
+  targetCursor?: string;
+  aiCursor?: string;
+  error?: string;
+  saved?: string;
+};
+
+const candidateFilters = ["all", "selected", "selectable", "ineligible"] as const;
+type CandidateFilter = (typeof candidateFilters)[number];
+
+function isCandidateFilter(value: string | undefined): value is CandidateFilter {
+  return candidateFilters.includes(value as CandidateFilter);
+}
+
+function workspaceHref(
+  projectId: string,
+  preparationId: string,
+  current: SearchParams,
+  overrides: Partial<Record<keyof SearchParams, string | null>> = {},
+) {
+  const state: { [Key in keyof SearchParams]: string | null | undefined } = { ...current, ...overrides };
+  const params = new URLSearchParams();
+  for (const key of ["candidateCursor", "candidateFilter", "targetBrowse", "targetQuery", "targetCursor", "aiCursor"] as const) {
+    const value = state[key];
+    if (value) params.set(key, value);
+  }
+  const search = params.toString();
+  return `/projects/${projectId}/synthesis/preparations/${preparationId}${search ? `?${search}` : ""}`;
+}
+
+function candidateDetailHref(projectId: string, preparationId: string, extractionRevisionId: string, query: SearchParams) {
+  const params = new URLSearchParams();
+  if (query.candidateFilter && isCandidateFilter(query.candidateFilter)) params.set("returnCandidateFilter", query.candidateFilter);
+  if (query.candidateCursor && query.candidateCursor.length <= 4096) params.set("returnCandidateCursor", query.candidateCursor);
+  const search = params.toString();
+  return `/projects/${projectId}/synthesis/preparations/${preparationId}/candidates/${extractionRevisionId}${search ? `?${search}` : ""}`;
+}
+
+function valueText(value: string | null, valueState: string) {
+  return valueState === "present" ? value ?? "—" : valueState.replaceAll("_", " ");
 }
 
 function warningLabel(warning: string) {
   switch (warning) {
-    case "underlying_evidence_unreviewed":
-      return "Evidence unreviewed";
-    case "underlying_evidence_needs_review":
-      return "Evidence needs review";
-    case "underlying_evidence_rejected":
-      return "Evidence rejected";
-    case "paper_not_finally_included":
-      return "Paper excluded";
-    case "extraction_revision_superseded":
-      return "Superseded extraction";
-    case "extraction_revision_cleared":
-      return "Value cleared";
-    default:
-      return humanizeWorkspaceToken(warning);
+    case "underlying_evidence_unreviewed": return "Evidence unreviewed";
+    case "underlying_evidence_needs_review": return "Evidence needs review";
+    case "underlying_evidence_rejected": return "Evidence rejected";
+    case "paper_not_finally_included": return "Paper not finally included";
+    case "extraction_revision_superseded": return "Superseded extraction";
+    case "extraction_revision_cleared": return "Value cleared";
+    default: return humanizeWorkspaceToken(warning);
   }
 }
 
-function frozenSupportValue(support: Record<string, unknown>) {
-  const state = String(support.value_state ?? "").replaceAll("_", " ");
-  if (state !== "present") return state;
-  switch (String(support.field_type)) {
-    case "short_text":
-    case "long_text":
-      return support.text_value == null ? "—" : String(support.text_value);
-    case "number":
-      return support.number_value == null ? "—" : String(support.number_value);
-    case "boolean":
-      return support.boolean_value == null ? "—" : Boolean(support.boolean_value) ? "Yes" : "No";
-    case "single_select":
-      return `${String(support.option_id ?? "—")} · ${String(support.option_label_snapshot ?? "(label unavailable)")}`;
-    default:
-      return String(support.value_canonical ?? "—");
+function savedMessage(saved: string | undefined) {
+  switch (saved) {
+    case "updated": return "Preparation settings saved.";
+    case "selected": return "Candidate revision selected.";
+    case "deselected": return "Candidate revision deselected.";
+    case "abandoned": return "Preparation abandoned and frozen.";
+    case "ai-requested": return "AI synthesis request created. Open its history entry to inspect or execute it.";
+    default: return undefined;
   }
 }
 
@@ -75,120 +87,248 @@ export default async function SynthesisPreparationWorkspacePage({
   searchParams,
 }: {
   params: Promise<{ projectId: string; preparationId: string }>;
-  searchParams?: Promise<{ error?: string; saved?: string }>;
+  searchParams?: Promise<SearchParams>;
 }) {
   const { projectId, preparationId } = await params;
   const query = searchParams ? await searchParams : {};
+  const candidateFilter = isCandidateFilter(query.candidateFilter) ? query.candidateFilter : "all";
+  const targetBrowse = query.targetBrowse === "1";
 
-  let workspace;
+  let header;
   try {
-    workspace = await reviewServices.getSynthesisPreparationWorkspace(projectId, preparationId);
+    header = await reviewServices.getSynthesisPreparationHeader(projectId, preparationId);
   } catch (error) {
-    if (
-      error instanceof DomainError &&
-      ["PROJECT_NOT_FOUND", "CROSS_PROJECT_REFERENCE", "VALIDATION_ERROR", "NOT_FOUND"].includes(error.code)
-    ) {
-      notFound();
-    }
+    if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "CROSS_PROJECT_REFERENCE", "VALIDATION_ERROR", "NOT_FOUND"].includes(error.code)) notFound();
     throw error;
   }
 
-  const existingStatements = await reviewServices.listProjectSynthesis(projectId);
-  const prep = workspace.preparation;
-  const active = prep.status === "active";
-  type AiDetail = {
-    request: Record<string, unknown>;
-    result: Record<string, unknown> | null;
-    supports: Record<string, unknown>[];
-    sources: Record<string, unknown>[];
-    groundings: Record<string, unknown>[];
-    decision: Record<string, unknown> | null;
-    dispatch: Record<string, unknown> | null;
-  };
-  const aiDetails = (await Promise.all(
-    (await aiSynthesisServices.listAiSynthesisSuggestions(projectId, preparationId)).map(async (item) =>
-      aiSynthesisServices.getAiSynthesisSuggestion(String((item.request as Record<string, unknown>).id), projectId),
-    ),
-  )) as unknown as AiDetail[];
+  let candidatePage;
+  let candidateCursorNotice: string | undefined;
+  try {
+    candidatePage = await reviewServices.listSynthesisPreparationCandidates(projectId, preparationId, {
+      cursor: query.candidateCursor,
+      pageSize: 50,
+      filter: candidateFilter,
+    });
+  } catch (error) {
+    if (query.candidateCursor && error instanceof DomainError && error.code === "VALIDATION_ERROR") {
+      candidateCursorNotice = error.message;
+      candidatePage = await reviewServices.listSynthesisPreparationCandidates(projectId, preparationId, {
+        pageSize: 50,
+        filter: candidateFilter,
+      });
+    } else if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "CROSS_PROJECT_REFERENCE", "NOT_FOUND"].includes(error.code)) {
+      notFound();
+    } else {
+      throw error;
+    }
+  }
 
-  const savedMessage =
-    query.saved === "updated"
-      ? "Preparation settings saved."
-      : query.saved === "selections"
-      ? "Candidate selections updated."
-      : query.saved === "abandoned"
-      ? "Preparation abandoned and frozen."
-      : query.saved === "ai-requested"
-      ? "AI synthesis request created. Execute it below when ready."
-      : query.saved === "ai-rejected"
-      ? "AI synthesis suggestion rejected."
-      : query.saved === "ai-accepted"
-      ? "AI synthesis suggestion accepted into the canonical synthesis path."
-      : undefined;
+  let historyPage;
+  let historyCursorNotice: string | undefined;
+  try {
+    historyPage = await aiSynthesisServices.listAiSynthesisSuggestionHistoryPage(projectId, preparationId, {
+      cursor: query.aiCursor,
+      pageSize: 25,
+    });
+  } catch (error) {
+    if (query.aiCursor && error instanceof DomainError && error.code === "VALIDATION_ERROR") {
+      historyCursorNotice = error.message;
+      historyPage = await aiSynthesisServices.listAiSynthesisSuggestionHistoryPage(projectId, preparationId, { pageSize: 25 });
+    } else if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "CROSS_PROJECT_REFERENCE", "NOT_FOUND"].includes(error.code)) {
+      notFound();
+    } else {
+      throw error;
+    }
+  }
+
+  let targetPage;
+  let targetNotice: string | undefined;
+  if (targetBrowse) {
+    try {
+      targetPage = await reviewServices.listSynthesisTargetStatementOptions(projectId, {
+        query: query.targetQuery,
+        cursor: query.targetCursor,
+        pageSize: 20,
+      });
+    } catch (error) {
+      if (query.targetCursor && error instanceof DomainError && error.code === "VALIDATION_ERROR") {
+        targetNotice = error.message;
+        targetPage = await reviewServices.listSynthesisTargetStatementOptions(projectId, {
+          query: query.targetQuery,
+          pageSize: 20,
+        });
+      } else if (error instanceof DomainError && error.code === "VALIDATION_ERROR") {
+        targetNotice = error.message;
+      } else if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "CROSS_PROJECT_REFERENCE", "NOT_FOUND"].includes(error.code)) {
+        notFound();
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  if (!candidatePage || !historyPage) notFound();
+  const prep = header.preparation;
+  const active = prep.status === "active";
+  const basePath = `/projects/${projectId}/synthesis/preparations/${preparationId}`;
+  const currentTarget = header.targetStatement?.currentRevision ?? null;
+  let selectedTargetStatementPreview: string | null = null;
+  if (header.targetStatement && currentTarget && !currentTarget.title) {
+    const selectedTarget = await reviewServices.resolveSynthesisTargetStatement(projectId, header.targetStatement.id);
+    selectedTargetStatementPreview = selectedTarget?.currentRevision?.statementPreview ?? null;
+  }
+  const message = savedMessage(query.saved);
 
   return (
     <div className="project-page">
-      <div className="container workspace"><div className="workspace-header">
+      <div className="container workspace">
+        <div className="workspace-header">
           <div>
-            <p className="eyebrow">Preparation workspace</p>
+            <p className="eyebrow"><Link href={`/projects/${projectId}/synthesis/preparations`}>Synthesis preparations</Link> / Workspace</p>
             <h1>{prep.workingTitle ?? "Untitled preparation"}</h1>
             <p>
               Pinned Evidence Set:{" "}
-              <Link
-                href={`/projects/${projectId}/evidence-sets/${workspace.evidenceSet.id}`}
-                style={{ textDecoration: "underline" }}
-              >
-                {workspace.evidenceSet.name}
+              <Link href={`/projects/${projectId}/evidence-sets/${header.evidenceSet.id}`} style={{ textDecoration: "underline" }}>
+                {header.evidenceSet.name}
               </Link>{" "}
-              (pinned sequence {workspace.pinnedCompositionSequence}) · Field:{" "}
-              <strong>{workspace.field.name}</strong> ({workspace.field.fieldType})
+              (pinned sequence {header.pinnedComposition.sequence}) · Field: <strong>{header.field.name}</strong> ({header.field.fieldType})
             </p>
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span
-              className={`status ${
-                prep.status === "active"
-                  ? "supported"
-                  : prep.status === "finalized"
-                  ? "supported"
-                  : "stale"
-              }`}
-            >
-              {prep.status === "active"
-                ? "● Active"
-                : prep.status === "finalized"
-                ? "✓ Finalized"
-                : "Abandoned"}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span className={`status ${active || prep.status === "finalized" ? "supported" : "stale"}`}>
+              {prep.status === "active" ? "● Active" : prep.status === "finalized" ? "✓ Finalized" : "Abandoned"}
             </span>
-            {workspace.sourceSetChanged && (
-              <span className="status stale">
-                Evidence Set drifted (seq {workspace.latestCompositionSequence})
-              </span>
-            )}
+            {header.sourceSetChanged && <span className="status stale">Evidence Set changed since pin</span>}
           </div>
         </div>
 
-        {query.error && (
-          <div className="error-banner" role="alert">
-            {query.error}
-          </div>
-        )}
-        {savedMessage && (
-          <div className="success-note" role="status">
-            {savedMessage}
-          </div>
-        )}
+        {query.error && <div className="error-banner" role="alert">{query.error}</div>}
+        {message && <div className="success-note" role="status">{message}</div>}
 
-        <AuditDetails items={[{ label: "Preparation identity", value: preparationId }, { label: "Evidence Set", value: workspace.evidenceSet.name }, { label: "Pinned composition", value: workspace.pinnedCompositionSequence }, { label: "Extraction field", value: workspace.field.name }, { label: "Candidate observations", value: workspace.candidates.length }, { label: "Selected observations", value: workspace.selectedCount }, { label: "Status", value: humanizeWorkspaceToken(prep.status) }]} />
+        <section className="card section-card" aria-label="Preparation metadata">
+          <div className="section-heading">
+            <h2>Preparation record</h2>
+            <span className="count">{header.selectedCount} selected</span>
+          </div>
+          <div className="item-list">
+            <div className="item-meta">Preparation ID: {prep.id}</div>
+            <div className="item-meta">Evidence Set: {header.evidenceSet.name} · exact pinned composition revision {header.pinnedComposition.id}, sequence {header.pinnedComposition.sequence}, set ordinal {header.pinnedComposition.setOrdinal}</div>
+            <div className="item-meta">Pinned composition size: {header.pinnedComposition.memberCount} Evidence · {header.pinnedComposition.distinctPaperCount} Papers</div>
+            <div className="item-meta">Extraction Field: {header.field.name} ({header.field.fieldType})</div>
+            <div className="item-meta">Status: {humanizeWorkspaceToken(prep.status)} · created {prep.createdAt.toLocaleString()}</div>
+            {prep.workingNote && <div className="item-meta">Working note: {prep.workingNote}</div>}
+            {header.finalizedRevision && <div className="item-meta">Finalized synthesis revision: {header.finalizedRevision.id} · revision {header.finalizedRevision.sequence}</div>}
+          </div>
+          {header.sourceSetChanged && header.latestComposition && (
+            <p className="hint" style={{ marginTop: 10 }}>
+              The Evidence Set now has sequence {header.latestComposition.sequence}. This preparation stays pinned to its recorded composition revision.
+            </p>
+          )}
+        </section>
 
-        {active && workspace.selectedCount > 0 && (
-          <section className="card section-card" style={{ marginBottom: 16 }}>
+        <div className="workspace-grid" style={{ marginTop: 16 }}>
+          <section className="card section-card">
+            <div className="section-heading">
+              <div><h2>Workspace settings</h2><p className="hint">Metadata can be edited without loading the candidate universe.</p></div>
+              <span className="count">{active ? "Editable" : "Frozen"}</span>
+            </div>
+            {active ? (
+              <>
+                <form action={updateSynthesisPreparationAction}>
+                  <input type="hidden" name="projectId" value={projectId} />
+                  <input type="hidden" name="preparationId" value={preparationId} />
+                  <div className="field">
+                    <label htmlFor="prep-title">Working title</label>
+                    <input id="prep-title" name="workingTitle" defaultValue={prep.workingTitle ?? ""} maxLength={100} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="prep-note">Working note</label>
+                    <textarea id="prep-note" name="workingNote" defaultValue={prep.workingNote ?? ""} maxLength={5000} />
+                  </div>
+                  <button className="button secondary" type="submit">Save metadata</button>
+                </form>
+                <ConfirmAction action={abandonSynthesisPreparationAction} label="Abandon preparation" title="Abandon this preparation?" description="The pinned selection and its history will remain available for audit." consequence="This preparation will be frozen and cannot be edited or finalized." hiddenFields={{ projectId, preparationId }} confirmLabel="Abandon preparation" />
+              </>
+            ) : (
+              <div className="item-list">
+                <div className="item-meta">Title: {prep.workingTitle ?? "Untitled"}</div>
+                <div className="item-meta">Note: {prep.workingNote ?? "None"}</div>
+              </div>
+            )}
+          </section>
+
+          <section className="card section-card">
+            <div className="section-heading">
+              <div><h2>Target Synthesis statement</h2><p className="hint">Any existing statement in this Project is eligible, including one without an active revision.</p></div>
+              <span className="count">{header.targetStatement ? "Linked" : "Create on finalize"}</span>
+            </div>
+            {header.targetStatement ? (
+              <div className="item">
+                <div className="item-title">{currentTarget?.title ?? "Untitled statement"}</div>
+                <div className="item-meta">Statement ID: {header.targetStatement.id}{currentTarget ? ` · revision ${currentTarget.sequence} · ${currentTarget.state}` : " · no current revision"}</div>
+                {selectedTargetStatementPreview && <div className="hint">{selectedTargetStatementPreview}</div>}
+                <div className="item-row" style={{ marginTop: 10 }}>
+                  <Link className="button ghost" href={`/projects/${projectId}/synthesis/${header.targetStatement.id}`}>Open statement</Link>
+                  {active && <form action={updateSynthesisPreparationAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="targetSynthesisStatementId" value="" /><button className="button ghost" type="submit">Clear target</button></form>}
+                </div>
+              </div>
+            ) : <p className="item-meta">Finalization will create a new Synthesis statement.</p>}
+            {active && (
+              <div style={{ marginTop: 12 }}>
+                <form method="get" action={basePath}>
+                  <input type="hidden" name="targetBrowse" value="1" />
+                  {query.candidateCursor && <input type="hidden" name="candidateCursor" value={query.candidateCursor} />}
+                  <input type="hidden" name="candidateFilter" value={candidateFilter} />
+                  {query.aiCursor && <input type="hidden" name="aiCursor" value={query.aiCursor} />}
+                  <div className="field">
+                    <label htmlFor="target-query">Browse or search existing statements</label>
+                    <input id="target-query" type="search" name="targetQuery" defaultValue={targetBrowse ? query.targetQuery ?? "" : ""} maxLength={200} />
+                  </div>
+                  <button className="button ghost" type="submit">{targetBrowse ? "Search statements" : "Browse statements"}</button>
+                </form>
+                {targetBrowse && (
+                  <>
+                    {targetNotice && <div className="error-banner" role="alert">{targetNotice}</div>}
+                    {targetPage && (
+                      <>
+                        <div className="section-heading" style={{ marginTop: 12 }}>
+                          <span className="hint">Showing at most {targetPage.pageSize} statements on this page.</span>
+                          <span className="count">{targetPage.items.length} shown{targetPage.hasMore ? " · more available" : ""}</span>
+                        </div>
+                        {targetPage.items.length === 0 ? <div className="empty">No statements match this search.</div> : (
+                          <div className="item-list">
+                            {targetPage.items.map((option) => (
+                              <article className="item" key={option.id}>
+                                <div className="item-row">
+                                  <div>
+                                    <div className="item-title">{option.currentRevision?.title ?? "Untitled statement"}</div>
+                                    <div className="item-meta">{option.currentRevision ? `Revision ${option.currentRevision.sequence} · ${option.currentRevision.state}` : "No current revision"} · {option.id}</div>
+                                    {option.currentRevision?.statementPreview && <div className="hint">{option.currentRevision.statementPreview}</div>}
+                                  </div>
+                                  {active && <form action={updateSynthesisPreparationAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="targetSynthesisStatementId" value={option.id} /><button className="button secondary" type="submit">Use this target</button></form>}
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {query.targetCursor && <Link className="button ghost" href={workspaceHref(projectId, preparationId, query, { targetCursor: null })}>First target page</Link>}
+                    {targetPage?.nextCursor && <Link className="button secondary" href={workspaceHref(projectId, preparationId, query, { targetBrowse: "1", targetCursor: targetPage.nextCursor })}>Next target page</Link>}
+                  </>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
+
+        {active && header.selectedCount > 0 && (
+          <section className="card section-card" style={{ marginTop: 16 }}>
             <div className="section-heading">
               <div>
                 <h2>AI synthesis suggestion</h2>
-                <p className="hint">
-                  AI will draft from the currently selected extraction value versions and every connecting Evidence passage in this pinned composition. It cannot choose formal support or write canonical research state without your decision.
-                </p>
+                <p className="hint">A request freezes the currently selected revisions and their connecting Evidence. You decide whether a returned suggestion enters canonical synthesis.</p>
               </div>
               <span className={`status ${aiSynthesisProviderAvailable ? "supported" : "stale"}`}>
                 {aiSynthesisProviderAvailable ? "Provider configured" : "Provider unavailable"}
@@ -198,381 +338,158 @@ export default async function SynthesisPreparationWorkspacePage({
               <input type="hidden" name="projectId" value={projectId} />
               <input type="hidden" name="preparationId" value={preparationId} />
               <input type="hidden" name="disclosureVersion" value="openai-synthesis-transmission-v1" />
-              <div className="field">
-                <label>
-                  <input type="checkbox" name="externalTransmissionAcknowledged" required /> I understand the selected values, paper metadata, researcher notes, and connecting Evidence text may be transmitted to the configured AI provider.
-                </label>
-              </div>
+              <div className="field"><label><input type="checkbox" name="externalTransmissionAcknowledged" required /> I understand selected values, paper metadata, researcher notes, and connecting Evidence text may be sent to the configured AI provider.</label></div>
               <button className="button primary" type="submit">Suggest synthesis with AI</button>
             </form>
           </section>
         )}
 
-        {aiDetails.length > 0 && (
-          <section className="card section-card" style={{ marginBottom: 16 }}>
-            <div className="section-heading"><h2>AI suggestion history</h2><span className="count">{aiDetails.length} request{aiDetails.length === 1 ? "" : "s"}</span></div>
-            {aiDetails.map((detail) => {
-              const request = detail.request;
-              const result = detail.result;
-              const decision = detail.decision;
-              const outcome = result == null ? "unresolved" : String(result.outcome);
-              const candidate = result != null && String(result.outcome) === "succeeded";
-              return (
-                <div key={String(request.id)} className="item" style={{ marginBottom: 12 }}>
+        <section className="card section-card" style={{ marginTop: 16 }}>
+          <div className="section-heading">
+            <div><h2>AI suggestion history</h2><p className="hint">Showing at most {historyPage.pageSize} compact request summaries. Open one request for its exact audit record.</p></div>
+            <span className="count">{historyPage.items.length} shown{historyPage.hasMore ? " · more available" : ""}</span>
+          </div>
+          {historyCursorNotice && <div className="error-banner" role="alert">{historyCursorNotice} History has returned to its first page.</div>}
+          {historyPage.items.length === 0 ? <div className="empty">No AI synthesis requests for this preparation.</div> : (
+            <div className="item-list">
+              {historyPage.items.map((item) => (
+                <article className="item" key={item.requestId}>
                   <div className="item-row">
                     <div>
-                      <div className="item-title">AI request details</div>
-                      <div className="item-meta">{outcome} · {String(request.supportCount ?? request.support_count ?? "?")} frozen supports · {detail.sources.length} frozen Evidence passages</div>
-                    </div>
-                    <span className={`status ${decision ? "supported" : result ? "stale" : "unsupported"}`}>{decision ? String(decision.decision) : outcome}</span>
-                  </div>
-                  {detail.sources.length > 0 && (
-                    <div className="hint" style={{ marginTop: 8 }}>
-                      Curation states: {[...new Set(detail.sources.map((source) => String(source.evidence_review_state)))].join(", ")}. Source coverage is frozen and includes all connecting Evidence, including rejected or needs-review items.
-                    </div>
-                  )}
-                  <div className="hint" style={{ marginTop: 8 }}>
-                    Frozen field snapshot: {String(request.fieldName ?? request.field_name_snapshot ?? "")} · type {String(request.fieldType ?? request.field_type ?? "")}
-                    {request.fieldDescription != null || request.field_description_snapshot != null ? ` · ${String(request.fieldDescription ?? request.field_description_snapshot)}` : ""}
-                  </div>
-                  {detail.sources.length > 0 && <details style={{ marginTop: 8 }}><summary>Frozen Evidence manifest ({detail.sources.length})</summary><ul className="hint">{detail.sources.map((source) => <li key={`${String(source.extraction_revision_id)}-${String(source.evidence_id)}`}><div><strong>Evidence {String(source.evidence_id)}</strong> · revision {String(source.extraction_revision_id)} · page {String(source.page_number)} · {String(source.evidence_review_state)}</div><div>Frozen text: <span>{String(source.source_text)}</span></div>{source.evidence_note_snapshot != null && <div>Frozen Evidence note: <span>{String(source.evidence_note_snapshot)}</span></div>}</li>)}</ul></details>}
-                  {detail.supports.length > 0 && (
-                    <details style={{ marginTop: 8 }}>
-                      <summary>Frozen support manifest ({detail.supports.length})</summary>
-                      <ul className="hint">
-                        {detail.supports.map((support) => <li key={String(support.extraction_revision_id)}><div><strong>{String(support.paper_title_snapshot)}</strong>{support.paper_publication_year_snapshot != null ? ` (${String(support.paper_publication_year_snapshot)})` : ""} · extraction value version {String(support.extraction_revision_id)}</div><div>Field type: {String(support.field_type)} · value state: {String(support.value_state)} · typed value: <span>{frozenSupportValue(support)}</span></div>{support.researcher_note != null && <div>Frozen researcher extraction note: <span>{String(support.researcher_note)}</span></div>}</li>)}
-                      </ul>
-                    </details>
-                  )}
-                  {detail.groundings.length > 0 && <details className="hint" style={{ marginTop: 8 }}><summary>Frozen grounding locators ({detail.groundings.length})</summary><ul>{detail.groundings.map((grounding) => <li key={String(grounding.id)}><div>extraction value version {String(grounding.extraction_revision_id)} · Evidence {String(grounding.evidence_id)} · offsets {String(grounding.start_offset)}–{String(grounding.end_offset)}</div><div>Exact quote: <span>{String(grounding.locator_quote)}</span></div>{grounding.locator_prefix != null && <div>Prefix: <span>{String(grounding.locator_prefix)}</span></div>}{grounding.locator_suffix != null && <div>Suffix: <span>{String(grounding.locator_suffix)}</span></div>}</li>)}</ul></details>}
-                  {result == null && (
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <form action={executeAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button secondary" type="submit">Generate suggestion</button></form>
-                      <form action={expireAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button ghost" type="submit">Mark request timed out</button></form>
-                    </div>
-                  )}
-                  {candidate && !decision && (
-                    <>
-                      <div className="quote" style={{ marginTop: 8 }}><strong>{String(result?.title ?? "Untitled suggestion")}</strong><br />{String(result?.statementText ?? "")}</div>
-                      {result?.explanation != null && <p className="hint">{String(result.explanation)}</p>}
-                      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                        <form action={acceptAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><input type="hidden" name="mode" value="accept" /><button className="button primary" type="submit">Use unchanged</button></form>
-                        <form action={rejectAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button ghost" type="submit">Reject</button></form>
+                      <Link className="item-title" href={`${basePath}/ai-requests/${item.requestId}`}>Open exact AI request</Link>
+                      <div className="item-meta">{item.createdAt?.toLocaleString() ?? "Unknown time"} · {item.provider} · {item.model}{item.returnedModel ? ` → ${item.returnedModel}` : ""}</div>
+                      <div className="item-meta">
+                        {item.outcome ?? "pending"}{item.candidateState ? ` · candidate ${item.candidateState}` : ""}{item.errorCode ? ` · ${item.errorCode}` : ""}
+                        {item.resultFinalizedAt ? ` · completed ${item.resultFinalizedAt.toLocaleString()}` : ""}
+                        {item.decision ? ` · decision ${item.decision}` : ""}
+                        {item.resultingSynthesisRevisionId ? ` · synthesis revision ${item.resultingSynthesisRevisionId}` : ""}
                       </div>
-                      <form action={acceptAiSynthesisSuggestionAction} style={{ marginTop: 10 }}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><input type="hidden" name="mode" value="edit_and_accept" /><div className="field"><label htmlFor={`ai-title-${String(request.id)}`}>Edit title</label><input id={`ai-title-${String(request.id)}`} name="title" defaultValue={String(result?.title ?? "")} maxLength={500} /></div><div className="field"><label htmlFor={`ai-statement-${String(request.id)}`}>Edit statement</label><textarea id={`ai-statement-${String(request.id)}`} name="statementText" defaultValue={String(result?.statementText ?? "")} maxLength={10000} required /></div><div className="field"><label htmlFor={`ai-note-${String(request.id)}`}>Researcher note</label><textarea id={`ai-note-${String(request.id)}`} name="researcherNote" maxLength={10000} /></div><button className="button secondary" type="submit">Edit and accept</button></form>
-                    </>
-                  )}
-                  {result != null && String(result.outcome) === "no_candidate" && !decision && (
-                    <>
-                      {result.explanation != null && <p className="hint">{String(result.explanation)}</p>}
-                      <form action={rejectAiSynthesisSuggestionAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="preparationId" value={preparationId} /><input type="hidden" name="requestId" value={String(request.id)} /><button className="button ghost" type="submit">Acknowledge and reject</button></form>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </section>
-        )}
-
-        {workspace.sourceSetChanged && (
-          <div
-            className="card"
-            style={{
-              marginBottom: 16,
-              background: "#fffbeb",
-              border: "1px solid #fde68a",
-              padding: 16,
-              borderRadius: 8,
-            }}
-          >
-            <strong>Note on composition drift:</strong> The underlying Evidence Set{" "}
-            <em>{workspace.evidenceSet.name}</em> has been modified since this preparation workspace
-            was created (current composition is sequence {workspace.latestCompositionSequence}). This workspace
-            remains safely pinned to sequence {workspace.pinnedCompositionSequence}.
-          </div>
-        )}
-
-        {prep.status === "finalized" && (
-          <div
-            className="card"
-            style={{
-              marginBottom: 16,
-              background: "#f0fdf4",
-              border: "1px solid #bbf7d0",
-              padding: 16,
-              borderRadius: 8,
-            }}
-          >
-            <strong>Finalized workspace:</strong> This preparation was finalized on{" "}
-            {prep.finalizedAt?.toLocaleString()}. It is now terminal and frozen.
-            {prep.targetSynthesisStatementId && (
-              <span style={{ marginLeft: 12 }}>
-                <Link
-                  className="button secondary"
-                  href={`/projects/${projectId}/synthesis/${prep.targetSynthesisStatementId}`}
-                >
-                  View finalized synthesis statement →
-                </Link>
-              </span>
-            )}
-          </div>
-        )}
-
-        {prep.status === "abandoned" && (
-          <div
-            className="card"
-            style={{
-              marginBottom: 16,
-              background: "#fef2f2",
-              border: "1px solid #fecaca",
-              padding: 16,
-              borderRadius: 8,
-            }}
-          >
-            <strong>Abandoned workspace:</strong> This preparation was abandoned on{" "}
-            {prep.abandonedAt?.toLocaleString()} and is frozen. No further edits or finalization are permitted.
-          </div>
-        )}
-
-        <div className="workspace-grid">
-          {/* Metadata & Settings Section */}
-          <section className="card section-card">
-            <div className="section-heading">
-              <h2>Workspace settings</h2>
-              <span className="count">{active ? "Editable" : "Frozen"}</span>
+                      <div className="item-meta">{item.supportCount} supports · {item.sourceCount} Evidence passages · {item.groundingCount} grounding locators · {item.inputTokens ?? "—"} input / {item.outputTokens ?? "—"} output tokens · {item.durationMs ?? "—"} ms</div>
+                      {item.providerDiagnostic && <div className="hint">{item.providerDiagnostic}</div>}
+                    </div>
+                    <span className={`status ${item.decision ? "supported" : item.outcome ? "stale" : "unsupported"}`}>
+                      {item.decision ?? item.outcome ?? "Pending"}
+                    </span>
+                  </div>
+                </article>
+              ))}
             </div>
-            {active ? (
-              <>
-                <form action={updateSynthesisPreparationAction}>
-                  <input type="hidden" name="projectId" value={projectId} />
-                  <input type="hidden" name="preparationId" value={prep.id} />
-                  <div className="field">
-                    <label htmlFor="prep-title">Working title</label>
-                    <input
-                      id="prep-title"
-                      name="workingTitle"
-                      defaultValue={prep.workingTitle ?? ""}
-                      maxLength={100}
-                      placeholder="e.g. Preparation for primary outcome comparison"
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="prep-note">Working note</label>
-                    <textarea
-                      id="prep-note"
-                      name="workingNote"
-                      defaultValue={prep.workingNote ?? ""}
-                      maxLength={5000}
-                      placeholder="Context or criteria guiding this comparison"
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="prep-target">Target synthesis statement</label>
-                    <select
-                      id="prep-target"
-                      name="targetSynthesisStatementId"
-                      defaultValue={prep.targetSynthesisStatementId ?? ""}
-                    >
-                      <option value="">(Create new statement upon finalization)</option>
-                      {existingStatements.map((stmt) => (
-                        <option key={stmt.synthesisStatementId} value={stmt.synthesisStatementId}>
-                          {stmt.title ?? "Untitled statement"} · {stmt.state} (existing statement)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <button className="button secondary" type="submit">
-                    Save settings
-                  </button>
-                </form>
-                <ConfirmAction action={abandonSynthesisPreparationAction} label="Abandon preparation" title="Abandon this preparation?" description="The pinned selection and its history will remain available for audit." consequence="This preparation will be frozen and cannot be edited or finalized." hiddenFields={{ projectId, preparationId: prep.id }} confirmLabel="Abandon preparation" />
-              </>
-            ) : (
-              <div className="item-list">
-                <div className="item-meta">Title: {prep.workingTitle ?? "Untitled"}</div>
-                <div className="item-meta">Note: {prep.workingNote ?? "None"}</div>
-                <div className="item-meta">
-                  Target statement:{" "}
-                  {prep.targetSynthesisStatementId ? (
-                    <Link href={`/projects/${projectId}/synthesis/${prep.targetSynthesisStatementId}`}>Existing synthesis statement</Link>
-                  ) : (
-                    "New statement"
-                  )}
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* Finalization Section */}
-          {active && (
-            <section className="card section-card">
-              <div className="section-heading">
-                <h2>Finalize into synthesis</h2>
-                <span className="count">{workspace.selectedCount} selected</span>
-              </div>
-              <p className="hint">
-                Finalizing transitions selected candidate observations into an immutable synthesis version with exact support links. Zero supports are permitted.
-              </p>
-              <form action={finalizeSynthesisPreparationAction}>
-                <input type="hidden" name="projectId" value={projectId} />
-                <input type="hidden" name="preparationId" value={prep.id} />
-                <div className="field">
-                  <label htmlFor="final-title">
-                    Statement title <span className="hint">optional</span>
-                  </label>
-                  <input
-                    id="final-title"
-                    name="title"
-                    defaultValue={prep.workingTitle ?? ""}
-                    placeholder="e.g. Cross-study findings on effect size"
-                    maxLength={100}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="final-statement">
-                    Synthesis statement <span className="hint">required</span>
-                  </label>
-                  <textarea
-                    id="final-statement"
-                    name="statementText"
-                    required
-                    maxLength={10000}
-                    placeholder="Author a source-backed synthesis conclusion from the selected candidate observations"
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="final-note">
-                    Researcher note <span className="hint">optional</span>
-                  </label>
-                  <textarea
-                    id="final-note"
-                    name="researcherNote"
-                    defaultValue={prep.workingNote ?? ""}
-                    maxLength={5000}
-                    placeholder="Rationale or notes for this finalized synthesis revision"
-                  />
-                </div>
-                <button className="button primary" type="submit">
-                  Finalize preparation →
-                </button>
-              </form>
-            </section>
           )}
+          {query.aiCursor && <Link className="button ghost" href={workspaceHref(projectId, preparationId, query, { aiCursor: null })}>Latest AI requests</Link>}
+          {historyPage.nextCursor && <Link className="button secondary" href={workspaceHref(projectId, preparationId, query, { aiCursor: historyPage.nextCursor })}>Older AI requests</Link>}
+        </section>
 
-          {/* Candidate Comparison & Selection Section */}
-          <section className="card section-card full">
-            <div className="section-heading">
-              <div>
-                <h2>Candidate extraction value versions</h2>
-                <p className="hint">
-                  Revisions reachable through Evidence in the pinned Evidence Set composition for field &ldquo;{workspace.field.name}&rdquo;.
-                </p>
-              </div>
-              <span className="count">
-                {workspace.selectedCount} of {workspace.candidates.length} selected
-              </span>
+        <section className="card section-card full" style={{ marginTop: 16 }}>
+          <div className="section-heading">
+            <div>
+              <h2>Candidate extraction revisions</h2>
+              <p className="hint">Membership is frozen for each candidate cursor epoch; selection, eligibility, current-revision state, and Evidence warnings are refreshed on every page request.</p>
             </div>
+            <span className="count">{header.selectedCount} selected</span>
+          </div>
+          {candidateCursorNotice && <div className="error-banner" role="alert">{candidateCursorNotice} Candidate browsing has returned to its first page.</div>}
+          <div className="item-meta" style={{ marginBottom: 12 }}>
+            {candidatePage.candidateCount} candidate revisions in this snapshot · captured {candidatePage.candidateSnapshotAt}
+          </div>
+          <div className="item-row" style={{ marginBottom: 14, flexWrap: "wrap" }}>
+            <nav aria-label="Candidate filter" className="item-row" style={{ flexWrap: "wrap" }}>
+              {candidateFilters.map((filter) => (
+                <Link
+                  key={filter}
+                  className={`button ${candidateFilter === filter ? "secondary" : "ghost"}`}
+                  href={workspaceHref(projectId, preparationId, query, { candidateFilter: filter, candidateCursor: null })}
+                  aria-current={candidateFilter === filter ? "page" : undefined}
+                >
+                  {filter === "all" ? "All candidates" : filter === "selectable" ? "Eligible" : filter[0]!.toUpperCase() + filter.slice(1)}
+                </Link>
+              ))}
+            </nav>
+            <Link className="button ghost" href={workspaceHref(projectId, preparationId, query, { candidateCursor: null })}>Refresh candidate snapshot</Link>
+          </div>
 
-            {workspace.candidates.length === 0 ? (
-              <div className="empty">
-                No candidate extraction revisions connect to Evidence in this pinned set for field &ldquo;{workspace.field.name}&rdquo;.
-              </div>
-            ) : (
-              <form action={replaceSynthesisPreparationSelectionsAction}>
-                <input type="hidden" name="projectId" value={projectId} />
-                <input type="hidden" name="preparationId" value={prep.id} />
-
-                <div className="matrix-list">
-                  {workspace.candidates.map((candidate) => (
-                    <label
-                      className={`item matrix-row ${
-                        !candidate.selectable ? "muted" : ""
-                      }`}
-                      key={candidate.extractionRevision.id}
-                      style={{ display: "block", marginBottom: 12 }}
-                    >
-                      <div className="item-row" style={{ alignItems: "flex-start" }}>
-                        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                          <input
-                            type="checkbox"
-                            name="extractionRevisionIds"
-                            value={candidate.extractionRevision.id}
-                            defaultChecked={candidate.selected}
-                            disabled={!active || !candidate.selectable}
-                            aria-label={`Select candidate observation from ${candidate.paper.title}`}
-                          />
-                          <div>
-                            <div className="item-title">{candidate.paper.title}</div>
-                            <div className="item-meta">
-                              Value: <strong>{displayCandidateValue(candidate)}</strong> (rev {candidate.extractionRevision.sequence})
-                              {candidate.isCurrentExtractionRevision
-                                ? " · Current extraction"
-                                : " · Superseded extraction"}
-                            </div>
-                            {/* Warnings / Eligibility Badges */}
-                            {candidate.warnings.length > 0 && (
-                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
-                                {candidate.warnings.map((w) => (
-                                  <span className="status stale" key={w}>
-                                    {warningLabel(w)}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                            {/* Connecting Evidence */}
-                            {candidate.connectingEvidence.length > 0 && (
-                              <div style={{ marginTop: 8 }}>
-                                <div className="hint" style={{ fontSize: "0.8rem", marginBottom: 2 }}>
-                                  Connecting evidence in pinned set ({candidate.connectingEvidence.length}):
-                                </div>
-                                {candidate.connectingEvidence.map((ev) => (
-                                  <div
-                                    className="quote"
-                                    key={ev.evidenceId}
-                                    style={{ fontSize: "0.85rem", margin: "4px 0" }}
-                                  >
-                                    &ldquo;{ev.sourceText}&rdquo;{" "}
-                                    <span className="item-meta">
-                                      · Page {ev.pageNumber}
-                                      {ev.curationWarning && ` (${ev.curationWarning.replaceAll("_", " ")})`}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <span
-                          className={`status ${
-                            candidate.selected
-                              ? "supported"
-                              : candidate.selectable
-                              ? "unsupported"
-                              : "stale"
-                          }`}
-                        >
+          {candidatePage.items.length === 0 ? (
+            <div className="empty">No candidate revisions match this filter in the pinned composition.</div>
+          ) : (
+            <div className="matrix-list">
+              {candidatePage.items.map((candidate) => (
+                <article className="item matrix-row" key={candidate.extractionRevisionId} data-testid="synthesis-preparation-candidate">
+                  <div className="item-row" style={{ alignItems: "flex-start" }}>
+                    <div>
+                      <Link className="item-title" href={`/projects/${projectId}/extraction/${candidate.paper.id}`}>{candidate.paper.title}</Link>
+                      <div className="item-meta">
+                        Value: <strong>{valueText(candidate.value, candidate.valueState)}</strong> · revision {candidate.sequence} · pinned membership position {candidate.membershipOrder} · connecting Evidence {candidate.connectingEvidenceCount} · direct Evidence {candidate.directEvidenceCount}
+                        {candidate.isCurrentExtractionRevision ? " · current extraction" : " · superseded extraction"}
+                        {candidate.isFinallyIncluded ? " · finally included" : " · not finally included"}
+                      </div>
+                      <div className="item-row" style={{ marginTop: 8, flexWrap: "wrap" }}>
+                        <Link className="button ghost" href={candidateDetailHref(projectId, preparationId, candidate.extractionRevisionId, query)}>View exact provenance</Link>
+                        <span className={`status ${candidate.selected ? "supported" : candidate.selectable ? "unsupported" : "stale"}`}>
                           {candidate.selected ? "Selected" : candidate.selectable ? "Available" : "Ineligible"}
                         </span>
                       </div>
-                    </label>
-                  ))}
-                </div>
-
-                {active && (
-                  <div style={{ marginTop: 16 }}>
-                    <button className="button secondary" type="submit">
-                      Save candidate selections
-                    </button>
+                      {candidate.eligibilityReasons.length > 0 && <div className="hint" style={{ marginTop: 6 }}>{candidate.eligibilityReasons.map(humanizeWorkspaceToken).join(" · ")}</div>}
+                      {candidate.warnings.length > 0 && (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                          {candidate.warnings.map((warning) => <span className="status stale" key={warning}>{warningLabel(warning)}</span>)}
+                        </div>
+                      )}
+                    </div>
+                    {active && (
+                      candidate.selected ? (
+                        <form action={deselectSynthesisPreparationRevisionAction}>
+                          <input type="hidden" name="projectId" value={projectId} />
+                          <input type="hidden" name="preparationId" value={preparationId} />
+                          <input type="hidden" name="extractionRevisionId" value={candidate.extractionRevisionId} />
+                          <input type="hidden" name="candidateFilter" value={candidateFilter} />
+                          {query.candidateCursor && <input type="hidden" name="candidateCursor" value={query.candidateCursor} />}
+                          <button className="button ghost" type="submit">Deselect</button>
+                        </form>
+                      ) : (
+                        <form action={selectSynthesisPreparationRevisionAction}>
+                          <input type="hidden" name="projectId" value={projectId} />
+                          <input type="hidden" name="preparationId" value={preparationId} />
+                          <input type="hidden" name="extractionRevisionId" value={candidate.extractionRevisionId} />
+                          <input type="hidden" name="candidateFilter" value={candidateFilter} />
+                          {query.candidateCursor && <input type="hidden" name="candidateCursor" value={query.candidateCursor} />}
+                          <button className="button secondary" type="submit" disabled={!candidate.selectable}>Select</button>
+                        </form>
+                      )
+                    )}
                   </div>
-                )}
-              </form>
-            )}
-          </section>
-        </div>
+                </article>
+              ))}
+            </div>
+          )}
+          <div className="item-row" style={{ marginTop: 18 }}>
+            {query.candidateCursor && <Link className="button ghost" href={workspaceHref(projectId, preparationId, query, { candidateCursor: null })}>First candidate page</Link>}
+            {candidatePage.nextCursor && <Link className="button secondary" href={workspaceHref(projectId, preparationId, query, { candidateCursor: candidatePage.nextCursor })}>Next candidate page</Link>}
+          </div>
+        </section>
 
-        <p className="footer-note">
-          Preparation workspaces maintain isolated selections and do not mutate analytical support until finalization.
-        </p>
+        {active && (
+          <section className="card section-card" style={{ marginTop: 16 }}>
+            <div className="section-heading"><h2>Finalize into synthesis</h2><span className="count">{header.selectedCount} selected</span></div>
+            <p className="hint">Finalization freezes exact selected ExtractionRevision identities as synthesis supports. Zero supports remain permitted.</p>
+            <form action={finalizeSynthesisPreparationAction}>
+              <input type="hidden" name="projectId" value={projectId} />
+              <input type="hidden" name="preparationId" value={preparationId} />
+              <div className="field"><label htmlFor="final-title">Statement title <span className="hint">optional</span></label><input id="final-title" name="title" defaultValue={prep.workingTitle ?? ""} maxLength={500} /></div>
+              <div className="field"><label htmlFor="final-statement">Synthesis statement <span className="hint">required</span></label><textarea id="final-statement" name="statementText" required maxLength={10000} /></div>
+              <div className="field"><label htmlFor="final-note">Researcher note <span className="hint">optional</span></label><textarea id="final-note" name="researcherNote" defaultValue={prep.workingNote ?? ""} maxLength={5000} /></div>
+              <button className="button primary" type="submit">Finalize preparation →</button>
+            </form>
+          </section>
+        )}
+
+        {prep.status === "finalized" && header.finalizedRevision && (
+          <section className="card section-card" style={{ marginTop: 16 }}>
+            <strong>Finalized workspace:</strong> exact supports are frozen in revision {header.finalizedRevision.sequence}.
+            {prep.targetSynthesisStatementId && <div style={{ marginTop: 8 }}><Link className="button secondary" href={`/projects/${projectId}/synthesis/${prep.targetSynthesisStatementId}`}>View finalized synthesis statement →</Link></div>}
+          </section>
+        )}
+        {prep.status === "abandoned" && <section className="card section-card" style={{ marginTop: 16 }}><strong>Abandoned workspace:</strong> this preparation is frozen.</section>}
+
+        <p className="footer-note">Selections are mutable preparation state. Canonical synthesis support changes only when the preparation is finalized.</p>
       </div>
     </div>
   );

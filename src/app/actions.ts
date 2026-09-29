@@ -428,6 +428,12 @@ export async function updateSynthesisPreparationAction(  form: Parameters<typeof
 export async function replaceSynthesisPreparationSelectionsAction(  form: Parameters<typeof actionsSynthesis.replaceSynthesisPreparationSelectionsAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.replaceSynthesisPreparationSelectionsAction>>> {
   return actionsSynthesis.replaceSynthesisPreparationSelectionsAction(form);
 }
+export async function selectSynthesisPreparationRevisionAction(  form: Parameters<typeof actionsSynthesis.selectSynthesisPreparationRevisionAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.selectSynthesisPreparationRevisionAction>>> {
+  return actionsSynthesis.selectSynthesisPreparationRevisionAction(form);
+}
+export async function deselectSynthesisPreparationRevisionAction(  form: Parameters<typeof actionsSynthesis.deselectSynthesisPreparationRevisionAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.deselectSynthesisPreparationRevisionAction>>> {
+  return actionsSynthesis.deselectSynthesisPreparationRevisionAction(form);
+}
 export async function abandonSynthesisPreparationAction(  form: Parameters<typeof actionsSynthesis.abandonSynthesisPreparationAction>[0]): Promise<Awaited<ReturnType<typeof actionsSynthesis.abandonSynthesisPreparationAction>>> {
   return actionsSynthesis.abandonSynthesisPreparationAction(form);
 }

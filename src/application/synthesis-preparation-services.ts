@@ -193,9 +193,10 @@ export function createSynthesisPreparationServices(
       writerOptions,
     );
 
+    const finalizedSupportIds = new Set(writerResult.supportExtractionRevisionIds);
     if (
-      writerResult.supportExtractionRevisionIds.length !== selectedIds.length ||
-      !selectedIds.every((id) => writerResult.supportExtractionRevisionIds.includes(id))
+      finalizedSupportIds.size !== selectedIds.length ||
+      selectedIds.some((id) => !finalizedSupportIds.has(id))
     ) {
       throw new DomainError("VALIDATION_ERROR", "Finalized synthesis supports must match preparation selections exactly");
     }
@@ -995,6 +996,195 @@ export function createSynthesisPreparationServices(
           .returning();
 
         return mapPreparation(updated);
+      });
+    },
+
+    async selectSynthesisPreparationRevision(
+      projectId: string,
+      preparationId: string,
+      input: { extractionRevisionId: string },
+    ): Promise<string> {
+      ensureId(projectId);
+      ensureId(preparationId);
+      const extractionRevisionId = ensureId(input.extractionRevisionId);
+
+      return db.transaction(async (tx) => {
+        const prepRows = (await tx.execute(sql`
+          with project_scope as materialized (
+            select id from projects where id = ${projectId}::uuid
+          ), locked_preparation as materialized (
+            select p.id, p.status, p.evidence_set_id, p.evidence_set_composition_revision_id, p.extraction_field_id
+            from synthesis_preparations p
+            join project_scope ps on ps.id = p.project_id
+            where p.id = ${preparationId}::uuid
+            for update of p
+          )
+          select
+            ps.id as project_id,
+            p.id as preparation_id,
+            p.status,
+            p.evidence_set_id as "evidenceSetId",
+            p.evidence_set_composition_revision_id as "evidenceSetCompositionRevisionId",
+            p.extraction_field_id as "extractionFieldId"
+          from project_scope ps
+          left join locked_preparation p on true
+        `)) as unknown as Array<Record<string, unknown>>;
+
+        if (prepRows.length === 0) {
+          throw new DomainError("PROJECT_NOT_FOUND", "Project was not found");
+        }
+        const prep = prepRows[0];
+        if (!prep.preparation_id) {
+          throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis preparation does not belong to this project");
+        }
+        if (prep.status !== "active") {
+          throw new DomainError("VALIDATION_ERROR", "Cannot modify selections of a terminal synthesis preparation");
+        }
+
+        const [existing] = await tx
+          .select({ extractionRevisionId: synthesisPreparationSelections.extractionRevisionId })
+          .from(synthesisPreparationSelections)
+          .where(
+            and(
+              eq(synthesisPreparationSelections.projectId, projectId),
+              eq(synthesisPreparationSelections.preparationId, preparationId),
+              eq(synthesisPreparationSelections.extractionRevisionId, extractionRevisionId),
+            ),
+          )
+          .limit(1);
+        if (existing) return extractionRevisionId;
+
+        const rows = (await tx.execute(sql`
+          select
+            r.id, r.field_id, r.finalized_at, r.value_state,
+            coalesce(sd.decision, 'unscreened') as screening_state,
+            coalesce(fd.decision, 'not_started') as full_text_state,
+            exists (
+              select 1
+              from extraction_revision_evidence ere
+              join evidence ev
+                on ev.project_id = ere.project_id
+               and ev.id = ere.evidence_id
+              join evidence_set_memberships esm
+                on esm.project_id = ev.project_id
+               and esm.evidence_id = ev.id
+               and esm.evidence_set_id = ${prep.evidenceSetId}::uuid
+              join evidence_set_membership_order_versions mev
+                on mev.project_id = esm.project_id
+               and mev.evidence_set_id = esm.evidence_set_id
+               and mev.membership_id = esm.id
+              join evidence_set_composition_revisions pinned
+                on pinned.project_id = mev.project_id
+               and pinned.evidence_set_id = mev.evidence_set_id
+               and pinned.id = ${prep.evidenceSetCompositionRevisionId}::uuid
+              where ere.project_id = r.project_id
+                and ere.revision_id = r.id
+                and mev.valid_from_ordinal <= pinned.set_ordinal
+                and (mev.valid_to_ordinal is null or pinned.set_ordinal < mev.valid_to_ordinal)
+            ) as is_reachable
+          from extraction_value_revisions r
+          left join lateral (
+            select decision from screening_decisions
+            where project_id = r.project_id and paper_id = r.paper_id and stage = 'title_abstract'
+            order by sequence desc limit 1
+          ) sd on true
+          left join lateral (
+            select decision from full_text_screening_decisions
+            where project_id = r.project_id and paper_id = r.paper_id
+            order by sequence desc limit 1
+          ) fd on true
+          where r.project_id = ${projectId}::uuid and r.id = ${extractionRevisionId}::uuid
+        `)) as unknown as Array<Record<string, unknown>>;
+
+        if (rows.length === 0) {
+          throw new DomainError("CROSS_PROJECT_REFERENCE", "Extraction revision does not belong to this project");
+        }
+        const row = rows[0];
+        if (row.field_id !== prep.extractionFieldId) {
+          throw new DomainError("VALIDATION_ERROR", "Selected revision does not match preparation extraction field");
+        }
+        if (!row.finalized_at) {
+          throw new DomainError("VALIDATION_ERROR", "Selected revision is not finalized");
+        }
+        if (row.value_state === "cleared") {
+          throw new DomainError("VALIDATION_ERROR", "Cleared extraction revisions cannot be selected");
+        }
+        if (row.screening_state !== "include" || row.full_text_state !== "include") {
+          throw new DomainError("VALIDATION_ERROR", "Selected revision belongs to a paper that is not finally included");
+        }
+        if (!row.is_reachable) {
+          throw new DomainError("VALIDATION_ERROR", "Selected revision is not reachable from pinned evidence set composition");
+        }
+
+        await tx.insert(synthesisPreparationSelections).values({
+          projectId,
+          preparationId,
+          extractionRevisionId,
+        });
+        await tx
+          .update(synthesisPreparations)
+          .set({ updatedAt: new Date() })
+          .where(and(eq(synthesisPreparations.projectId, projectId), eq(synthesisPreparations.id, preparationId)));
+
+        return extractionRevisionId;
+      });
+    },
+
+    async deselectSynthesisPreparationRevision(
+      projectId: string,
+      preparationId: string,
+      input: { extractionRevisionId: string },
+    ): Promise<boolean> {
+      ensureId(projectId);
+      ensureId(preparationId);
+      const extractionRevisionId = ensureId(input.extractionRevisionId);
+
+      return db.transaction(async (tx) => {
+        const prepRows = (await tx.execute(sql`
+          with project_scope as materialized (
+            select id from projects where id = ${projectId}::uuid
+          ), locked_preparation as materialized (
+            select p.id, p.status
+            from synthesis_preparations p
+            join project_scope ps on ps.id = p.project_id
+            where p.id = ${preparationId}::uuid
+            for update of p
+          )
+          select ps.id as project_id, p.id as preparation_id, p.status
+          from project_scope ps
+          left join locked_preparation p on true
+        `)) as unknown as Array<Record<string, unknown>>;
+
+        if (prepRows.length === 0) {
+          throw new DomainError("PROJECT_NOT_FOUND", "Project was not found");
+        }
+        const prep = prepRows[0];
+        if (!prep.preparation_id) {
+          throw new DomainError("CROSS_PROJECT_REFERENCE", "Synthesis preparation does not belong to this project");
+        }
+        if (prep.status !== "active") {
+          throw new DomainError("VALIDATION_ERROR", "Cannot modify selections of a terminal synthesis preparation");
+        }
+
+        const removed = await tx
+          .delete(synthesisPreparationSelections)
+          .where(
+            and(
+              eq(synthesisPreparationSelections.projectId, projectId),
+              eq(synthesisPreparationSelections.preparationId, preparationId),
+              eq(synthesisPreparationSelections.extractionRevisionId, extractionRevisionId),
+            ),
+          )
+          .returning({ extractionRevisionId: synthesisPreparationSelections.extractionRevisionId });
+
+        if (removed.length === 0) return false;
+
+        await tx
+          .update(synthesisPreparations)
+          .set({ updatedAt: new Date() })
+          .where(and(eq(synthesisPreparations.projectId, projectId), eq(synthesisPreparations.id, preparationId)));
+
+        return true;
       });
     },
 
