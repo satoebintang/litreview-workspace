@@ -49,7 +49,7 @@ test.describe("Slice 10 deduplication and review flow", () => {
     await page.getByRole("button", { name: "Create from Record A" }).click();
     await expect(page.getByText("Deduplication decision recorded.")).toBeVisible();
     await page.goto(`/projects/${projectId}/deduplication`);
-    await expect(page.getByText("No unresolved duplicate candidates.")).toBeVisible();
+    await expect(page.getByText("No unresolved duplicate candidates on this page.")).toBeVisible();
     await page.goto(`/projects/${projectId}/review-flow`);
     await expect(page.locator(".screening-stat", { hasText: "Resolved records" }).getByText("2")).toBeVisible();
 
@@ -62,7 +62,7 @@ test.describe("Slice 10 deduplication and review flow", () => {
     await expect(page).toHaveURL(/\/deduplication\//);
     await expect(page.getByText("Deduplication decision recorded.")).toBeVisible();
     await page.goto(`/projects/${projectId}/deduplication`);
-    await expect(page.getByText("No unresolved duplicate candidates.")).toBeVisible();
+    await expect(page.getByText("No unresolved duplicate candidates on this page.")).toBeVisible();
 
     await page.goto(`/projects/${projectId}/screening`);
     await page.getByRole("link", { name: "Start screening" }).click();

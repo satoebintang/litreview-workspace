@@ -29,6 +29,16 @@ const boundedResearchQuestionReadService = {
     "getResearchQuestionAnswerBrowserSnapshot",
   ],
 };
+const boundedDeduplicationReadService = {
+  source: "deduplicationReadServices",
+  factory: "createDeduplicationReadServices",
+  keys: [
+    "listDeduplicationQueuePage",
+    "listDeduplicationHistoryPage",
+    "getDeduplicationDecisionEvent",
+    "getDeduplicationPairForPage",
+  ],
+};
 const actionsFacade = path.join(sourceRoot, "app", "actions.ts");
 const actionsDirectory = path.join(sourceRoot, "app", "actions");
 const actionHelpers = path.join(sourceRoot, "app", "action-helpers.ts");
@@ -507,6 +517,20 @@ describe("bounded-context module boundaries", () => {
       .toBe(boundedResearchQuestionReadService.factory);
   });
 
+  it("adds the Slice 49 bounded Deduplication read API without changing the frozen Slice 35 baseline", () => {
+    const factory = findFactoryDeclaration(
+      [path.join(sourceRoot, "application", "deduplication-read-services.ts")],
+      boundedDeduplicationReadService.factory,
+    );
+    expect(factory).toBeDefined();
+    expect(factoryObjectKeys(factory!)).toEqual(boundedDeduplicationReadService.keys);
+
+    const services = sourceFile(servicesFacade);
+    const variable = findVariableDeclaration(services, boundedDeduplicationReadService.source);
+    expect(variable.initializer && firstCallExpression(variable.initializer)?.expression.getText(services))
+      .toBe(boundedDeduplicationReadService.factory);
+  });
+
   it("keeps accepted action signatures and the async forwarding façade frozen", () => {
     const expectedActionExports = [
       ...fixture.actions.exports,
@@ -716,7 +740,11 @@ describe("bounded-context module boundaries", () => {
     expect(coreArguments.slice(1)).toEqual(coreVariables);
 
     const baseServices = findVariableDeclaration(services, "baseServices");
-    expect(objectAssignArguments(baseServices.initializer, services)).toEqual(fixture.services.composition.base);
+    const additiveBaseComposition = [...fixture.services.composition.base];
+    const deduplicationIndex = additiveBaseComposition.indexOf("deduplicationServices");
+    expect(deduplicationIndex).toBeGreaterThanOrEqual(0);
+    additiveBaseComposition.splice(deduplicationIndex + 1, 0, boundedDeduplicationReadService.source);
+    expect(objectAssignArguments(baseServices.initializer, services)).toEqual(additiveBaseComposition);
 
     const finalReturn = createReviewServices.body?.statements.find((statement): statement is ts.ReturnStatement =>
       ts.isReturnStatement(statement) && !!statement.expression && ts.isCallExpression(unwrapExpression(statement.expression)));
@@ -729,6 +757,7 @@ describe("bounded-context module boundaries", () => {
 
     const factoryKeys = new Map<string, string[]>(coreKeysByOwner);
     factoryKeys.set(boundedResearchQuestionReadService.source, boundedResearchQuestionReadService.keys);
+    factoryKeys.set(boundedDeduplicationReadService.source, boundedDeduplicationReadService.keys);
     for (const factory of fixture.services.specializedFactories) {
       const variable = findVariableDeclaration(services, factory.source);
       const call = variable.initializer && firstCallExpression(variable.initializer);
@@ -751,7 +780,7 @@ describe("bounded-context module boundaries", () => {
 
     const layers = [
       ...fixture.services.coreFactories.map((factory) => ({ owner: factory.factory, keys: factoryKeys.get(factory.factory)! })),
-      ...fixture.services.composition.base.slice(1).map((expression) => {
+      ...additiveBaseComposition.slice(1).map((expression) => {
         const owner = expression.replace(/\s+as\s+unknown\s+as\s+Record<.*$/, "");
         return { owner, keys: factoryKeys.get(owner)! };
       }),

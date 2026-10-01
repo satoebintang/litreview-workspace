@@ -2,6 +2,7 @@
 import { asc, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { retrievedRecordDeduplicationDecisions } from "@/db/schema";
+import { deduplicationCandidateSignalPredicates, unresolvedDuplicatePairCtes } from "./unresolved-duplicate-pair-query";
 
 type DbTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -39,30 +40,19 @@ export class DeduplicationDecisionRepository {
   }
 
   async listCandidates(projectId: string, includeReviewed = false, tx: any = this.db) {
+    const signals = deduplicationCandidateSignalPredicates();
     return tx.execute(sql`
-      with candidate_reasons as (
-        select a.project_id, a.id as left_record_id, b.id as right_record_id, 'normalized_doi'::text as reason, 1::int as reason_order
+      with pairs as (
+        select a.project_id, a.id as left_record_id, b.id as right_record_id,
+          array_remove(array[
+            case when ${signals.doi} then 'normalized_doi'::text end,
+            case when ${signals.sourceRecordId} then 'same_source_record_id'::text end,
+            case when ${signals.titleYear} then 'normalized_title_year'::text end
+          ], null::text) as reasons,
+          case when ${signals.strong} then 'strong'::text else 'possible'::text end as strength
         from retrieved_records a join retrieved_records b on b.project_id = a.project_id and a.id < b.id
         where a.project_id = ${projectId}
-          and a.doi is not null and b.doi is not null and btrim(a.doi) <> '' and btrim(b.doi) <> ''
-          and btrim(lower(regexp_replace(regexp_replace(btrim(a.doi), '^https?://(dx\\.)?doi\\.org/', '', 'i'), '^doi:[[:space:]]*', '', 'i'))) = btrim(lower(regexp_replace(regexp_replace(btrim(b.doi), '^https?://(dx\\.)?doi\\.org/', '', 'i'), '^doi:[[:space:]]*', '', 'i')))
-        union all
-        select a.project_id, a.id, b.id, 'same_source_record_id'::text, 2::int
-        from retrieved_records a join retrieved_records b on b.project_id = a.project_id and a.id < b.id
-          and b.search_source_id = a.search_source_id and b.source_record_id = a.source_record_id
-        where a.project_id = ${projectId} and a.source_record_id is not null and b.source_record_id is not null
-          and btrim(a.source_record_id) <> '' and btrim(b.source_record_id) <> ''
-        union all
-        select a.project_id, a.id, b.id, 'normalized_title_year'::text, 3::int
-        from retrieved_records a join retrieved_records b on b.project_id = a.project_id and a.id < b.id
-        where a.project_id = ${projectId} and a.publication_year is not null and a.publication_year = b.publication_year
-          and btrim(a.title) <> '' and btrim(b.title) <> ''
-          and lower(regexp_replace(btrim(a.title), '[[:space:]]+', ' ', 'g')) = lower(regexp_replace(btrim(b.title), '[[:space:]]+', ' ', 'g'))
-      ), pairs as (
-        select project_id, left_record_id, right_record_id,
-          array_agg(reason order by reason_order) as reasons,
-          case when bool_or(reason_order = 1 or reason_order = 2) then 'strong'::text else 'possible'::text end as strength
-        from candidate_reasons group by project_id, left_record_id, right_record_id
+          and ((${signals.doi}) or (${signals.sourceRecordId}) or (${signals.titleYear}))
       ), latest_decisions as (
         select distinct on (project_id, left_retrieved_record_id, right_retrieved_record_id)
           project_id, left_retrieved_record_id, right_retrieved_record_id, decision, note, sequence, created_at
@@ -89,7 +79,10 @@ export class DeduplicationDecisionRepository {
       left join latest_decisions ld on ld.project_id = p.project_id and ld.left_retrieved_record_id = p.left_record_id and ld.right_retrieved_record_id = p.right_record_id
       left join latest_matches lm on lm.project_id = p.project_id and lm.retrieved_record_id = p.left_record_id and lm.action = 'linked'
       left join latest_matches rm on rm.project_id = p.project_id and rm.retrieved_record_id = p.right_record_id and rm.action = 'linked'
-      ${includeReviewed ? sql`` : sql`where ld.decision is null`}
+      ${includeReviewed ? sql`` : sql`where not exists (
+        select 1 from retrieved_record_deduplication_decisions d
+        where d.project_id = p.project_id and d.left_retrieved_record_id = p.left_record_id and d.right_retrieved_record_id = p.right_record_id
+      )`}
       order by (case when p.strength = 'strong' then 0 else 1 end), p.left_record_id, p.right_record_id
     `);
   }
@@ -146,17 +139,7 @@ export class DeduplicationDecisionRepository {
           project_id, left_retrieved_record_id, right_retrieved_record_id, decision
         from retrieved_record_deduplication_decisions where project_id = ${projectId}
         order by project_id, left_retrieved_record_id, right_retrieved_record_id, sequence desc
-      ), candidate_pairs as (
-        select count(*)::int as count from (
-          select a.id, b.id from retrieved_records a join retrieved_records b on b.project_id=a.project_id and a.id < b.id
-          left join current_decisions d on d.project_id=a.project_id and d.left_retrieved_record_id=a.id and d.right_retrieved_record_id=b.id
-          where a.project_id=${projectId} and d.decision is null and (
-            (a.doi is not null and b.doi is not null and btrim(a.doi)<>'' and btrim(b.doi)<>'' and btrim(lower(regexp_replace(regexp_replace(btrim(a.doi), '^https?://(dx\\.)?doi\\.org/', '', 'i'), '^doi:[[:space:]]*', '', 'i')))=btrim(lower(regexp_replace(regexp_replace(btrim(b.doi), '^https?://(dx\\.)?doi\\.org/', '', 'i'), '^doi:[[:space:]]*', '', 'i'))))
-            or (a.source_record_id is not null and b.source_record_id is not null and btrim(a.source_record_id)<>'' and btrim(b.source_record_id)<>'' and a.search_source_id=b.search_source_id and a.source_record_id=b.source_record_id)
-            or (a.publication_year is not null and a.publication_year=b.publication_year and lower(regexp_replace(btrim(a.title), '[[:space:]]+', ' ', 'g'))=lower(regexp_replace(btrim(b.title), '[[:space:]]+', ' ', 'g')))
-          )
-        ) q
-      ), paper_classification as (
+      ), ${unresolvedDuplicatePairCtes(projectId)}, paper_classification as (
         select p.id,
           exists (select 1 from latest_matches lm where lm.project_id=p.project_id and lm.paper_id=p.id and lm.action='linked') as current_acquisition,
           exists (select 1 from retrieved_record_matches hm where hm.project_id=p.project_id and hm.paper_id=p.id and hm.action='linked') as historical_acquisition
@@ -169,7 +152,7 @@ export class DeduplicationDecisionRepository {
         (select count(distinct search_source_id)::int from search_runs where project_id=${projectId}) as distinct_sources,
         (select count(*)::int from latest_matches where project_id=${projectId} and action='linked') as currently_resolved_records,
         (select count(*)::int from retrieved_records r where r.project_id=${projectId} and not exists (select 1 from latest_matches lm where lm.project_id=r.project_id and lm.retrieved_record_id=r.id and lm.action='linked')) as unresolved_records,
-        (select count from candidate_pairs) as unresolved_duplicate_pairs,
+        (select count(*)::int from unresolved_candidate_pairs) as unresolved_duplicate_pairs,
         (select count(*)::int from current_decisions where project_id=${projectId} and decision='same_work') as same_work_decision_pairs,
         (select count(*)::int from current_decisions where project_id=${projectId} and decision='different_work') as different_work_decision_pairs,
         (select count(*)::int from paper_classification where current_acquisition) as acquisition_derived_papers,

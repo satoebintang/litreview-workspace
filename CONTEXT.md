@@ -498,3 +498,36 @@ Targeted eligibility facts for exact historical supports and their Paper/Field
 replacement candidates. Carry-forward follows canonical final Paper inclusion
 and exact finalized, non-cleared support state. Archived Fields preserve exact
 historical support but offer no current replacement.
+
+## Slice 49 Deduplication queue
+
+The normal Deduplication queue reads live rank-separated keyset pages. It
+probes bounded per-left/per-signal pair identities, excludes adjudicated pairs
+before local limits, removes strong overlap from possible candidates, and
+deduplicates signals before the global rank/page boundary. Only visible pairs
+receive compact record hydration and latest-current mapping projection.
+Strong-to-possible continuation exhausts strong pairs first; the possible
+branch restarts from its beginning when reached from a strong cursor. A
+possible cursor skips strong. Each request uses its own read-only
+`REPEATABLE READ` snapshot; no epoch or high-water mark is stored in the
+cursor. Dense candidate generation remains output-sensitive and may be
+quadratic inside PostgreSQL.
+
+Compatibility full-return candidate/history APIs remain available. Exact pair
+inspection still accepts any distinct same-Project records, even outside the
+candidate set or after adjudication. Decision history is page-bounded, reads
+BIGINT sequence as canonical decimal text, and keeps complete notes behind an
+exact Project/pair/decision event read. Review Flow keeps its intentional exact
+unresolved count and shares the candidate predicates.
+
+The released comparison and history indexes are reused. Slice 49 adds no
+migration: `0038` is absent. Benchmark evidence is retained in
+`docs/benchmarks/slice49-deduplication-read-paths.json`; its provenance uses
+the released baseline SHA and marks implementation SHA as null for the
+uncommitted tree.
+
+**Scalability work is not complete after Slice 49.** Remaining ranked debt:
+Review Report contributors; workflow histories; imports/intakes;
+manuscript/document histories; Protocol/report context; and configuration
+lists. Do not treat the Slice 49 queue as a scalability closeout for those
+read paths or start Slice 50 without separate authorization.

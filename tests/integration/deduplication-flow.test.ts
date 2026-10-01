@@ -17,6 +17,9 @@ let ready = false;
 let projectId = "";
 let sourceId = "";
 let runId = "";
+let strategyId = "";
+let sourceKeySnapshot = "";
+let sourceDisplayNameSnapshot = "";
 
 describe("Slice 10 deduplication and review-flow service contract", () => {
   beforeAll(async () => {
@@ -31,12 +34,16 @@ describe("Slice 10 deduplication and review-flow service contract", () => {
       await migrate(db, { migrationsFolder: "./drizzle" });
       const project = await services.createProject({ title: `Flow ${crypto.randomUUID()}` });
       projectId = project.id;
-      sourceId = (await services.listSearchSources(projectId))[0].id;
+      const source = (await services.listSearchSources(projectId))[0];
+      sourceId = source.id;
+      sourceKeySnapshot = source.sourceKey;
+      sourceDisplayNameSnapshot = source.displayName;
       const strategy = await services.createSearchStrategy(projectId, { searchSourceId: sourceId, name: "Flow search", queryText: "study" });
-      const run = await services.createSearchRun(projectId, { searchSourceId: sourceId, sourceKeySnapshot: "scopus", sourceDisplayNameSnapshot: "Scopus", strategyId: strategy.id, queryText: "study", reportedResultCount: 5, executedAt: new Date("2026-01-01T00:00:00Z") });
+      strategyId = strategy.id;
+      const run = await services.createSearchRun(projectId, { searchSourceId: sourceId, sourceKeySnapshot, sourceDisplayNameSnapshot, strategyId, queryText: "study", reportedResultCount: 5, executedAt: new Date("2026-01-01T00:00:00Z") });
       runId = run.id;
       ready = true;
-    } catch { ready = false; }
+    } catch (error) { ready = false; throw error; }
   });
 
   afterAll(async () => {
@@ -96,6 +103,56 @@ describe("Slice 10 deduplication and review-flow service contract", () => {
     });
     await expect(services.listReviewFlowContributors(projectId, "historicalAcquisitionOnlyPapers")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ paper_id: historicalPaper.id })]));
     await expect(services.listReviewFlowContributors(projectId, "manualPapers")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: manualPaper.id })]));
+  });
+
+  it("returns the released unresolved order in bounded pages and resolves only the latest mapping state", async () => {
+    if (!ready) throw new Error("PostgreSQL fixture setup failed");
+    const strongLeft = await services.createRetrievedRecord(projectId, { searchRunId: runId, searchSourceId: sourceId, sourceRecordId: "page-doi-left", title: "DOI result", doi: " DOI: 10.3000/PAGE ", retrievedAt: new Date() });
+    const strongRight = await services.createRetrievedRecord(projectId, { searchRunId: runId, searchSourceId: sourceId, sourceRecordId: "page-doi-right", title: "DOI result copy", doi: "https://dx.doi.org/10.3000/page", retrievedAt: new Date() });
+    const possibleLeft = await services.createRetrievedRecord(projectId, { searchRunId: runId, searchSourceId: sourceId, sourceRecordId: "page-title-left", title: "  A paged   study\nwith space ", publicationYear: 2021, retrievedAt: new Date() });
+    const possibleRight = await services.createRetrievedRecord(projectId, { searchRunId: runId, searchSourceId: sourceId, sourceRecordId: "page-title-right", title: "a PAGED study with SPACE", publicationYear: 2021, retrievedAt: new Date() });
+    const paper = await services.addPaper(projectId, { title: "Temporary queue mapping" });
+    await services.linkRetrievedRecordToPaper(projectId, strongLeft.id, paper.id);
+    await services.unlinkRetrievedRecordFromPaper(projectId, strongLeft.id, paper.id);
+
+    const legacy = await services.listDeduplicationQueue(projectId);
+    const pages = [] as Awaited<ReturnType<typeof services.listDeduplicationQueuePage>>[];
+    let cursor: string | null = null;
+    do {
+      const page = await services.listDeduplicationQueuePage(projectId, { pageSize: 1, cursor });
+      pages.push(page);
+      cursor = page.nextCursor;
+      if (!page.hasMore) break;
+    } while (cursor);
+
+    const legacyProjection = legacy.map((item: any) => ({
+      leftId: item.leftRetrievedRecord.id,
+      rightId: item.rightRetrievedRecord.id,
+      reasons: item.reasons,
+      strength: item.strength,
+      leftPaperId: item.leftPaperId,
+      rightPaperId: item.rightPaperId,
+    }));
+    const pageProjection = pages.flatMap((page) => page.items).map((item) => ({
+      leftId: item.leftRetrievedRecord.id,
+      rightId: item.rightRetrievedRecord.id,
+      reasons: item.reasons,
+      strength: item.strength,
+      leftPaperId: item.leftRetrievedRecord.currentPaperId,
+      rightPaperId: item.rightRetrievedRecord.currentPaperId,
+    }));
+    expect(pageProjection).toEqual(legacyProjection);
+    expect(pageProjection.map((item) => item.strength)).toEqual(["strong", "possible"]);
+    const mappedItem = pages.flatMap((page) => page.items).find((item) => item.leftRetrievedRecord.id === strongLeft.id || item.rightRetrievedRecord.id === strongLeft.id);
+    const mappedSide = mappedItem?.leftRetrievedRecord.id === strongLeft.id ? mappedItem.leftRetrievedRecord : mappedItem?.rightRetrievedRecord;
+    expect(mappedSide?.mappingStatus).toBe("unlinked");
+    expect(mappedSide?.currentPaperId).toBeNull();
+    expect(pageProjection[0]?.leftId).toBe(strongLeft.id < strongRight.id ? strongLeft.id : strongRight.id);
+    expect(pageProjection[1]?.leftId).toBe(possibleLeft.id < possibleRight.id ? possibleLeft.id : possibleRight.id);
+    const summary = await services.getReviewFlowSummary(projectId);
+    const overview = await services.getProjectOverview(projectId);
+    expect(summary.unresolvedDuplicatePairs).toBe(legacy.length);
+    expect(overview.screening.unresolvedDuplicatePairCount).toBe(legacy.length);
   });
 
   it("keeps TypeScript and PostgreSQL candidate normalization equivalent", async () => {
