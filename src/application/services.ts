@@ -47,6 +47,7 @@ import { createManuscriptSnapshotServices } from "./manuscript-snapshot-services
 import { createAcquisitionServices } from "./acquisition-services";
 import { createProjectWorkspaceReadServices } from "./project-workspace-read-services";
 import { createDeduplicationServices } from "./deduplication-services";
+import { createDeduplicationReadServices } from "./deduplication-read-services";
 import { createReviewReportingServices } from "./review-reporting";
 import { createFullTextDocumentServices, type FullTextDocumentServices } from "./full-text-document-services";
 import {
@@ -176,6 +177,7 @@ export function createReviewServices(db: Database, options: {
   // is extended by the later Object.assign composition stages.
   synthesisProvenanceReceiver.services = services;
   const deduplicationServices = createDeduplicationServices(db);
+  const deduplicationReadServices = createDeduplicationReadServices(db);
   const manuscriptServices = createManuscriptServices(db);
   const manuscriptProseHistoryServices = createManuscriptProseHistoryServices(db);
   const manuscriptReviewServices = createManuscriptReviewServices(db);
@@ -183,7 +185,7 @@ export function createReviewServices(db: Database, options: {
   const acquisitionServices = createAcquisitionServices(db);
   const projectWorkspaceReadServices = createProjectWorkspaceReadServices(db);
   const documentServices: FullTextDocumentServices = createFullTextDocumentServices(db, options.documentStorage, options.maxDocumentBytes, options.onStorageCheckpoint);
-  const baseServices = Object.assign(services, manuscriptServices, manuscriptProseHistoryServices, manuscriptReviewServices, manuscriptSnapshotServices, acquisitionServices, deduplicationServices, documentServices as unknown as Record<string, unknown>) as typeof services & typeof manuscriptServices & typeof manuscriptProseHistoryServices & typeof manuscriptReviewServices & typeof manuscriptSnapshotServices & typeof acquisitionServices & typeof deduplicationServices & FullTextDocumentServices;
+  const baseServices = Object.assign(services, manuscriptServices, manuscriptProseHistoryServices, manuscriptReviewServices, manuscriptSnapshotServices, acquisitionServices, deduplicationServices, deduplicationReadServices, documentServices as unknown as Record<string, unknown>) as typeof services & typeof manuscriptServices & typeof manuscriptProseHistoryServices & typeof manuscriptReviewServices & typeof manuscriptSnapshotServices & typeof acquisitionServices & typeof deduplicationServices & typeof deduplicationReadServices & FullTextDocumentServices;
   const textExtractionParser: DocumentTextExtractionParser = options.documentTextExtractor ?? {
     extractorKey: "unconfigured",
     extractorVersion: "unconfigured",
