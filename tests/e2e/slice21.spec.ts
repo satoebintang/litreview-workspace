@@ -49,8 +49,9 @@ test.describe("Slice 21 Research Question Answers", () => {
 
       await page.goto(`/projects/${projectId}/research-questions/${questionId}`);
       await expect(page.getByTestId("answer-workspace")).toBeVisible();
-      const firstCandidate = page.locator('input[name="claimRevisionIds"]');
-      await expect(firstCandidate).toHaveValue(firstRevisionId);
+      await page.getByRole("button", { name: "Browse Claim candidates" }).click();
+      const firstCandidate = page.locator(`input[data-testid="answer-candidate-checkbox"][data-revision-id="${firstRevisionId}"]`);
+      await expect(firstCandidate).toBeVisible();
 
       // A newer finalized revision wins while the page still contains the
       // first exact ID. The action must reject and the Server Component must
@@ -62,12 +63,21 @@ test.describe("Slice 21 Research Question Answers", () => {
       await page.getByLabel("Researcher-authored Answer").fill("The answer records the supported finding.");
       await firstCandidate.check();
       await page.getByRole("button", { name: "Finalize Answer snapshot" }).click();
-      await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/research-questions/${questionId}\\?error=`));
-      await expect(page.locator(".error-banner")).toContainText(/no longer the current finalized revision/i);
-      await expect(page.locator('input[name="claimRevisionIds"]')).toHaveValue(secondRevisionId);
+      await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/research-questions/${questionId}$`));
+      await expect(page.locator(".error-banner[role='alert']")).toContainText(/current finalized revision|current revision/i);
+      await expect(page.getByLabel("Researcher-authored Answer")).toHaveValue("The answer records the supported finding.");
+      const answerWorkspace = page.getByTestId("answer-workspace");
+      await expect(answerWorkspace.locator(`input[type="hidden"][name="claimRevisionIds"][value="${firstRevisionId}"]`)).toHaveCount(1);
+      const refreshedCandidate = answerWorkspace.locator(`input[data-testid="answer-candidate-checkbox"][data-revision-id="${secondRevisionId}"]`);
+      await expect(refreshedCandidate).toBeVisible();
+      await expect(refreshedCandidate).not.toBeChecked();
+
+      // The stale exact ID stays selected in review; explicitly remove it
+      // before choosing the new current revision as a separate decision.
+      await answerWorkspace.getByRole("button", { name: "Remove" }).click();
+      await refreshedCandidate.check();
 
       await page.getByLabel("Researcher-authored Answer").fill("The answer records the newer supported finding.");
-      await page.locator(`input[name="claimRevisionIds"][value="${secondRevisionId}"]`).check();
       await page.getByRole("button", { name: "Finalize Answer snapshot" }).click();
       await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/research-questions/${questionId}/answers/[0-9a-f-]+\\?saved=answer$`));
       await expect(page.getByTestId("answer-snapshot-page")).toBeVisible();

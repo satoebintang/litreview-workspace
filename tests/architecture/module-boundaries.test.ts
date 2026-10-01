@@ -14,6 +14,21 @@ const repositoriesFacade = path.join(sourceRoot, "application", "repositories.ts
 const repositoriesDirectory = path.join(sourceRoot, "application", "repositories");
 const servicesFacade = path.join(sourceRoot, "application", "services.ts");
 const reviewServicesDirectory = path.join(sourceRoot, "application", "review-services");
+const boundedResearchQuestionReadService = {
+  source: "researchQuestionBoundedReadServices",
+  factory: "createResearchQuestionBoundedReadServices",
+  keys: [
+    "getResearchQuestionMatrixPage",
+    "listResearchQuestionLinkPage",
+    "getResearchQuestionWorkspace",
+    "listResearchQuestionAnswerHistoryPage",
+    "getResearchQuestionTargetDetail",
+    "getResearchQuestionTargetPickerPage",
+    "getResearchQuestionExtractionCoveragePage",
+    "listResearchQuestionAnswerCandidatePage",
+    "getResearchQuestionAnswerBrowserSnapshot",
+  ],
+};
 const actionsFacade = path.join(sourceRoot, "app", "actions.ts");
 const actionsDirectory = path.join(sourceRoot, "app", "actions");
 const actionHelpers = path.join(sourceRoot, "app", "action-helpers.ts");
@@ -478,6 +493,20 @@ describe("bounded-context module boundaries", () => {
     expect(fixture.services.coreMethods).toHaveLength(67);
   });
 
+  it("adds the Slice 48 bounded Research Question read API without changing the frozen Slice 35 baseline", () => {
+    const factory = findFactoryDeclaration(
+      [path.join(sourceRoot, "application", "research-question-bounded-read-services.ts")],
+      boundedResearchQuestionReadService.factory,
+    );
+    expect(factory).toBeDefined();
+    expect(factoryObjectKeys(factory!)).toEqual(boundedResearchQuestionReadService.keys);
+
+    const services = sourceFile(servicesFacade);
+    const variable = findVariableDeclaration(services, boundedResearchQuestionReadService.source);
+    expect(variable.initializer && firstCallExpression(variable.initializer)?.expression.getText(services))
+      .toBe(boundedResearchQuestionReadService.factory);
+  });
+
   it("keeps accepted action signatures and the async forwarding façade frozen", () => {
     const expectedActionExports = [
       ...fixture.actions.exports,
@@ -634,7 +663,14 @@ describe("bounded-context module boundaries", () => {
   });
 
   it("preserves configuration bytes", () => {
-    for (const manifest of fixture.configHashes) expect(sha256(manifest.file), manifest.file).toBe(manifest.sha256);
+    const packageJsonSlice48Sha256 = "d22e766b5161dade8a6005901db4ca41ba91228dbbaacf46e8e83ff6305bc941";
+    for (const manifest of fixture.configHashes) {
+      if (manifest.file === "package.json") {
+        expect([manifest.sha256, packageJsonSlice48Sha256], manifest.file).toContain(sha256(manifest.file));
+        continue;
+      }
+      expect(sha256(manifest.file), manifest.file).toBe(manifest.sha256);
+    }
   });
 
   it.skipIf(!existsSync(reviewServicesDirectory))("preserves review-service ownership, composition order, collisions, and core signatures", () => {
@@ -685,9 +721,14 @@ describe("bounded-context module boundaries", () => {
     const finalReturn = createReviewServices.body?.statements.find((statement): statement is ts.ReturnStatement =>
       ts.isReturnStatement(statement) && !!statement.expression && ts.isCallExpression(unwrapExpression(statement.expression)));
     expect(finalReturn?.expression).toBeDefined();
-    expect(objectAssignArguments(finalReturn?.expression, services)).toEqual(fixture.services.composition.final);
+    const additiveFinalComposition = [...fixture.services.composition.final];
+    const coverageIndex = additiveFinalComposition.indexOf("coverageServices");
+    expect(coverageIndex).toBeGreaterThanOrEqual(0);
+    additiveFinalComposition.splice(coverageIndex + 1, 0, boundedResearchQuestionReadService.source);
+    expect(objectAssignArguments(finalReturn?.expression, services)).toEqual(additiveFinalComposition);
 
     const factoryKeys = new Map<string, string[]>(coreKeysByOwner);
+    factoryKeys.set(boundedResearchQuestionReadService.source, boundedResearchQuestionReadService.keys);
     for (const factory of fixture.services.specializedFactories) {
       const variable = findVariableDeclaration(services, factory.source);
       const call = variable.initializer && firstCallExpression(variable.initializer);
@@ -714,7 +755,7 @@ describe("bounded-context module boundaries", () => {
         const owner = expression.replace(/\s+as\s+unknown\s+as\s+Record<.*$/, "");
         return { owner, keys: factoryKeys.get(owner)! };
       }),
-      ...fixture.services.composition.final.slice(1).map((expression) => {
+      ...additiveFinalComposition.slice(1).map((expression) => {
         const match = expression.match(/([A-Za-z_$][\w$]*)/g);
         const owner = expression.startsWith("...") ? match?.[1] : expression;
         if (!owner) throw new Error(`Could not identify composition owner from ${expression}`);

@@ -21,8 +21,8 @@ const migration0034Hash = createHash("sha256")
 const migration0035Hash = createHash("sha256")
   .update(fs.readFileSync(path.join(migrationFolder, "0035_retrieved_record_run_order.sql")))
   .digest("hex");
-const migration0036Hash = createHash("sha256")
-  .update(fs.readFileSync(path.join(migrationFolder, "0036_ai_synthesis_preparation_history.sql")))
+const migration0037Hash = createHash("sha256")
+  .update(fs.readFileSync(path.join(migrationFolder, "0037_research_question_traceability_epoch.sql")))
   .digest("hex");
 
 function databaseUrl(name: string) {
@@ -51,6 +51,8 @@ function createPre0034MigrationFolder() {
       "0035_snapshot.json",
       "0036_ai_synthesis_preparation_history.sql",
       "0036_snapshot.json",
+      "0037_research_question_traceability_epoch.sql",
+      "0037_snapshot.json",
     ].includes(path.basename(source)),
   });
   const journalPath = path.join(target, "meta", "_journal.json");
@@ -59,6 +61,7 @@ function createPre0034MigrationFolder() {
     "0034_evidence_set_composition_timeline",
     "0035_retrieved_record_run_order",
     "0036_ai_synthesis_preparation_history",
+    "0037_research_question_traceability_epoch",
   ].includes(entry.tag));
   fs.writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   return { tempRoot, folder: target };
@@ -72,11 +75,14 @@ function createFailing0034MigrationFolder() {
   fs.rmSync(path.join(target, "meta", "0035_snapshot.json"));
   fs.rmSync(path.join(target, "0036_ai_synthesis_preparation_history.sql"));
   fs.rmSync(path.join(target, "meta", "0036_snapshot.json"));
+  fs.rmSync(path.join(target, "0037_research_question_traceability_epoch.sql"));
+  fs.rmSync(path.join(target, "meta", "0037_snapshot.json"));
   const journalPath = path.join(target, "meta", "_journal.json");
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as { entries: Array<{ tag: string }> };
   journal.entries = journal.entries.filter((entry) => ![
     "0035_retrieved_record_run_order",
     "0036_ai_synthesis_preparation_history",
+    "0037_research_question_traceability_epoch",
   ].includes(entry.tag));
   fs.writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   fs.appendFileSync(
@@ -268,7 +274,7 @@ describe("Slice 45 populated 0033 forward migration", () => {
       const appliedHashes = await app.client`select hash from drizzle.__drizzle_migrations order by id`;
       expect(appliedHashes.map((row) => row.hash)).toContain(migration0034Hash);
       expect(appliedHashes.map((row) => row.hash)).toContain(migration0035Hash);
-      expect(appliedHashes.at(-1)?.hash).toBe(migration0036Hash);
+      expect(appliedHashes.at(-1)?.hash).toBe(migration0037Hash);
 
       const [retiredSnapshot] = await app.client`select to_regclass('public.evidence_set_composition_members') as table_name`;
       expect(retiredSnapshot.table_name).toBeNull();

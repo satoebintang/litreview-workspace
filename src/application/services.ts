@@ -67,6 +67,7 @@ import {
   createResearchQuestionCoverageServices,
   type ResearchQuestionCoverageServices,
 } from "./research-question-coverage-services";
+import { createResearchQuestionBoundedReadServices } from "./research-question-bounded-read-services";
 import type { DbOrTx } from "./research-question-traceability-repository";
 import {
   createResearchQuestionAnswerReadServices,
@@ -219,6 +220,7 @@ export function createReviewServices(db: Database, options: {
   const synthesisInterpretationServices = getSynthesisInterpretationServices();
   const traceabilityServices = createResearchQuestionTraceabilityServices(db);
   const coverageServices = createResearchQuestionCoverageServices(db, traceabilityServices.repo);
+  const researchQuestionBoundedReadServices = createResearchQuestionBoundedReadServices(db);
 
   // Slice 21 Answer composition deliberately delegates support semantics to
   // the released Claim/Synthesis resolvers above.  The transaction argument
@@ -324,6 +326,7 @@ export function createReviewServices(db: Database, options: {
     synthesisInterpretationServices,
     traceabilityServices,
     coverageServices,
+    researchQuestionBoundedReadServices,
     answerWriteServices,
     answerReadServices,
     answerManuscriptServices,
@@ -341,6 +344,7 @@ export function createReviewServices(db: Database, options: {
     typeof synthesisInterpretationServices &
     ResearchQuestionTraceabilityServices &
     ResearchQuestionCoverageServices &
+    ReturnType<typeof createResearchQuestionBoundedReadServices> &
     ResearchQuestionAnswerWriteServices &
     ResearchQuestionAnswerReadServices &
     ResearchQuestionAnswerManuscriptServices &

@@ -181,6 +181,7 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
     const rqRow = page.locator("tr", { hasText: "RQ1" });
     await rqRow.getByRole("link", { name: /Open workspace/i }).click();
     const synthesisSection = page.locator("section", { hasText: "Synthesis Statements" });
+    await synthesisSection.getByRole("button", { name: "Browse statements" }).click();
     await synthesisSection.locator('select[name="statementId"]').selectOption(statementId);
     await synthesisSection.locator('input[name="note"]').fill("Canonical synthesis traceability");
     await synthesisSection.getByRole("button", { name: "Link statement" }).click();

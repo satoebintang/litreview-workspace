@@ -10,56 +10,23 @@ export default async function ResearchQuestionAnswerSnapshotPage({
   params: Promise<{ projectId: string; questionId: string; answerId: string }>;
 }) {
   const { projectId, questionId, answerId } = await params;
-  let project;
-  let detail;
-  let snapshot;
+  let result;
   try {
-    [project, detail, snapshot] = await Promise.all([
-      reviewServices.getProject(projectId),
-      reviewServices.getQuestionTraceability(projectId, questionId),
-      reviewServices.getResearchQuestionAnswerSnapshot(projectId, questionId, answerId),
-    ]);
+    result = await reviewServices.getResearchQuestionAnswerBrowserSnapshot(projectId, questionId, answerId);
   } catch (error) {
-    if (error instanceof DomainError && [
-      "PROJECT_NOT_FOUND",
-      "NOT_FOUND",
-      "VALIDATION_ERROR",
-      "CROSS_PROJECT_REFERENCE",
-    ].includes(error.code)) {
-      notFound();
-    }
+    if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "NOT_FOUND", "VALIDATION_ERROR", "CROSS_PROJECT_REFERENCE"].includes(error.code)) notFound();
     throw error;
   }
 
-  return (
-    <div className="project-page">
-      <div className="container workspace"><div className="workspace-header">
-          <div>
-            <p className="eyebrow">Research Question Answer Snapshot</p>
-            <h1>{detail.question.identifier} · Answer #{snapshot.sequence}</h1>
-            <p>{project.title} · immutable historical analytical context</p>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span className="status supported">● Finalized</span>
-            <Link
-              className="button secondary"
-              href={`/projects/${projectId}/research-questions/${questionId}/answers/${answerId}/manuscript`}
-              data-testid="use-answer-in-manuscript"
-            >
-              Use in manuscript
-            </Link>
-          </div>
-        </div>
-        <section className="card section-card full" data-testid="answer-snapshot-page">
-          <p className="hint" style={{ marginTop: 0 }}>
-            This page shows the exact Answer text and typed revision contexts captured at finalization. Later lifecycle, link, or revision changes produce derived drift annotations only and do not rewrite this snapshot.
-          </p>
-          <AnswerSnapshotCard snapshot={snapshot} />
-        </section>
-        <p className="footer-note">
-          Answer contexts are not formal support or citation edges and are not projected into manuscript, ReviewFlow, or PRISMA records.
-        </p>
-      </div>
+  return <div className="project-page"><div className="container workspace">
+    <div className="workspace-header">
+      <div><p className="eyebrow">Research Question Answer Snapshot</p><h1>{result.question.identifier} · Answer #{result.snapshot.sequence}</h1><p>{result.project.title} · immutable historical analytical context</p></div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span className="status supported">● Finalized</span><Link className="button secondary" href={`/projects/${projectId}/research-questions/${questionId}/answers/${answerId}/manuscript`} data-testid="use-answer-in-manuscript">Use in manuscript</Link></div>
     </div>
-  );
+    <section className="card section-card full" data-testid="answer-snapshot-page">
+      <p className="hint" style={{ marginTop: 0 }}>This page shows the exact Answer text and pinned Claim/Synthesis revision contexts captured at finalization. Sequence values are displayed losslessly; later lifecycle, link, or revision changes add derived drift annotations but never float historical IDs.</p>
+      <AnswerSnapshotCard snapshot={result.snapshot} />
+    </section>
+    <p className="footer-note">Answer contexts are not formal support or citation edges and are not projected into manuscript, ReviewFlow, or PRISMA records.</p>
+  </div></div>;
 }
