@@ -42,6 +42,20 @@ test.describe("Slice 45 Evidence Set workspace", () => {
       const setUrl = `/projects/${projectId}/evidence-sets/${setId}`;
       await page.goto(setUrl);
       await expect(page.locator('[data-testid="evidence-set-member"]')).toHaveCount(50);
+      const compositionRevision = page.getByTestId("composition-revision");
+      const readCompositionRevisionId = async () => (await compositionRevision.textContent())?.match(/[0-9a-f-]{36}/i)?.[0] ?? null;
+      const waitForCompositionRevisionChange = async (previousRevisionId: string) => {
+        await expect.poll(async () => {
+          const currentRevisionId = await readCompositionRevisionId();
+          return currentRevisionId !== null && currentRevisionId !== previousRevisionId;
+        }).toBe(true);
+        const currentRevisionId = await readCompositionRevisionId();
+        expect(currentRevisionId).toBeTruthy();
+        return currentRevisionId!;
+      };
+      const expectActionRevisionUrl = (revisionId: string) => expect(page).toHaveURL((url) =>
+        url.searchParams.get("saved") === "member" && url.searchParams.get("revisionId") === revisionId,
+      );
       await expect(page.getByText("Unique browse candidate passage", { exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Browse candidates" })).toBeVisible();
       await page.getByRole("button", { name: "Browse candidates" }).click();
@@ -53,11 +67,22 @@ test.describe("Slice 45 Evidence Set workspace", () => {
       await expect(page.locator('[data-testid="evidence-set-member"]')).toHaveCount(50);
 
       const passage50 = page.locator('[data-testid="evidence-set-member"]').filter({ hasText: "Ordered passage 50" });
+      await expect(passage50).toBeVisible();
+      const revisionBeforeMoveDown = await readCompositionRevisionId();
+      expect(revisionBeforeMoveDown).toBeTruthy();
       await passage50.getByRole("button", { name: /Move .* down/ }).click();
+      const revisionAfterMoveDown = await waitForCompositionRevisionChange(revisionBeforeMoveDown!);
+      await expectActionRevisionUrl(revisionAfterMoveDown);
+      await expect(passage50).toHaveCount(0);
       await page.getByRole("link", { name: "Next member page" }).click();
+      await expect(page).toHaveURL((url) => url.searchParams.has("memberCursor"));
       const pageTwoPassage50 = page.locator('[data-testid="evidence-set-member"]').filter({ hasText: "Ordered passage 50" });
       await expect(pageTwoPassage50).toBeVisible();
+      const revisionBeforeMoveUp = await readCompositionRevisionId();
+      expect(revisionBeforeMoveUp).toBe(revisionAfterMoveDown);
       await pageTwoPassage50.getByRole("button", { name: /Move .* up/ }).click();
+      const revisionAfterMoveUp = await waitForCompositionRevisionChange(revisionBeforeMoveUp!);
+      await expectActionRevisionUrl(revisionAfterMoveUp);
       await expect(page.locator('[data-testid="evidence-set-member"]').filter({ hasText: "Ordered passage 50" })).toBeVisible();
 
       const history = page.locator("section.card").filter({ has: page.getByRole("heading", { name: "Composition history" }) });

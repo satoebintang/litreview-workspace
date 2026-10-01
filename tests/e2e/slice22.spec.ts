@@ -119,14 +119,18 @@ test.describe.serial("Slice 22 Answer-centric manuscript workflow", () => {
       await expect(page.getByTestId("answer-workspace")).toBeVisible();
       await page.getByLabel("Researcher-authored Answer").fill("The supported intervention improves the measured outcome.");
       await page.getByTestId("answer-workspace").getByLabel(/Researcher note/).fill("Context note must not become prose.");
-      await page.locator(`input[name="claimRevisionIds"][value="${claimOne.revisionId}"]`).check();
-      await page.locator(`input[name="claimRevisionIds"][value="${claimTwo.revisionId}"]`).check();
+      await page.getByRole("button", { name: "Browse Claim candidates" }).click();
+      await page.locator(`input[data-testid="answer-candidate-checkbox"][data-revision-id="${claimOne.revisionId}"]`).check();
+      await page.locator(`input[data-testid="answer-candidate-checkbox"][data-revision-id="${claimTwo.revisionId}"]`).check();
+      await page.getByRole("button", { name: "Browse Synthesis candidates" }).click();
+      await page.locator(`input[data-testid="answer-candidate-checkbox"][data-revision-id="${synthesis.revisionId}"]`).check();
       await page.getByRole("button", { name: "Finalize Answer snapshot" }).click();
       await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/research-questions/${questionId}/answers/[0-9a-f-]+\\?saved=answer$`));
       await expect(page.getByTestId("answer-snapshot-page")).toBeVisible();
       const answerId = new URL(page.url()).pathname.split("/").pop()!;
       await expect(page.getByText("The supported intervention improves the measured outcome.", { exact: true })).toBeVisible();
       await expect(page.getByText("Researcher note: Context note must not become prose.", { exact: true })).toBeVisible();
+      await expect(page.getByText(/Exact synthesis context\./)).toBeVisible();
 
       await page.goto(`/projects/${projectId}/manuscript`);
       await page.getByRole("button", { name: "Start manuscript" }).click();

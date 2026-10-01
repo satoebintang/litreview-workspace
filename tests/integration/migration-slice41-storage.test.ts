@@ -14,7 +14,7 @@ const baseUrl = resolveDatabaseUrl();
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
 const migrationPath = path.join(migrationFolder, "0033_storage_materialization_recovery.sql");
 const migrationHash = createHash("sha256").update(fs.readFileSync(migrationPath)).digest("hex");
-const currentTailMigrationPath = path.join(migrationFolder, "0036_ai_synthesis_preparation_history.sql");
+const currentTailMigrationPath = path.join(migrationFolder, "0037_research_question_traceability_epoch.sql");
 const currentTailMigrationHash = createHash("sha256").update(fs.readFileSync(currentTailMigrationPath)).digest("hex");
 
 function databaseUrl(name: string) {

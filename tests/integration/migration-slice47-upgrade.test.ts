@@ -12,9 +12,9 @@ import { resolveDatabaseUrl } from "@/db/config";
 const baseUrl = resolveDatabaseUrl();
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
 const migration0035Path = path.join(migrationFolder, "0035_retrieved_record_run_order.sql");
-const migration0036Path = path.join(migrationFolder, "0036_ai_synthesis_preparation_history.sql");
+const migration0037Path = path.join(migrationFolder, "0037_research_question_traceability_epoch.sql");
 const migration0035Hash = createHash("sha256").update(fs.readFileSync(migration0035Path)).digest("hex");
-const migration0036Hash = createHash("sha256").update(fs.readFileSync(migration0036Path)).digest("hex");
+const migration0037Hash = createHash("sha256").update(fs.readFileSync(migration0037Path)).digest("hex");
 const historyIndexName = "ai_synthesis_requests_project_preparation_created_id_idx";
 
 function databaseUrl(name: string) {
@@ -36,7 +36,10 @@ function createSlice46MigrationFolder() {
   const target = path.join(tempRoot, "drizzle");
   fs.cpSync(migrationFolder, target, {
     recursive: true,
-    filter: (source) => !["0036_ai_synthesis_preparation_history.sql", "0036_snapshot.json"].includes(path.basename(source)),
+    filter: (source) => ![
+      "0036_ai_synthesis_preparation_history.sql", "0036_snapshot.json",
+      "0037_research_question_traceability_epoch.sql", "0037_snapshot.json",
+    ].includes(path.basename(source)),
   });
   const journalPath = path.join(target, "meta", "_journal.json");
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as { entries: Array<{ idx: number }> };
@@ -66,8 +69,8 @@ describe("Slice 47 AI synthesis history index migration", () => {
       expect(freshIndex.definition).toContain(
         "(project_id, preparation_id, created_at DESC NULLS LAST, id DESC NULLS LAST)",
       );
-      expect(Number(freshTail.id)).toBe(37);
-      expect(freshTail.hash).toBe(migration0036Hash);
+      expect(Number(freshTail.id)).toBe(38);
+      expect(freshTail.hash).toBe(migration0037Hash);
 
       await migrate(forwardApp.db, { migrationsFolder: slice46.folder });
       const [slice46Tail] = await forwardApp.client.unsafe(
@@ -90,7 +93,7 @@ describe("Slice 47 AI synthesis history index migration", () => {
       expect(forwardIndex.definition).toContain(
         "(project_id, preparation_id, created_at DESC NULLS LAST, id DESC NULLS LAST)",
       );
-      expect(forwardTail.hash).toBe(migration0036Hash);
+      expect(forwardTail.hash).toBe(migration0037Hash);
     } finally {
       await freshApp.client.end();
       await forwardApp.client.end();

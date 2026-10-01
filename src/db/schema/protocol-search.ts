@@ -24,6 +24,7 @@ export const researchQuestions = pgTable(
     identifier: text("identifier").notNull(),
     label: text("label").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
+    traceabilityEpoch: bigint("traceability_epoch", { mode: "bigint" }).notNull().default(sql`0`),
     ...timestamps,
     archivedAt: timestamp("archived_at", { withTimezone: true }),
   },

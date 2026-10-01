@@ -151,6 +151,16 @@ A typed exact reference from a finalized Research Question Answer to one ClaimRe
 
 A read-derived annotation describing how current traceability, lifecycle, or revision state differs from an Answer's immutable context. Approved flags are `referenced_claim_revision_superseded`, `referenced_claim_now_withdrawn`, `referenced_claim_no_longer_linked_to_rq`, `referenced_synthesis_revision_superseded`, `referenced_synthesis_now_withdrawn`, and `referenced_synthesis_no_longer_linked_to_rq`. Drift is never persisted and is not a global Answer quality or completion judgment.
 
+## Bounded Research Question reads
+
+The Research Question matrix pages by `(sort_order, id)` and computes each visible Question's traceability diagnostics from latest-link events. The per-question workspace and target ledgers preserve released reader semantics while limiting result rows and using set-based reads. `fullyCovered` reflects only extraction, Evidence Set, synthesis, and Claim diagnostics; Answer drift is a separate count and does not change that badge.
+
+Picker and Answer-candidate membership is separate from current eligibility. Ineligible or archived targets remain browseable with state annotations; Answer candidates that cannot be selected remain visible with a reason. Exact target detail preserves its complete relationship history after unlink, while its current-link diagnostics are empty. Answer snapshots retain exact revision references, and later revision or link changes are shown as drift rather than rewriting the snapshot.
+
+Traceability cursors bind their Project, Question, target type or Field where relevant, page size, filter, epoch, and sequence boundary. The Question epoch advances transactionally on every typed relationship event insert; an epoch change invalidates a traceability continuation with `CONCURRENT_MODIFICATION`, including after a lower-sequence event commits late. Answer history has no traceability epoch: a lower reserved Answer sequence may commit after page one and appear on continuation when it is at or below the captured Answer high-water. This late-commit behavior is specific to Answer history. Included-Paper coverage uses the latest Title Abstract `include` plus latest Full Text `include`, and fresh reads reflect later screening decisions and finalized Extraction revisions; retrieval state does not change the formula after a Full Text decision exists. See `docs/adr/0048-scalable-research-question-workspace.md`.
+
+Measured SELECT budgets are matrix 6, workspace 11, inherited Project layout plus workspace route 12, link 2, exact target detail 2, coverage 1, picker 2, Answer candidates 2, Answer history 2, and exact Answer snapshot 3. Response targets are matrix 256 KiB; link and picker 128 KiB; coverage 256 KiB; Answer history 128 KiB; target history 1 MiB. Exact Answer snapshots return complete pinned context and are output-sized; their response size is measured separately.
+
 ## Project-wide protocol context
 
 Search strategies and search runs defined within the review protocol. These records are independently Project-scoped, represent review-wide search methods, and are never attributed to individual Research Questions.

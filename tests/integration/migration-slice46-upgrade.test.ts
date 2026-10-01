@@ -29,7 +29,11 @@ describe("Slice 46 migration from the released Slice 45 schema", () => {
     const sourceDir = path.resolve(process.cwd(), "drizzle");
     baselineMigrationsDir = fs.mkdtempSync(path.join(os.tmpdir(), "slice46-baseline-migrations-"));
     fs.mkdirSync(path.join(baselineMigrationsDir, "meta"), { recursive: true });
-    for (const file of fs.readdirSync(sourceDir).filter((name) => name.endsWith(".sql") && name !== "0035_retrieved_record_run_order.sql")) {
+    for (const file of fs.readdirSync(sourceDir).filter((name) => name.endsWith(".sql") && ![
+      "0035_retrieved_record_run_order.sql",
+      "0036_ai_synthesis_preparation_history.sql",
+      "0037_research_question_traceability_epoch.sql",
+    ].includes(name))) {
       fs.copyFileSync(path.join(sourceDir, file), path.join(baselineMigrationsDir, file));
     }
     const journalPath = path.join(sourceDir, "meta", "_journal.json");

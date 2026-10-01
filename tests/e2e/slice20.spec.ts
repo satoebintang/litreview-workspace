@@ -154,15 +154,26 @@ test.describe("Slice 20 Research Questions Traceability", () => {
 
     // Link Extraction Field
     const extractionSection = page.locator("section", { hasText: "Extraction Fields" });
+    await extractionSection.getByRole("button", { name: "Browse fields" }).click();
     await extractionSection.locator("select[name='fieldId']").selectOption({ index: 1 });
     await extractionSection.locator("input[name='note']").fill("Primary empirical observation for RQ1");
     await extractionSection.getByRole("button", { name: "Link field" }).click();
     await expect(page.getByText("Traceability link updated.")).toBeVisible();
     await expect(extractionSection.locator(".item-title").filter({ hasText: "Intrusion Reduction Rate" })).toBeVisible();
-    await expect(extractionSection.getByText("92% reduction")).toBeVisible();
+
+    // Paper coverage and complete notes now live on the exact typed target page.
+    await extractionSection.getByRole("link", { name: "Intrusion Reduction Rate" }).click();
+    await expect(page).toHaveURL(/\/traceability\/extraction-field\/[0-9a-f-]+$/);
+    await page.getByRole("button", { name: "Load included Paper coverage" }).click();
+    await expect(page.getByText("92% reduction")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Event History" })).toBeVisible();
+    await expect(page.getByText("Primary empirical observation for RQ1")).toBeVisible();
+    await page.getByRole("link", { name: "Back to Question workspace" }).click();
+    const extractionSectionAfterDetail = page.locator("section", { hasText: "Extraction Fields" });
 
     // Link Evidence Set
     const evidenceSetSection = page.locator("section", { hasText: "Evidence Sets" });
+    await evidenceSetSection.getByRole("button", { name: "Browse sets" }).click();
     await evidenceSetSection.locator("select[name='evidenceSetId']").selectOption({ index: 1 });
     await evidenceSetSection.locator("input[name='note']").fill("Primary evidence collection for RQ1");
     await evidenceSetSection.getByRole("button", { name: "Link set" }).click();
@@ -171,6 +182,7 @@ test.describe("Slice 20 Research Questions Traceability", () => {
 
     // Link Synthesis Statement
     const synthesisSection = page.locator("section", { hasText: "Synthesis Statements" });
+    await synthesisSection.getByRole("button", { name: "Browse statements" }).click();
     await synthesisSection.locator("select[name='statementId']").selectOption({ index: 1 });
     await synthesisSection.locator("input[name='note']").fill("Primary synthesis conclusion for RQ1");
     await synthesisSection.getByRole("button", { name: "Link statement" }).click();
@@ -179,33 +191,30 @@ test.describe("Slice 20 Research Questions Traceability", () => {
 
     // Link Claim
     const claimSection = page.locator("section", { hasText: "Manuscript Claims" });
+    await claimSection.getByRole("button", { name: "Browse claims" }).click();
     await claimSection.locator("select[name='claimId']").selectOption({ index: 1 });
     await claimSection.locator("input[name='note']").fill("Primary assertion for RQ1");
     await claimSection.getByRole("button", { name: "Link claim" }).click();
     await expect(page.getByText("Traceability link updated.")).toBeVisible();
-    await expect(claimSection.locator(".quote-inline").filter({ hasText: "Automated defense is highly effective" })).toBeVisible();
-
-    // Check Event History on Extraction Field
-    await extractionSection.locator("summary", { hasText: "Event History" }).click();
-    await expect(extractionSection.locator("details.revision-history").getByText(/seq #\d+/)).toBeVisible();
-    await expect(extractionSection.locator("details.revision-history").getByText("Primary empirical observation for RQ1")).toBeVisible();
+    await expect(claimSection.getByRole("link", { name: /Automated defense is highly effective/ })).toBeVisible();
 
     // 6. Test Unlink and Re-link cycle
-    await extractionSection.locator("input[name='note']").first().fill("Unlinking to test alternating transition");
-    await extractionSection.getByRole("button", { name: "Unlink" }).click();
+    await extractionSectionAfterDetail.locator("input[name='note']").first().fill("Unlinking to test alternating transition");
+    await extractionSectionAfterDetail.getByRole("button", { name: "Unlink" }).click();
     await expect(page.getByText("Traceability link updated.")).toBeVisible();
-    await expect(extractionSection.getByText("No extraction fields linked to this research question yet.")).toBeVisible();
+    await expect(page.locator("section", { hasText: "Extraction Fields" }).getByText("No extraction fields linked to this research question yet.")).toBeVisible();
 
     // Re-link
-    await extractionSection.locator("select[name='fieldId']").selectOption({ index: 1 });
-    await extractionSection.locator("input[name='note']").fill("Restoring link after verification");
-    await extractionSection.getByRole("button", { name: "Link field" }).click();
+    const extractionSectionAfterUnlink = page.locator("section", { hasText: "Extraction Fields" });
+    await extractionSectionAfterUnlink.getByRole("button", { name: "Browse fields" }).click();
+    await extractionSectionAfterUnlink.locator("select[name='fieldId']").selectOption({ index: 1 });
+    await extractionSectionAfterUnlink.locator("input[name='note']").fill("Restoring link after verification");
+    await extractionSectionAfterUnlink.getByRole("button", { name: "Link field" }).click();
     await expect(page.getByText("Traceability link updated.")).toBeVisible();
-    await expect(extractionSection.locator(".item-title").filter({ hasText: "Intrusion Reduction Rate" })).toBeVisible();
 
     // Verify all 3 events are present in history
-    await extractionSection.locator("summary", { hasText: "Event History" }).click();
-    await expect(extractionSection.locator("summary", { hasText: "3 events" })).toBeVisible();
+    await page.locator("section", { hasText: "Extraction Fields" }).getByRole("link", { name: "Intrusion Reduction Rate" }).click();
+    await expect(page.getByText("Oldest first · 3 events on this page")).toBeVisible();
 
     // 7. Verify Matrix view reflects updated counts
     await page.goto(`/projects/${projectId}/research-questions`);
@@ -234,7 +243,7 @@ test.describe("Slice 20 Research Questions Traceability", () => {
       // Visit RQ2 detail workspace
       await page.goto(`/projects/${projectId}/research-questions/${rq2Id}`);
       await expect(page.getByText("● Question Archived")).toBeVisible();
-      await expect(page.getByText("Read-only question: This research question has been archived.")).toBeVisible();
+      await expect(page.getByText(/Read-only question: this question is archived/)).toBeVisible();
 
       // Ensure linking forms are not shown
       await expect(page.getByRole("button", { name: "Link field" })).toHaveCount(0);
