@@ -48,7 +48,7 @@ test.describe("Slice 2 screening workflow", () => {
     await expect(page.getByText("MAYBE", { exact: true })).toBeVisible();
     await expect(page.getByText("EXCLUDE", { exact: true })).toBeVisible();
     await expect(page.getByText("INCLUDE", { exact: true })).toBeVisible();
-    await expect(page.getByText("3 decisions", { exact: true })).toBeVisible();
+    await expect(page.getByText("3 shown", { exact: true })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/screening/`));
   });
 });

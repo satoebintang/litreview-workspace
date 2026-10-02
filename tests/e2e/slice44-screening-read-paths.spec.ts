@@ -128,7 +128,7 @@ test.describe("Slice 44 title/abstract screening reads", () => {
       await expect(page.getByRole("status")).toContainText("Decision recorded in screening history.");
       await expect(page.locator(".status.screening-included")).toBeVisible();
       const history = page.locator("section.card.section-card.full");
-      await expect(history.getByText("1 decision", { exact: true })).toBeVisible();
+      await expect(history.getByText("1 shown", { exact: true })).toBeVisible();
       await expect(history.getByText("INCLUDE", { exact: true })).toBeVisible();
 
       await page.goto(dashboardUrl);

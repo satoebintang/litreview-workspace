@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { DomainError } from "@/domain/errors";
 import { ensureId } from "@/application/review-services/shared";
+import { mapScreeningPaperNavigation, screeningNavigationQuery } from "./screening-navigation-query";
 
 export const SCREENING_QUEUE_DEFAULT_PAGE_SIZE = 50;
 export const SCREENING_QUEUE_MAX_PAGE_SIZE = 100;
@@ -164,42 +165,6 @@ function queuePageQuery(projectId: string, state: ScreeningQueueState, pageSize:
     limit ${pageSize} offset ${offset}`;
 }
 
-function navigationQuery(projectId: string, paperId: string) {
-  return sql`select
-      project.id as project_id,
-      target.id as paper_id,
-      case when target.id is null then null else (
-        select count(*) + 1
-        from papers before_target
-        where before_target.project_id=project.id
-          and (before_target.created_at, before_target.id) < (target.created_at, target.id)
-      ) end as position,
-      case when target.id is null then null else (
-        select count(*)
-        from papers project_paper
-        where project_paper.project_id=project.id
-      ) end as total_count,
-      case when target.id is null then null else (
-        select previous.id
-        from papers previous
-        where previous.project_id=project.id
-          and (previous.created_at, previous.id) < (target.created_at, target.id)
-        order by previous.created_at desc, previous.id desc
-        limit 1
-      ) end as previous_paper_id,
-      case when target.id is null then null else (
-        select following.id
-        from papers following
-        where following.project_id=project.id
-          and (following.created_at, following.id) > (target.created_at, target.id)
-        order by following.created_at asc, following.id asc
-        limit 1
-      ) end as next_paper_id
-    from projects project
-    left join papers target on target.project_id=project.id and target.id=${paperId}
-    where project.id=${projectId}`;
-}
-
 function queueCounts(row: Row): ScreeningQueueCounts {
   return {
     all: countValue(row.all_count),
@@ -250,19 +215,8 @@ export function createScreeningReadServices(db: Database) {
       ensureId(projectId);
       ensureId(paperId);
 
-      const navigationRow = rows(await db.execute(navigationQuery(projectId, paperId)))[0];
-      if (!navigationRow?.project_id) throw new DomainError("PROJECT_NOT_FOUND", "Project was not found");
-      if (navigationRow.paper_id == null) return null;
-
-      const totalCount = countValue(navigationRow.total_count);
-      const position = countValue(navigationRow.position);
-      return {
-        paperId: String(navigationRow.paper_id),
-        position,
-        totalCount,
-        previousPaperId: navigationRow.previous_paper_id == null ? null : String(navigationRow.previous_paper_id),
-        nextPaperId: navigationRow.next_paper_id == null ? null : String(navigationRow.next_paper_id),
-      };
+      const navigationRow = rows(await db.execute(screeningNavigationQuery(projectId, paperId)))[0];
+      return mapScreeningPaperNavigation(navigationRow);
     },
   };
 }

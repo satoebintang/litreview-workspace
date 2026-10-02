@@ -1,10 +1,12 @@
 # ADR 0050: Scalable Interactive Review Report
 
-**Status:** accepted for Slice 50 implementation
+**Status:** implemented and published as `v0.50.0-slice50`
 
 **Date:** 2026-10-02
 
 **Baseline:** `v0.49.0-slice49`, `81fb52c9ebb7cbd7ed3c60b68aa8238712c1a445`
+
+**Published merge SHA:** `40fed15dc20699128bb1f5b7ed42833c0c087a82`
 
 **Migration:** none; `0038` is absent.
 
