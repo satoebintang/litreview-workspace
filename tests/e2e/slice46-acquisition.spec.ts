@@ -96,7 +96,8 @@ test.describe("Slice 46 scalable acquisition review", () => {
     await expect(page.locator("section.card.section-card").filter({ hasText: "Current Paper match" })).toContainText(`Manual retrieved ${fixture.suffix}`);
 
     await page.goto(`/projects/${fixture.projectId}/review-report`);
-    await expect(page.getByRole("link", { name: "Open bounded Protocol ledger" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open Protocol ledger →" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Download complete Markdown" })).toBeVisible();
     const exportResponse = await page.request.get(`/projects/${fixture.projectId}/review-report/export`);
     expect(exportResponse.ok()).toBe(true);
     const markdown = await exportResponse.text();

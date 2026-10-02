@@ -31,7 +31,7 @@ export default async function ProtocolPage({ params, searchParams }: {
   const [questions, criteria, sources, strategies] = await Promise.all([
     reviewServices.listResearchQuestions(projectId),
     reviewServices.listScreeningCriteria(projectId, true),
-    reviewServices.listSearchSources(projectId),
+    reviewServices.listSearchSources(projectId, true),
     reviewServices.listSearchStrategies(projectId),
   ]) as unknown as [Question[], Criterion[], Source[], Strategy[]];
   let runPage;
@@ -66,9 +66,9 @@ export default async function ProtocolPage({ params, searchParams }: {
           <Link className="button ghost" style={{ marginTop: 14 }} href={`/projects/${projectId}/screening`}>Manage criteria</Link>
         </section>
 
-        <section className="card section-card"><div className="section-heading"><h2>Project-local sources</h2><span className="count">{activeSources.length} active</span></div>
-          <p className="hint">Built-in sources are provisioned with the project. Add a custom source when the protocol needs one.</p>
-          <div className="chip-list">{activeSources.map((source) => <span className="status supported" key={source.id}>{source.displayName} <small>({source.sourceKey})</small></span>)}</div>
+        <section id="sources" className="card section-card"><div className="section-heading"><h2>Project-local sources</h2><span className="count">{sources.length} configured · {activeSources.length} active</span></div>
+          <p className="hint">Built-in sources are provisioned with the project. Archived sources remain visible for contributor navigation. Add a custom source when the protocol needs one.</p>
+          <div className="chip-list">{sources.map((source) => <span className={`status ${source.archivedAt ? "unsupported" : "supported"}`} key={source.id}>{source.displayName} <small>({source.sourceKey}){source.archivedAt ? " · archived" : ""}</small></span>)}</div>
           <form action={createSearchSourceAction}><input type="hidden" name="projectId" value={projectId} /><div className="field"><label htmlFor="search-source-key">Source key</label><input id="search-source-key" name="sourceKey" required placeholder="institutional_index" /></div><div className="field"><label htmlFor="search-source-name">Display name</label><input id="search-source-name" name="displayName" required placeholder="Institutional index" /></div><div className="field"><label htmlFor="search-source-url">Base URL <span className="hint">optional</span></label><input id="search-source-url" name="baseUrl" type="url" placeholder="https://example.org" /></div><div className="field"><label htmlFor="search-source-notes">Notes <span className="hint">optional</span></label><textarea id="search-source-notes" name="notes" /></div><button className="button secondary" type="submit">Add custom source</button></form>
         </section>
 

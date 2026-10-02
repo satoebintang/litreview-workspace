@@ -4,6 +4,7 @@ import type { Database } from "@/db/client";
 import { fullTextScreeningCriteria, researchQuestions, screeningCriteria } from "@/db/schema";
 import type { ReviewReportContributorSelector, ReviewReportContext, ReviewReportContributorResult, ReviewReportRun, ReviewReportSource } from "@/domain/review-report";
 import { DeduplicationDecisionRepository } from "./deduplication-repositories";
+import { safeDatabaseInteger } from "./review-flow-summary";
 
 function stringValue(value: unknown): string { return String(value ?? ""); }
 function numberValue(value: unknown): number { return Number(value ?? 0); }
@@ -182,12 +183,12 @@ export class ReviewReportingRepository {
         from screening_decisions where project_id = ${projectId} and stage = 'title_abstract'
         order by project_id, paper_id, sequence desc
       )
-      select s.exclusion_criterion_id, c.text, c.archived_at, count(*)::int as count
+      select s.exclusion_criterion_id, c.text, c.archived_at, count(*)::text as count
       from current_screening s join screening_criteria c on c.project_id = s.project_id and c.id = s.exclusion_criterion_id and c.type = 'exclusion'
       where s.project_id = ${projectId} and s.decision = 'exclude' and s.exclusion_criterion_id is not null
       group by s.exclusion_criterion_id, c.text, c.archived_at order by c.text, s.exclusion_criterion_id
     `);
-    return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({ criterionId: stringValue(row.exclusion_criterion_id), text: stringValue(row.text), archived: row.archived_at != null, count: numberValue(row.count) }));
+    return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({ criterionId: stringValue(row.exclusion_criterion_id), text: stringValue(row.text), archived: row.archived_at != null, count: safeDatabaseInteger(row.count, "Title/abstract exclusion reason count") }));
   }
 
   async fullTextExclusionReasons(projectId: string) {
@@ -201,7 +202,7 @@ export class ReviewReportingRepository {
         from screening_decisions where project_id = ${projectId} and stage = 'title_abstract'
         order by project_id, paper_id, sequence desc
       )
-      select f.exclusion_criterion_id, c.text, c.archived_at, count(*)::int as count
+      select f.exclusion_criterion_id, c.text, c.archived_at, count(*)::text as count
       from current_full_text f
       join current_title_abstract t on t.project_id=f.project_id and t.paper_id=f.paper_id and t.decision='include'
       join full_text_screening_criteria c on c.project_id=f.project_id and c.id=f.exclusion_criterion_id
@@ -209,7 +210,7 @@ export class ReviewReportingRepository {
       group by f.exclusion_criterion_id, c.text, c.archived_at
       order by c.text, f.exclusion_criterion_id
     `);
-    return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({ criterionId: stringValue(row.exclusion_criterion_id), text: stringValue(row.text), archived: row.archived_at != null, count: numberValue(row.count) }));
+    return (rows as unknown as Array<Record<string, unknown>>).map((row) => ({ criterionId: stringValue(row.exclusion_criterion_id), text: stringValue(row.text), archived: row.archived_at != null, count: safeDatabaseInteger(row.count, "Full-text exclusion reason count") }));
   }
 
   async contributors(projectId: string, selector: ReviewReportContributorSelector): Promise<ReviewReportContributorResult> {
@@ -228,6 +229,11 @@ export class ReviewReportingRepository {
     return { total: mapped.reduce((sum, item) => sum + item.contribution, 0), items: mapped };
   }
 
+  /** Canonical released membership SQL, reused by bounded contributor pages. */
+  metricContributorRows(projectId: string, metric: string) {
+    return this.metricSql(projectId, metric);
+  }
+
   private metricSql(projectId: string, metric: string) {
     const latestMatches = sql`with latest_matches as (select distinct on (project_id, retrieved_record_id) project_id, retrieved_record_id, paper_id, action from retrieved_record_matches where project_id = ${projectId} order by project_id, retrieved_record_id, sequence desc)`;
     const latestScreening = sql`with current_screening as (select distinct on (project_id, paper_id) project_id, paper_id, id, decision, exclusion_criterion_id from screening_decisions where project_id = ${projectId} and stage = 'title_abstract' order by project_id, paper_id, sequence desc)`;
@@ -238,7 +244,7 @@ export class ReviewReportingRepository {
       case "currentlyResolvedRecords": return sql`${latestMatches} select rr.id, rr.search_run_id, rr.search_source_id, rr.title from retrieved_records rr join latest_matches lm on lm.project_id=rr.project_id and lm.retrieved_record_id=rr.id and lm.action='linked' where rr.project_id=${projectId} order by rr.id`;
       case "unresolvedRecords": return sql`${latestMatches} select rr.id, rr.search_run_id, rr.search_source_id, rr.title from retrieved_records rr left join latest_matches lm on lm.project_id=rr.project_id and lm.retrieved_record_id=rr.id and lm.action='linked' where rr.project_id=${projectId} and lm.retrieved_record_id is null order by rr.id`;
       case "acquisitionDerivedPapers": return sql`${latestMatches} select p.id, p.title from papers p where p.project_id=${projectId} and exists (select 1 from latest_matches lm where lm.project_id=p.project_id and lm.paper_id=p.id and lm.action='linked') order by p.id`;
-      case "duplicateRecordsCollapsed": return sql`${latestMatches} select p.id, p.title, count(*)::int as record_count from papers p join latest_matches lm on lm.project_id=p.project_id and lm.paper_id=p.id and lm.action='linked' where p.project_id=${projectId} group by p.id, p.title having count(*) > 1 order by p.id`;
+      case "duplicateRecordsCollapsed": return sql`${latestMatches} select p.id, p.title, count(*) as record_count from papers p join latest_matches lm on lm.project_id=p.project_id and lm.paper_id=p.id and lm.action='linked' where p.project_id=${projectId} group by p.id, p.title having count(*) > 1 order by p.id`;
       case "historicalAcquisitionOnlyPapers": return sql`${latestMatches} select p.id, p.title from papers p where p.project_id=${projectId} and exists (select 1 from retrieved_record_matches hm where hm.project_id=p.project_id and hm.paper_id=p.id and hm.action='linked') and not exists (select 1 from latest_matches lm where lm.project_id=p.project_id and lm.paper_id=p.id and lm.action='linked') order by p.id`;
       case "manualPapers": return sql`select p.id, p.title from papers p where p.project_id=${projectId} and not exists (select 1 from retrieved_record_matches hm where hm.project_id=p.project_id and hm.paper_id=p.id and hm.action='linked') order by p.id`;
       case "sameWorkDecisionPairs": case "differentWorkDecisionPairs": return sql`with latest_decisions as (select distinct on (project_id, left_retrieved_record_id, right_retrieved_record_id) left_retrieved_record_id, right_retrieved_record_id, decision from retrieved_record_deduplication_decisions where project_id=${projectId} order by project_id, left_retrieved_record_id, right_retrieved_record_id, sequence desc) select left_retrieved_record_id, right_retrieved_record_id, decision from latest_decisions where decision=${metric === "sameWorkDecisionPairs" ? "same_work" : "different_work"} order by left_retrieved_record_id, right_retrieved_record_id`;

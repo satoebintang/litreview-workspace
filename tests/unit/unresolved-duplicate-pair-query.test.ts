@@ -13,17 +13,22 @@ describe("unresolved retrieved-record pair query contract", () => {
     expect(expression).toBe("btrim(lower(regexp_replace(regexp_replace(btrim(a.doi), '^https?://(dx\\.)?doi\\.org/', '', 'i'), '^doi:[[:space:]]*', '', 'i')))");
   });
 
-  it("uses shared released candidate predicates, including blank-title behavior, and an all-history anti-join", () => {
+  it("prefilters to shared signal signatures while preserving blank-title equivalence and adjudication exclusion", () => {
     const query = dialect.sqlToQuery(unresolvedDuplicatePairCtes("00000000-0000-0000-0000-000000000034")).sql.toLowerCase();
     expect(query).toContain("candidate_pairs as (");
-    expect(query).toContain("a.project_id = $1");
+    expect(query).toContain("doi_duplicate_keys as materialized");
+    expect(query).toContain("source_record_duplicate_keys as materialized");
+    expect(query).toContain("title_year_duplicate_keys as materialized");
+    expect(query).toContain("having count(*) > 1");
     expect(query).toContain("a.id < b.id");
-    expect(query).toContain("a.search_source_id = b.search_source_id");
-    expect(query).toContain("a.source_record_id = b.source_record_id");
-    expect(query).toContain("b.publication_year = a.publication_year");
+    expect(query).toContain("a.search_source_id = k.search_source_id");
+    expect(query).toContain("a.source_record_id = k.source_record_id");
+    expect(query).toContain("a.publication_year = k.publication_year");
+    expect(query).toContain("lower(regexp_replace(btrim(a.title)");
     expect(query).not.toContain("btrim(a.title) <> ''");
-    expect(query).toMatch(/\bor\b/);
+    expect(query.match(/\bunion\b/g)).toHaveLength(2);
     expect(query).toContain("where not exists");
+    expect(query).toContain("sequence desc, id desc");
   });
 
   it("limits migration 0032 to the two approved index changes", () => {
