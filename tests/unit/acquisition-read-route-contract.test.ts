@@ -46,13 +46,24 @@ describe("Slice 46 interactive acquisition route contracts", () => {
     expect(actions).toContain("requireRecordForRun(projectId, runId, recordId)");
   });
 
-  it("keeps interactive reporting compact while the export calls the complete report", () => {
+  it("uses bounded summary and redirects legacy drilldowns before reading it while export stays complete", () => {
     const page = source("src/app/projects/[projectId]/review-report/page.tsx");
     const exportRoute = source("src/app/projects/[projectId]/review-report/export/route.ts");
-    expect(page).toContain("getInteractiveReviewReport(projectId)");
+    expect(page).toContain("getInteractiveReviewReportSummary(projectId)");
+    expect(page).not.toContain("getInteractiveReviewReport(projectId)");
     expect(page).not.toContain("getReviewReport(projectId)");
     expect(page).not.toContain("identification.runs.map");
-    expect(page).toContain("historicalSnapshotCount");
+    expect(page.indexOf("redirect(`/projects/${projectId}/review-report/contributors/metric/${metric}`)")).toBeLessThan(page.indexOf("getInteractiveReviewReportSummary(projectId)"));
+    expect(page.indexOf("if (metric && metricKeys.has(metric))")).toBeLessThan(page.indexOf("if (sourceId && sourceMetric"));
+    expect(page.indexOf("if (sourceId && sourceMetric")).toBeLessThan(page.indexOf("if (criterionId)"));
+    expect(page.indexOf("if (criterionId)")).toBeLessThan(page.indexOf("if (fullTextCriterionId)"));
+    expect(page.indexOf("if (fullTextCriterionId)")).toBeLessThan(page.indexOf("if (overlap === \"1\")"));
+    expect(page).toContain("context/questions");
+    expect(page).toContain("context/screening-criteria");
+    expect(page).toContain("context/full-text-criteria");
+    expect(page).toContain("context/sources");
+    expect(page).toContain('kind="exclusion-reasons"');
+    expect(page).toContain('kind="full-text-exclusion-reasons"');
     expect(exportRoute).toContain("getReviewReport(projectId)");
     expect(exportRoute).toContain("serializeReviewFlowMarkdown(projection)");
   });

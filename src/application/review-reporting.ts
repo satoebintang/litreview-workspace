@@ -1,4 +1,5 @@
 import type { Database } from "@/db/client";
+import type { InteractiveReviewReportSummary, ReviewReportReasonAggregatePage } from "@/domain/review-report";
 import type {
   ReviewReportContributorSelector,
   ReviewReportContributorResult,
@@ -10,8 +11,9 @@ import type {
   ReviewReportSupportMapping,
 } from "@/domain/review-report";
 import { ReviewReportingRepository } from "./review-reporting-repositories";
+import { safeDatabaseInteger } from "./review-flow-summary";
 
-const n = (summary: Record<string, unknown>, key: string) => Number(summary[key] ?? 0);
+const n = (summary: Record<string, unknown>, key: string) => safeDatabaseInteger(summary[key], `Review report metric ${key}`);
 
 const labels: Record<ReviewReportMetricKey, string> = {
   distinctSearchRuns: "Recorded search runs",
@@ -152,6 +154,51 @@ export function buildReviewReportProjection(input: ReviewReportInputs): ReviewRe
     finalEligibility: { metrics: ["finallyIncluded", "legacyAnalysisAwaitingFullText"].map((key) => metric(summary, key as ReviewReportMetricKey)) },
     supportMatrix,
     limitations,
+  };
+}
+
+/** Builds the bounded interactive DTO through the same released presentation derivation as export. */
+export function buildInteractiveReviewReportSummary(input: {
+  summary: Record<string, unknown>;
+  project: { id: string; title: string };
+  overlappingPaperCount: number;
+  contextCounts: InteractiveReviewReportSummary["contextCounts"];
+  exclusionReasons: ReviewReportReasonAggregatePage;
+  fullTextExclusionReasons: ReviewReportReasonAggregatePage;
+}): InteractiveReviewReportSummary {
+  const projection = buildReviewReportProjection({
+    summary: input.summary,
+    context: {
+      project: input.project,
+      activeResearchQuestions: [],
+      activeCriteria: [],
+      activeFullTextCriteria: [],
+      sources: [],
+      runs: [],
+      overlappingPaperCount: input.overlappingPaperCount,
+    },
+    exclusionReasons: input.exclusionReasons.items.map(({ criterionId, text, archived, count }) => ({ criterionId, text, archived, count })),
+    fullTextExclusionReasons: input.fullTextExclusionReasons.items.map(({ criterionId, text, archived, count }) => ({ criterionId, text, archived, count })),
+  });
+  const titleReasons = input.exclusionReasons.items.map((reason) => ({
+    ...reason,
+    contributor: { scope: "exclusionReason" as const, criterionId: reason.criterionId },
+  }));
+  const fullTextReasons = input.fullTextExclusionReasons.items.map((reason) => ({
+    ...reason,
+    contributor: { scope: "fullTextExclusionReason" as const, criterionId: reason.criterionId },
+  }));
+  return {
+    project: input.project,
+    identification: { metrics: projection.identification.metrics, overlappingPaperCount: input.overlappingPaperCount },
+    deduplication: projection.deduplication,
+    screening: { metrics: projection.screening.metrics, exclusionReasons: { ...input.exclusionReasons, items: titleReasons } },
+    fullTextEligibility: { metrics: projection.fullTextEligibility.metrics, exclusionReasons: { ...input.fullTextExclusionReasons, items: fullTextReasons } },
+    fullTextRetrieval: projection.fullTextRetrieval,
+    finalEligibility: projection.finalEligibility,
+    supportMatrix: projection.supportMatrix,
+    limitations: projection.limitations,
+    contextCounts: input.contextCounts,
   };
 }
 

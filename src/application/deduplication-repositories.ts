@@ -118,71 +118,142 @@ export class DeduplicationDecisionRepository {
 
   async flowSummary(projectId: string, tx: any = this.db) {
     const rows = await tx.execute(sql`
-      with latest_matches as (
+      with latest_matches as materialized (
         select distinct on (project_id, retrieved_record_id) project_id, retrieved_record_id, paper_id, action
         from retrieved_record_matches where project_id = ${projectId}
-        order by project_id, retrieved_record_id, sequence desc
+        order by project_id, retrieved_record_id, sequence desc, id desc
       ), current_screening as (
         select distinct on (project_id, paper_id) project_id, paper_id, decision, exclusion_criterion_id
         from screening_decisions where project_id = ${projectId} and stage = 'title_abstract'
-        order by project_id, paper_id, sequence desc
+        order by project_id, paper_id, sequence desc, id desc
       ), current_full_text as (
         select distinct on (project_id, paper_id) project_id, paper_id, decision
         from full_text_screening_decisions where project_id = ${projectId}
-        order by project_id, paper_id, sequence desc
+        order by project_id, paper_id, sequence desc, id desc
       ), current_retrieval as (
         select distinct on (project_id, paper_id) project_id, paper_id, outcome
         from full_text_retrieval_attempts where project_id = ${projectId}
-        order by project_id, paper_id, sequence desc
+        order by project_id, paper_id, sequence desc, id desc
       ), current_decisions as (
         select distinct on (project_id, left_retrieved_record_id, right_retrieved_record_id)
           project_id, left_retrieved_record_id, right_retrieved_record_id, decision
         from retrieved_record_deduplication_decisions where project_id = ${projectId}
-        order by project_id, left_retrieved_record_id, right_retrieved_record_id, sequence desc
+        order by project_id, left_retrieved_record_id, right_retrieved_record_id, sequence desc, id desc
       ), ${unresolvedDuplicatePairCtes(projectId)}, paper_classification as (
-        select p.id,
-          exists (select 1 from latest_matches lm where lm.project_id=p.project_id and lm.paper_id=p.id and lm.action='linked') as current_acquisition,
-          exists (select 1 from retrieved_record_matches hm where hm.project_id=p.project_id and hm.paper_id=p.id and hm.action='linked') as historical_acquisition
-        from papers p where p.project_id=${projectId}
+        select p.id, current_acquisition.paper_id is not null as current_acquisition,
+          historical_acquisition.paper_id is not null as historical_acquisition
+        from papers p
+        left join (select distinct project_id, paper_id from latest_matches where action='linked') current_acquisition
+          on current_acquisition.project_id=p.project_id and current_acquisition.paper_id=p.id
+        left join (select distinct project_id, paper_id from retrieved_record_matches where project_id=${projectId} and action='linked') historical_acquisition
+          on historical_acquisition.project_id=p.project_id and historical_acquisition.paper_id=p.id
+        where p.project_id=${projectId}
+      ), run_metrics as (
+        select count(*) as distinct_search_runs, coalesce(sum(reported_result_count), 0) as reported_results_total,
+          count(distinct search_source_id) as distinct_sources
+        from search_runs where project_id=${projectId}
+      ), record_metrics as (
+        select count(*) as retrieved_records,
+          count(*) filter (where lm.action='linked') as currently_resolved_records,
+          count(*) filter (where lm.action is distinct from 'linked') as unresolved_records
+        from retrieved_records r left join latest_matches lm
+          on lm.project_id=r.project_id and lm.retrieved_record_id=r.id
+        where r.project_id=${projectId}
+      ), pair_decision_metrics as (
+        select count(*) filter (where decision='same_work') as same_work_decision_pairs,
+          count(*) filter (where decision='different_work') as different_work_decision_pairs
+        from current_decisions where project_id=${projectId}
+      ), paper_metrics as (
+        select count(*) as papers_in_screening_population,
+          count(*) filter (where current_acquisition) as acquisition_derived_papers,
+          count(*) filter (where historical_acquisition and not current_acquisition) as historical_acquisition_only_papers,
+          count(*) filter (where not historical_acquisition) as manual_papers
+        from paper_classification
+      ), screening_metrics as (
+        select count(*) filter (where s.paper_id is null) as unscreened,
+          count(*) filter (where s.decision='include') as included,
+          count(*) filter (where s.decision='exclude') as excluded,
+          count(*) filter (where s.decision='maybe') as maybe
+        from papers p left join current_screening s on s.project_id=p.project_id and s.paper_id=p.id
+        where p.project_id=${projectId}
+      ), retrieval_history as materialized (
+        select project_id, paper_id, bool_or(outcome='retrieved') as ever_retrieved
+        from full_text_retrieval_attempts where project_id=${projectId}
+        group by project_id, paper_id
+      ), full_text_metrics as (
+        select count(*) filter (where s.decision='include') as full_text_eligible,
+          count(*) filter (where s.decision='include') as full_text_retrieval_eligible,
+          count(*) filter (where s.decision='include' and f.paper_id is null) as full_text_awaiting,
+          count(*) filter (where s.decision='include' and f.decision in ('include','exclude','maybe')) as full_text_assessed,
+          count(*) filter (where s.decision='include' and f.decision='include') as full_text_included,
+          count(*) filter (where s.decision='include' and f.decision='exclude') as full_text_excluded,
+          count(*) filter (where s.decision='include' and f.decision='maybe') as full_text_maybe,
+          count(*) filter (where f.paper_id is not null and coalesce(s.decision, '') <> 'include') as full_text_conflicts,
+          count(*) filter (where s.decision='include' and f.decision='include') as finally_included,
+          count(*) filter (where s.decision='include' and h.paper_id is null) as full_text_not_sought,
+          count(*) filter (where s.decision='include' and r.outcome='pending') as full_text_retrieval_pending,
+          count(*) filter (where s.decision='include' and r.outcome='retrieved') as full_text_retrieved,
+          count(*) filter (where s.decision='include' and r.outcome='unavailable') as full_text_unavailable,
+          count(*) filter (where s.decision='include' and h.paper_id is not null) as full_text_sought,
+          count(*) filter (where h.ever_retrieved) as full_text_ever_retrieved,
+          count(*) filter (where h.paper_id is not null) as full_text_ever_sought,
+          count(*) filter (where h.paper_id is not null and coalesce(s.decision, '') <> 'include') as full_text_retrieval_conflicts
+        from papers p
+        left join current_screening s on s.project_id=p.project_id and s.paper_id=p.id
+        left join current_full_text f on f.project_id=p.project_id and f.paper_id=p.id
+        left join current_retrieval r on r.project_id=p.project_id and r.paper_id=p.id
+        left join retrieval_history h on h.project_id=p.project_id and h.paper_id=p.id
+        where p.project_id=${projectId}
+      ), legacy_full_text_without_retrieval as (
+        select count(*) as count
+        from (select distinct project_id, paper_id from full_text_screening_decisions where project_id=${projectId}) f
+        where not exists (select 1 from retrieval_history h where h.project_id=f.project_id and h.paper_id=f.paper_id)
+      ), legacy_analysis_awaiting_full_text as (
+        select count(*) as count
+        from (select distinct project_id, paper_id from extraction_value_revisions where project_id=${projectId} and finalized_at is not null) e
+        where not exists (select 1 from current_full_text f where f.project_id=e.project_id and f.paper_id=e.paper_id)
       )
       select
-        (select count(*)::int from search_runs where project_id=${projectId}) as distinct_search_runs,
-        coalesce((select sum(reported_result_count)::int from search_runs where project_id=${projectId}),0)::int as reported_results_total,
-        (select count(*)::int from retrieved_records where project_id=${projectId}) as retrieved_records,
-        (select count(distinct search_source_id)::int from search_runs where project_id=${projectId}) as distinct_sources,
-        (select count(*)::int from latest_matches where project_id=${projectId} and action='linked') as currently_resolved_records,
-        (select count(*)::int from retrieved_records r where r.project_id=${projectId} and not exists (select 1 from latest_matches lm where lm.project_id=r.project_id and lm.retrieved_record_id=r.id and lm.action='linked')) as unresolved_records,
-        (select count(*)::int from unresolved_candidate_pairs) as unresolved_duplicate_pairs,
-        (select count(*)::int from current_decisions where project_id=${projectId} and decision='same_work') as same_work_decision_pairs,
-        (select count(*)::int from current_decisions where project_id=${projectId} and decision='different_work') as different_work_decision_pairs,
-        (select count(*)::int from paper_classification where current_acquisition) as acquisition_derived_papers,
-        ((select count(*)::int from latest_matches where project_id=${projectId} and action='linked') - (select count(*)::int from paper_classification where current_acquisition))::int as duplicate_records_collapsed,
-        (select count(*)::int from papers where project_id=${projectId}) as papers_in_screening_population,
-        (select count(*)::int from papers p where p.project_id=${projectId} and not exists (select 1 from current_screening s where s.project_id=p.project_id and s.paper_id=p.id)) as unscreened,
-        (select count(*)::int from current_screening where project_id=${projectId} and decision='include') as included,
-        (select count(*)::int from current_screening where project_id=${projectId} and decision='exclude') as excluded,
-        (select count(*)::int from current_screening where project_id=${projectId} and decision='maybe') as maybe,
-        (select count(*)::int from current_screening where project_id=${projectId} and decision='include') as full_text_eligible,
-        (select count(*)::int from current_screening where project_id=${projectId} and decision='include') as full_text_retrieval_eligible,
-        (select count(*)::int from current_screening s where s.project_id=${projectId} and s.decision='include' and not exists (select 1 from current_full_text f where f.project_id=s.project_id and f.paper_id=s.paper_id)) as full_text_awaiting,
-        (select count(*)::int from current_screening s join current_full_text f on f.project_id=s.project_id and f.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and f.decision in ('include','exclude','maybe')) as full_text_assessed,
-        (select count(*)::int from current_screening s join current_full_text f on f.project_id=s.project_id and f.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and f.decision='include') as full_text_included,
-        (select count(*)::int from current_screening s join current_full_text f on f.project_id=s.project_id and f.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and f.decision='exclude') as full_text_excluded,
-        (select count(*)::int from current_screening s join current_full_text f on f.project_id=s.project_id and f.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and f.decision='maybe') as full_text_maybe,
-        (select count(*)::int from current_full_text f left join current_screening s on s.project_id=f.project_id and s.paper_id=f.paper_id where f.project_id=${projectId} and coalesce(s.decision, '') <> 'include') as full_text_conflicts,
-        (select count(*)::int from current_screening s join current_full_text f on f.project_id=s.project_id and f.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and f.decision='include') as finally_included,
-        (select count(distinct r.paper_id)::int from extraction_value_revisions r left join current_full_text f on f.project_id=r.project_id and f.paper_id=r.paper_id where r.project_id=${projectId} and r.finalized_at is not null and f.paper_id is null) as legacy_analysis_awaiting_full_text,
-        (select count(*)::int from current_screening s where s.project_id=${projectId} and s.decision='include' and not exists (select 1 from full_text_retrieval_attempts r where r.project_id=s.project_id and r.paper_id=s.paper_id)) as full_text_not_sought,
-        (select count(*)::int from current_screening s join current_retrieval r on r.project_id=s.project_id and r.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and r.outcome='pending') as full_text_retrieval_pending,
-        (select count(*)::int from current_screening s join current_retrieval r on r.project_id=s.project_id and r.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and r.outcome='retrieved') as full_text_retrieved,
-        (select count(*)::int from current_screening s join current_retrieval r on r.project_id=s.project_id and r.paper_id=s.paper_id where s.project_id=${projectId} and s.decision='include' and r.outcome='unavailable') as full_text_unavailable,
-        (select count(*)::int from current_screening s where s.project_id=${projectId} and s.decision='include' and exists (select 1 from full_text_retrieval_attempts r where r.project_id=s.project_id and r.paper_id=s.paper_id)) as full_text_sought,
-        (select count(distinct r.paper_id)::int from full_text_retrieval_attempts r where r.project_id=${projectId}) as full_text_ever_sought,
-        (select count(distinct r.paper_id)::int from full_text_retrieval_attempts r where r.project_id=${projectId} and r.outcome='retrieved') as full_text_ever_retrieved,
-        (select count(distinct f.paper_id)::int from full_text_screening_decisions f where f.project_id=${projectId} and not exists (select 1 from full_text_retrieval_attempts r where r.project_id=f.project_id and r.paper_id=f.paper_id)) as legacy_full_text_without_retrieval,
-        (select count(distinct r.paper_id)::int from full_text_retrieval_attempts r left join current_screening s on s.project_id=r.project_id and s.paper_id=r.paper_id where r.project_id=${projectId} and coalesce(s.decision,'') <> 'include') as full_text_retrieval_conflicts,
-        (select count(*)::int from paper_classification where historical_acquisition and not current_acquisition) as historical_acquisition_only_papers,
-        (select count(*)::int from paper_classification where not historical_acquisition) as manual_papers
+        run_metrics.distinct_search_runs::text as distinct_search_runs,
+        run_metrics.reported_results_total::text as reported_results_total,
+        record_metrics.retrieved_records::text as retrieved_records,
+        run_metrics.distinct_sources::text as distinct_sources,
+        record_metrics.currently_resolved_records::text as currently_resolved_records,
+        record_metrics.unresolved_records::text as unresolved_records,
+        (select count(*)::text from unresolved_candidate_pairs) as unresolved_duplicate_pairs,
+        pair_decision_metrics.same_work_decision_pairs::text as same_work_decision_pairs,
+        pair_decision_metrics.different_work_decision_pairs::text as different_work_decision_pairs,
+        paper_metrics.acquisition_derived_papers::text as acquisition_derived_papers,
+        (record_metrics.currently_resolved_records - paper_metrics.acquisition_derived_papers)::text as duplicate_records_collapsed,
+        paper_metrics.papers_in_screening_population::text as papers_in_screening_population,
+        screening_metrics.unscreened::text as unscreened,
+        screening_metrics.included::text as included,
+        screening_metrics.excluded::text as excluded,
+        screening_metrics.maybe::text as maybe,
+        full_text_metrics.full_text_eligible::text as full_text_eligible,
+        full_text_metrics.full_text_retrieval_eligible::text as full_text_retrieval_eligible,
+        full_text_metrics.full_text_awaiting::text as full_text_awaiting,
+        full_text_metrics.full_text_assessed::text as full_text_assessed,
+        full_text_metrics.full_text_included::text as full_text_included,
+        full_text_metrics.full_text_excluded::text as full_text_excluded,
+        full_text_metrics.full_text_maybe::text as full_text_maybe,
+        full_text_metrics.full_text_conflicts::text as full_text_conflicts,
+        full_text_metrics.finally_included::text as finally_included,
+        legacy_analysis_awaiting_full_text.count::text as legacy_analysis_awaiting_full_text,
+        full_text_metrics.full_text_not_sought::text as full_text_not_sought,
+        full_text_metrics.full_text_retrieval_pending::text as full_text_retrieval_pending,
+        full_text_metrics.full_text_retrieved::text as full_text_retrieved,
+        full_text_metrics.full_text_unavailable::text as full_text_unavailable,
+        full_text_metrics.full_text_sought::text as full_text_sought,
+        full_text_metrics.full_text_ever_sought::text as full_text_ever_sought,
+        full_text_metrics.full_text_ever_retrieved::text as full_text_ever_retrieved,
+        legacy_full_text_without_retrieval.count::text as legacy_full_text_without_retrieval,
+        full_text_metrics.full_text_retrieval_conflicts::text as full_text_retrieval_conflicts,
+        paper_metrics.historical_acquisition_only_papers::text as historical_acquisition_only_papers,
+        paper_metrics.manual_papers::text as manual_papers
+      from run_metrics cross join record_metrics cross join pair_decision_metrics cross join paper_metrics
+      cross join screening_metrics cross join full_text_metrics cross join legacy_analysis_awaiting_full_text
+      cross join legacy_full_text_without_retrieval
     `);
     return (rows as unknown as Record<string, unknown>[])[0] ?? null;
   }

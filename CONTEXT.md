@@ -526,8 +526,46 @@ migration: `0038` is absent. Benchmark evidence is retained in
 the released baseline SHA and marks implementation SHA as null for the
 uncommitted tree.
 
-**Scalability work is not complete after Slice 49.** Remaining ranked debt:
-Review Report contributors; workflow histories; imports/intakes;
-manuscript/document histories; Protocol/report context; and configuration
-lists. Do not treat the Slice 49 queue as a scalability closeout for those
-read paths or start Slice 50 without separate authorization.
+**Scalability work is not complete after Slice 49.** Slice 50 separately
+addresses the interactive Review Report summary, context, and contributors.
+Workflow histories; imports/intakes; manuscript/document histories; and
+configuration lists remain separate scope candidates. Dense exact deduplication
+counts also remain output-sensitive inside PostgreSQL.
+
+## Slice 50 Interactive Review Report
+
+The normal Review Flow Report page uses a bounded summary (at most four
+SELECTs and 256 KiB of serialized DTO data). It retains the released 37 metric
+definitions, explanations, support matrix, limitation order, overlap count,
+context counts, and the first ten title/abstract and full-text reason groups.
+Questions, criteria, SearchSources, SearchRuns, and full histories are not
+loaded into the summary. The full report projection and Markdown serializer
+remain complete for export.
+
+Questions, screening criteria, full-text criteria, represented sources, and
+both reason collections have dedicated live-keyset context pages. Defaults are
+10 rows and maxima are 25; pages use SQL `LIMIT pageSize + 1` and return no more
+than 26 rows in at most two SELECTs. Contributor pages cover all 37 metrics,
+five source metrics, both reason selectors, and overlap. They default to 25
+items and clamp at 50, use at most two SELECTs, and expose the exact
+`contributionTotal` without an exact contributor-row count. Weighted sums stay
+in PostgreSQL until checked for JavaScript safe-integer range. Zero-result
+SearchRuns remain contributors with contribution zero.
+
+Latest append-only events are reduced before outcome/action filters are
+applied. Source acquisition Paper labels continue to come from the first
+currently linked RetrievedRecord by ID while Paper remains identity. Legacy
+full-text retrieval selectors preserve the released
+`fullTextScreeningDecision` kind and blank decision identity where the old
+reader did so. Legacy query-panel URLs redirect before summary loading with
+released selector precedence. Context and contributor cursors bind Project,
+selector, and page size but do not snapshot the live state.
+
+Unresolved deduplication contributors reuse Slice 49 canonical predicates and
+bounded pair-ID probing, including all signal reasons and adjudication
+exclusion. Exact dense totals still evaluate an output-sensitive candidate
+relation and are not O(page size). No report persistence, epochs, snapshots,
+denormalized tables, or migration 0038 were added.
+
+The complete design and verification evidence are in
+[`docs/adr/0050-scalable-interactive-review-report.md`](docs/adr/0050-scalable-interactive-review-report.md).

@@ -76,11 +76,12 @@ test.describe("Slice 10 deduplication and review flow", () => {
     await expect(page.getByText("Results reported by recorded searches", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Full-text Eligibility" })).toBeVisible();
     await page.getByText("Results reported by recorded searches", { exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Contributors" })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/review-report/contributors/metric/reportedResultsTotal$`));
+    await expect(page.getByRole("heading", { name: "Metric: reportedResultsTotal" })).toBeVisible();
     await expect(page.getByText("searchRun", { exact: true }).first()).toBeVisible();
     await page.goto(`/projects/${projectId}/review-report`);
     const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("link", { name: "Download Markdown" }).click();
+    await page.getByRole("link", { name: "Download complete Markdown" }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toBe("review-flow-report.md");
     const exportPath = await download.path();

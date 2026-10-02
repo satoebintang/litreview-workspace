@@ -2,44 +2,21 @@ import type { FullTextScreeningCriterion, Paper, ResearchQuestion, ScreeningCrit
 
 export type ReportMetricSupport = "supported" | "partially_supported" | "unsupported";
 
-export type ReviewReportMetricKey =
-  | "distinctSearchRuns"
-  | "reportedResultsTotal"
-  | "retrievedRecords"
-  | "distinctSources"
-  | "currentlyResolvedRecords"
-  | "unresolvedRecords"
-  | "unresolvedDuplicatePairs"
-  | "sameWorkDecisionPairs"
-  | "differentWorkDecisionPairs"
-  | "acquisitionDerivedPapers"
-  | "duplicateRecordsCollapsed"
-  | "papersInScreeningPopulation"
-  | "unscreened"
-  | "included"
-  | "excluded"
-  | "maybe"
-  | "fullTextEligible"
-  | "fullTextAwaiting"
-  | "fullTextAssessed"
-  | "fullTextIncluded"
-  | "fullTextExcluded"
-  | "fullTextMaybe"
-  | "fullTextConflicts"
-  | "fullTextRetrievalEligible"
-  | "fullTextNotSought"
-  | "fullTextRetrievalPending"
-  | "fullTextRetrieved"
-  | "fullTextUnavailable"
-  | "fullTextSought"
-  | "fullTextEverSought"
-  | "fullTextEverRetrieved"
-  | "legacyFullTextWithoutRetrieval"
-  | "fullTextRetrievalConflicts"
-  | "finallyIncluded"
-  | "legacyAnalysisAwaitingFullText"
-  | "historicalAcquisitionOnlyPapers"
-  | "manualPapers";
+export const REVIEW_REPORT_METRIC_KEYS = [
+  "distinctSearchRuns", "reportedResultsTotal", "retrievedRecords", "distinctSources",
+  "currentlyResolvedRecords", "unresolvedRecords", "unresolvedDuplicatePairs",
+  "sameWorkDecisionPairs", "differentWorkDecisionPairs", "acquisitionDerivedPapers",
+  "duplicateRecordsCollapsed", "papersInScreeningPopulation", "unscreened", "included",
+  "excluded", "maybe", "fullTextEligible", "fullTextAwaiting", "fullTextAssessed",
+  "fullTextIncluded", "fullTextExcluded", "fullTextMaybe", "fullTextConflicts",
+  "fullTextRetrievalEligible", "fullTextNotSought", "fullTextRetrievalPending",
+  "fullTextRetrieved", "fullTextUnavailable", "fullTextSought", "fullTextEverSought",
+  "fullTextEverRetrieved", "legacyFullTextWithoutRetrieval", "fullTextRetrievalConflicts",
+  "finallyIncluded", "legacyAnalysisAwaitingFullText", "historicalAcquisitionOnlyPapers",
+  "manualPapers",
+] as const;
+
+export type ReviewReportMetricKey = (typeof REVIEW_REPORT_METRIC_KEYS)[number];
 
 export type ReviewReportSupportKey =
   | "records_identified_from_recorded_searches"
@@ -170,3 +147,78 @@ export type ReviewReportInputs = {
 };
 
 export type ReviewReportPaper = Pick<Paper, "id" | "title">;
+
+export type ReviewReportContextKind =
+  | "questions"
+  | "screening-criteria"
+  | "full-text-criteria"
+  | "sources"
+  | "exclusion-reasons"
+  | "full-text-exclusion-reasons";
+
+export type ReviewReportReasonAggregate = {
+  criterionId: string;
+  text: string;
+  textTruncated: boolean;
+  archived: boolean;
+  count: number;
+  contributor: ReviewReportContributorSelector;
+};
+
+export type ReviewReportContextPageItem =
+  | { kind: "question"; id: string; identifier: string; identifierTruncated: boolean; label: string; labelTruncated: boolean }
+  | { kind: "screeningCriterion"; id: string; criterionType: "inclusion" | "exclusion"; text: string; textTruncated: boolean }
+  | { kind: "fullTextCriterion"; id: string; text: string; textTruncated: boolean }
+  | { kind: "searchSource"; id: string; sourceKey: string; sourceKeyTruncated: boolean; displayName: string; displayNameTruncated: boolean; archived: boolean }
+  | { kind: "exclusionReason"; criterionId: string; text: string; textTruncated: boolean; archived: boolean; count: number; contributor: ReviewReportContributorSelector }
+  | { kind: "fullTextExclusionReason"; criterionId: string; text: string; textTruncated: boolean; archived: boolean; count: number; contributor: ReviewReportContributorSelector };
+
+export type ReviewReportContextPage = {
+  kind: ReviewReportContextKind;
+  items: ReviewReportContextPageItem[];
+  pageSize: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
+export type BoundedReviewReportContributor =
+  | { kind: "searchRun"; id: string; label: string; labelTruncated: boolean; contribution: number; sourceId: string }
+  | { kind: "retrievedRecord"; id: string; label: string; labelTruncated: boolean; contribution: number; searchRunId: string; sourceId: string }
+  | { kind: "paper"; id: string; label: string; labelTruncated: boolean; contribution: number; paperId?: string; recordCount?: number }
+  | { kind: "deduplicationPair"; id: string; label: string; labelTruncated: boolean; contribution: number; leftRecordId: string; rightRecordId: string; strength?: "strong" | "possible" }
+  | { kind: "screeningDecision"; id: string; label: string; labelTruncated: boolean; contribution: number; paperId: string; decision: string }
+  | { kind: "fullTextScreeningDecision"; id: string; label: string; labelTruncated: boolean; contribution: number; paperId: string; decision: string }
+  | { kind: "searchSource"; id: string; label: string; labelTruncated: boolean; contribution: number };
+
+export type ReviewReportContributorPage = {
+  contributionTotal: number;
+  items: BoundedReviewReportContributor[];
+  pageSize: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
+export type ReviewReportReasonAggregatePage = {
+  items: ReviewReportReasonAggregate[];
+  pageSize: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
+export type InteractiveReviewReportSummary = {
+  project: { id: string; title: string };
+  identification: { metrics: ReviewReportMetric[]; overlappingPaperCount: number };
+  deduplication: { metrics: ReviewReportMetric[] };
+  screening: { metrics: ReviewReportMetric[]; exclusionReasons: ReviewReportReasonAggregatePage };
+  fullTextEligibility: { metrics: ReviewReportMetric[]; exclusionReasons: ReviewReportReasonAggregatePage };
+  fullTextRetrieval: { metrics: ReviewReportMetric[] };
+  finalEligibility: { metrics: ReviewReportMetric[] };
+  supportMatrix: ReviewReportSupportMapping[];
+  limitations: ReviewReportLimitation[];
+  contextCounts: {
+    activeResearchQuestions: number;
+    activeScreeningCriteria: number;
+    activeFullTextCriteria: number;
+    representedSearchSources: number;
+  };
+};

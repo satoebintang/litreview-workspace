@@ -39,6 +39,15 @@ const boundedDeduplicationReadService = {
     "getDeduplicationPairForPage",
   ],
 };
+const boundedReviewReportingService = {
+  source: "boundedReportingServices",
+  factory: "createBoundedReviewReportingServices",
+  keys: [
+    "getInteractiveReviewReportSummary",
+    "listReviewReportContextPage",
+    "listReviewReportContributorPage",
+  ],
+};
 const actionsFacade = path.join(sourceRoot, "app", "actions.ts");
 const actionsDirectory = path.join(sourceRoot, "app", "actions");
 const actionHelpers = path.join(sourceRoot, "app", "action-helpers.ts");
@@ -531,6 +540,20 @@ describe("bounded-context module boundaries", () => {
       .toBe(boundedDeduplicationReadService.factory);
   });
 
+  it("adds the Slice 50 bounded Review Reporting API without changing the frozen Slice 35 baseline", () => {
+    const factory = findFactoryDeclaration(
+      [path.join(sourceRoot, "application", "bounded-review-reporting-services.ts")],
+      boundedReviewReportingService.factory,
+    );
+    expect(factory).toBeDefined();
+    expect(factoryObjectKeys(factory!)).toEqual(boundedReviewReportingService.keys);
+
+    const services = sourceFile(servicesFacade);
+    const variable = findVariableDeclaration(services, boundedReviewReportingService.source);
+    expect(variable.initializer && firstCallExpression(variable.initializer)?.expression.getText(services))
+      .toBe(boundedReviewReportingService.factory);
+  });
+
   it("keeps accepted action signatures and the async forwarding façade frozen", () => {
     const expectedActionExports = [
       ...fixture.actions.exports,
@@ -750,6 +773,9 @@ describe("bounded-context module boundaries", () => {
       ts.isReturnStatement(statement) && !!statement.expression && ts.isCallExpression(unwrapExpression(statement.expression)));
     expect(finalReturn?.expression).toBeDefined();
     const additiveFinalComposition = [...fixture.services.composition.final];
+    const reportingIndex = additiveFinalComposition.indexOf("reportingServices");
+    expect(reportingIndex).toBeGreaterThanOrEqual(0);
+    additiveFinalComposition.splice(reportingIndex + 1, 0, boundedReviewReportingService.source);
     const coverageIndex = additiveFinalComposition.indexOf("coverageServices");
     expect(coverageIndex).toBeGreaterThanOrEqual(0);
     additiveFinalComposition.splice(coverageIndex + 1, 0, boundedResearchQuestionReadService.source);
@@ -758,6 +784,7 @@ describe("bounded-context module boundaries", () => {
     const factoryKeys = new Map<string, string[]>(coreKeysByOwner);
     factoryKeys.set(boundedResearchQuestionReadService.source, boundedResearchQuestionReadService.keys);
     factoryKeys.set(boundedDeduplicationReadService.source, boundedDeduplicationReadService.keys);
+    factoryKeys.set(boundedReviewReportingService.source, boundedReviewReportingService.keys);
     for (const factory of fixture.services.specializedFactories) {
       const variable = findVariableDeclaration(services, factory.source);
       const call = variable.initializer && firstCallExpression(variable.initializer);

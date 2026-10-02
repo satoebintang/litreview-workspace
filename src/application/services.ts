@@ -49,6 +49,7 @@ import { createProjectWorkspaceReadServices } from "./project-workspace-read-ser
 import { createDeduplicationServices } from "./deduplication-services";
 import { createDeduplicationReadServices } from "./deduplication-read-services";
 import { createReviewReportingServices } from "./review-reporting";
+import { createBoundedReviewReportingServices } from "./bounded-review-reporting-services";
 import { createFullTextDocumentServices, type FullTextDocumentServices } from "./full-text-document-services";
 import {
   createDocumentTextExtractionServices,
@@ -207,6 +208,7 @@ export function createReviewServices(db: Database, options: {
     onCheckpoint: options.onStorageCheckpoint,
   });
   const reportingServices = createReviewReportingServices(db, deduplicationServices);
+  const boundedReportingServices = createBoundedReviewReportingServices(db);
   const curationServices = createEvidenceCurationServices(db, { requireProject, requireEvidence });
   const criticalAppraisalServices = createCriticalAppraisalServices(db, { requireProject, requirePaper, requireEvidence });
   const evidenceSetServices = createEvidenceSetServices(db, { requireProject, requireEvidence });
@@ -320,6 +322,7 @@ export function createReviewServices(db: Database, options: {
     textExtractionServices,
     pdfIntakeServices,
     reportingServices,
+    boundedReportingServices,
     curationServices,
     criticalAppraisalServices,
     evidenceSetServices,
@@ -336,6 +339,7 @@ export function createReviewServices(db: Database, options: {
     ...(bibliographicImportServices ? [bibliographicImportServices] : []),
   ) as typeof baseServices &
     typeof reportingServices &
+    typeof boundedReportingServices &
     DocumentTextExtractionServices &
     typeof pdfIntakeServices &
     typeof curationServices &

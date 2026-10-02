@@ -3,7 +3,7 @@ import type { Database } from "@/db/client";
 import { canonicalizeDeduplicationPair } from "@/domain/deduplication";
 import { DomainError } from "@/domain/errors";
 import { idSchema } from "@/domain/validation";
-import { deduplicationCandidateSignalPredicates } from "./unresolved-duplicate-pair-query";
+import { deduplicationCandidateSignalPredicates, unresolvedDuplicatePairProbeCtes } from "./unresolved-duplicate-pair-query";
 import type {
   DeduplicationDecisionEvent,
   DeduplicationHistoryItem,
@@ -133,80 +133,11 @@ function authorPreview(alias: "a" | "b"): SQL {
   return sql`(select case when char_length(value) > 230 then left(value, 229) || '…' else value end from (select array_to_string(${authors}[1:3], ', ') as value) author_preview)`;
 }
 
-function unresolvedPair(aliasA: string, aliasB: string, projectId: string): SQL {
-  return sql`not exists (
-    select 1 from retrieved_record_deduplication_decisions d
-    where d.project_id = ${projectId}::uuid
-      and d.left_retrieved_record_id = ${sql.raw(`${aliasA}.id`)}
-      and d.right_retrieved_record_id = ${sql.raw(`${aliasB}.id`)}
-  )`;
-}
-
-function perLeftSignalProbe(input: {
-  signal: SQL;
-  projectId: string;
-  keyLimit: number;
-  cursor?: QueueCursor | null;
-  rank: 0 | 1;
-  excludeStrong?: SQL;
-}): SQL {
-  const cursor = input.cursor?.s === input.rank ? input.cursor : null;
-  const leftStart = cursor ? sql`and a.id >= ${cursor.l}::uuid` : sql``;
-  const afterPair = cursor ? sql`and (a.id, b.id) > (${cursor.l}::uuid, ${cursor.r}::uuid)` : sql``;
-  const notStrong = input.excludeStrong ? sql`and not (${input.excludeStrong})` : sql``;
-  return sql`
-    select a.id as left_record_id, candidate.id as right_record_id
-    from left_record_ids left_id
-    join retrieved_records a on a.project_id = ${input.projectId}::uuid and a.id = left_id.id ${leftStart}
-    cross join lateral (
-      select b.id
-      from retrieved_records b
-      where b.project_id = ${input.projectId}::uuid
-        and a.id < b.id
-        and ${input.signal}
-        ${notStrong}
-        ${afterPair}
-        and ${unresolvedPair("a", "b", input.projectId)}
-      order by b.id asc
-      limit ${input.keyLimit}
-    ) candidate
-    where true
-  `;
-}
-
 function pairProbeQuery(projectId: string, keyLimit: number, cursor: QueueCursor | null): SQL {
   const signals = deduplicationCandidateSignalPredicates();
-  const strong = cursor?.s === 1 ? sql`select null::uuid as left_record_id, null::uuid as right_record_id where false` : sql`
-    select left_record_id, right_record_id from (
-      ${perLeftSignalProbe({ signal: signals.doi, projectId, keyLimit, cursor, rank: 0 })}
-      union
-      ${perLeftSignalProbe({ signal: signals.sourceRecordId, projectId, keyLimit, cursor, rank: 0 })}
-    ) strong_signal_pairs
-    order by left_record_id, right_record_id
-    limit ${keyLimit}
-  `;
-  const possibleCursor = cursor?.s === 1 ? cursor : null;
-  const possibleSignal = perLeftSignalProbe({ signal: signals.titleYear, projectId, keyLimit, cursor: possibleCursor, rank: 1, excludeStrong: signals.strong });
+  const pairCursor = cursor ? { strengthRank: cursor.s, leftId: cursor.l, rightId: cursor.r } : null;
   return sql`
-    with left_record_ids as materialized (
-      select id from retrieved_records where project_id = ${projectId}::uuid
-    ), strong_page_ids as materialized (
-      ${strong}
-    ), possible_signal_ids as (
-      ${possibleSignal}
-    ), possible_page_ids as materialized (
-      select distinct left_record_id, right_record_id from possible_signal_ids
-      where (select count(*) from strong_page_ids) < ${keyLimit}
-      order by left_record_id, right_record_id
-      limit ${keyLimit}
-    ), probe_ids as (
-      select 0::int as strength_rank, left_record_id, right_record_id from strong_page_ids
-      union all
-      select 1::int, left_record_id, right_record_id from possible_page_ids
-    ), ordered_probe as materialized (
-      select strength_rank, left_record_id, right_record_id
-      from probe_ids order by strength_rank, left_record_id, right_record_id limit ${keyLimit}
-    ), visible_pairs as materialized (
+    with ${unresolvedDuplicatePairProbeCtes(projectId, keyLimit, pairCursor)}, visible_pairs as materialized (
       select strength_rank, left_record_id, right_record_id
       from ordered_probe order by strength_rank, left_record_id, right_record_id limit ${Math.max(1, keyLimit - 1)}
     ), visible_record_ids as (
