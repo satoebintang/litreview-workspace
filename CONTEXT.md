@@ -88,6 +88,37 @@ A historical audit fact that is true when any retrieval attempt for the Paper ha
 
 An immutable eligibility decision recorded only when the Paper is currently title/abstract included and its current retrieval state is `retrieved`. Historical decisions remain readable when those prerequisites later change.
 
+## Bounded screening histories
+
+Normal title/abstract decision, full-text decision, and full-text retrieval
+detail pages embed only their bounded first history page. Each history defaults
+to 20 rows, caps at 50, and continues independently by `(sequence, id)` with
+no exact total. Full-text detail has separate decision and retrieval
+continuations. Exact-event routes restore complete historical notes, criterion
+context, and retrieval `sourceReference` within Project and Paper scope.
+
+History traversal is ordered by `sequence ASC, id ASC`, while current state
+continues to use the released greatest-sequence rule `ORDER BY sequence DESC
+LIMIT 1` without an ID tie-breaker. Duplicate sequence values do not create a
+new current-event winner. Cursors bind the Project, Paper, stream, effective
+page size, and exact event anchor. Reads use a fresh read-only `REPEATABLE
+READ` transaction per request; there are no epochs or frozen snapshots.
+Sequence is operational order rather than commit order: a lower sequence
+reserved early can commit after a higher sequence already traversed, requiring
+a restart to observe the late event.
+
+SQL previews cap decision notes at 600 code points, criterion text at 128,
+and retrieval notes and source references at 384, with truncation flags. Full
+Paper metadata including abstract, authors, and DOI remains complete. Criteria
+remain references rather than snapshots: archival changes state without
+rewriting event identity. Retrieval state remains greatest-sequence based and
+independent of researcher-supplied `attemptedAt`; `everRetrieved` remains true
+after any historical retrieved attempt. Active criterion form catalogs remain
+outside the history bounds. The `everRetrieved` check can inspect the full
+scoped retrieval history when no success exists, so its database work can grow
+with history length even though returned detail remains bounded. See
+`docs/adr/0051-scalable-screening-workflow-histories.md`.
+
 ## Final inclusion
 
 A Paper is finally included only when its current title/abstract decision is `include` and its current full-text decision is `include`. Retrieval state does not alter this formula after a full-text decision exists.

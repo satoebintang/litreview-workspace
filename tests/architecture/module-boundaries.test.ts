@@ -13,6 +13,7 @@ const schemaDirectory = path.join(sourceRoot, "db", "schema");
 const repositoriesFacade = path.join(sourceRoot, "application", "repositories.ts");
 const repositoriesDirectory = path.join(sourceRoot, "application", "repositories");
 const servicesFacade = path.join(sourceRoot, "application", "services.ts");
+const serverFacade = path.join(sourceRoot, "app", "server.ts");
 const reviewServicesDirectory = path.join(sourceRoot, "application", "review-services");
 const boundedResearchQuestionReadService = {
   source: "researchQuestionBoundedReadServices",
@@ -46,6 +47,20 @@ const boundedReviewReportingService = {
     "getInteractiveReviewReportSummary",
     "listReviewReportContextPage",
     "listReviewReportContributorPage",
+  ],
+};
+const boundedScreeningHistoryReadService = {
+  factory: "createScreeningHistoryReadServices",
+  keys: [
+    "getTitleAbstractScreeningDetail",
+    "getFullTextScreeningDetail",
+    "getFullTextRetrievalDetail",
+    "getScreeningDecisionHistoryPage",
+    "getFullTextScreeningDecisionHistoryPage",
+    "getFullTextRetrievalAttemptHistoryPage",
+    "getScreeningDecisionEvent",
+    "getFullTextScreeningDecisionEvent",
+    "getFullTextRetrievalAttemptEvent",
   ],
 };
 const actionsFacade = path.join(sourceRoot, "app", "actions.ts");
@@ -552,6 +567,22 @@ describe("bounded-context module boundaries", () => {
     const variable = findVariableDeclaration(services, boundedReviewReportingService.source);
     expect(variable.initializer && firstCallExpression(variable.initializer)?.expression.getText(services))
       .toBe(boundedReviewReportingService.factory);
+  });
+
+  it("adds a specialized screening history reader without changing the frozen core services API", () => {
+    const factory = findFactoryDeclaration(
+      [path.join(sourceRoot, "application", "screening-history-read-services.ts")],
+      boundedScreeningHistoryReadService.factory,
+    );
+    expect(factory).toBeDefined();
+    expect(factoryObjectKeys(factory!)).toEqual(boundedScreeningHistoryReadService.keys);
+    expect(moduleExports(servicesFacade)).toEqual([...fixture.services.exports].sort());
+    expect(fixture.services.coreMethods).toHaveLength(67);
+
+    const server = sourceFile(serverFacade);
+    const variable = findVariableDeclaration(server, "screeningHistoryReadServices");
+    expect(variable.initializer && firstCallExpression(variable.initializer)?.expression.getText(server))
+      .toBe(boundedScreeningHistoryReadService.factory);
   });
 
   it("keeps accepted action signatures and the async forwarding façade frozen", () => {
