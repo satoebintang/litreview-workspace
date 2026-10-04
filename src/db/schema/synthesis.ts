@@ -48,6 +48,9 @@ export const synthesisRevisions = pgTable(
     projectIdentity: unique("synthesis_revisions_project_id_id_unique").on(table.projectId, table.id),
     statementIdentity: unique("synthesis_revisions_project_statement_id_id_unique").on(table.projectId, table.synthesisStatementId, table.id),
     statementSequence: index("synthesis_revisions_project_statement_sequence_idx").on(table.projectId, table.synthesisStatementId, table.sequence),
+    statementSequenceWithId: index("synthesis_revisions_project_statement_sequence_id_idx")
+      .on(table.projectId, table.synthesisStatementId, table.sequence, table.id)
+      .where(sql`${table.finalizedAt} is not null`),
     projectSequence: index("synthesis_revisions_project_sequence_idx").on(table.projectId, table.sequence),
     statementOwnership: foreignKey({
       columns: [table.projectId, table.synthesisStatementId],
@@ -209,6 +212,9 @@ export const synthesisInterpretations = pgTable(
     projectIdentity: unique("synthesis_interpretations_project_id_id_unique").on(table.projectId, table.id),
     revisionEnforcementKey: unique("synthesis_interpretations_project_revision_key_unique").on(table.projectId, table.id, table.synthesisRevisionId),
     projectRevisionSequence: index("synthesis_interpretations_project_revision_sequence_idx").on(table.projectId, table.synthesisRevisionId, table.sequence),
+    projectRevisionSequenceWithId: index("synthesis_interpretations_project_revision_sequence_id_idx")
+      .on(table.projectId, table.synthesisRevisionId, table.sequence, table.id)
+      .where(sql`${table.finalizedAt} is not null`),
     projectSequence: index("synthesis_interpretations_project_sequence_idx").on(table.projectId, table.sequence),
     projectCreatedAt: index("synthesis_interpretations_project_created_at_idx").on(table.projectId, table.createdAt),
     projectOwnership: foreignKey({

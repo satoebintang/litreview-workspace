@@ -41,7 +41,7 @@ export function createClaimServices<TProject, TClaim, TEvidence, TInterpretation
   synthesisRevisionRepo: SynthesisRevisionRepository;
   synthesisSupportRepo: SynthesisRevisionSupportRepository;
   requireProject: (projectId: string) => Promise<TProject>;
-  requireClaim: (projectId: string, claimId: string) => Promise<TClaim>;
+  requireClaim: (projectId: string, claimId: string, options?: { projectAlreadyValidated?: boolean }) => Promise<TClaim>;
   requireEvidence: (projectId: string, evidenceId: string) => Promise<TEvidence>;
   getSynthesisInterpretationServices: () => TInterpretationServices;
 }) {
@@ -387,7 +387,7 @@ export function createClaimServices<TProject, TClaim, TEvidence, TInterpretation
 
     async getClaimRevision(projectId: string, claimId: string, revisionId: string) {
       await requireProject(projectId); ensureId(claimId); ensureId(revisionId);
-      const claim = await requireClaim(projectId, claimId);
+      const claim = await requireClaim(projectId, claimId, { projectAlreadyValidated: true });
       const rows = await db.execute(sql`select id, sequence, project_id, claim_id, state, claim_text, researcher_note, created_at, finalized_at from claim_revisions where project_id=${projectId} and claim_id=${claimId} and id=${revisionId} and finalized_at is not null`) as unknown as Record<string, unknown>[];
       if (!rows.length) throw new DomainError("NOT_FOUND", "Claim revision was not found");
       return { claim: { ...claim, claimText: rows[0].claim_text == null ? "" : String(rows[0].claim_text) }, revision: await claimRevisionView(projectId, rows[0]) };

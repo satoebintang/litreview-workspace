@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted for Slice 40 implementation. Implementation is complete and remains
-uncommitted for publication review.
+Implemented and published as `v0.40.0-slice40` at
+`5e4e0f88ea0d946230fef86ff340c6a7438c753f`.
 
 ## Decision
 

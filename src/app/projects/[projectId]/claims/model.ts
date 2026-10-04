@@ -4,11 +4,11 @@ export type ClaimSupportKind = "evidence" | "extraction" | "synthesis";
 export interface PaperView { id: string; title: string; doi?: string | null; authors?: string[]; publicationYear?: number | null; venue?: string | null; }
 export interface EvidenceDocumentView { id: string; originalFilename?: string; sha256?: string; archivedAt?: string | null; }
 export interface EvidenceView { id: string; sourceText: string; pageNumber: number; createdAt?: string; note?: string | null; fullTextDocumentId?: string | null; documentTextExtractionId?: string | null; extractionStartOffset?: number | null; extractionEndOffset?: number | null; document?: EvidenceDocumentView | null; paper?: PaperView; reviewState?: "unreviewed" | "needs_review" | "accepted" | "rejected"; curationWarning?: string | null; }
-export interface ExtractionView { id: string; sequence?: number; valueState?: string; textValue?: string | null; numberValue?: string | null; booleanValue?: boolean | null; optionId?: string | null; researcherNote?: string | null; evidence: EvidenceView[]; paper?: PaperView; field?: { id: string; name: string }; isCurrent?: boolean; paperScreeningState?: string; }
-export interface SynthesisView { id: string; sequence?: number; state?: ClaimLifecycle; title?: string | null; statementText?: string | null; researcherNote?: string | null; evidence: EvidenceView[]; extractions: ExtractionView[]; paperCount?: number; isCurrent?: boolean; }
+export interface ExtractionView { id: string; sequence?: number | string; valueState?: string; textValue?: string | null; numberValue?: string | null; booleanValue?: boolean | null; optionId?: string | null; researcherNote?: string | null; evidence: EvidenceView[]; paper?: PaperView; field?: { id: string; name: string }; isCurrent?: boolean; paperScreeningState?: string; }
+export interface SynthesisView { id: string; sequence?: number | string; state?: ClaimLifecycle; title?: string | null; statementText?: string | null; researcherNote?: string | null; evidence: EvidenceView[]; extractions: ExtractionView[]; paperCount?: number; isCurrent?: boolean; }
 export interface ClaimSupportView { kind: ClaimSupportKind; id: string; evidence?: EvidenceView; extraction?: ExtractionView; synthesis?: SynthesisView; paper?: PaperView; }
 export interface CitationCandidateView { paper: PaperView; pathCount: number; paths?: Array<{ kind?: ClaimSupportKind; label?: string } | string>; }
-export interface ClaimRevisionView { id: string; sequence: number; state: ClaimLifecycle; claimText: string | null; researcherNote?: string | null; finalizedAt?: string | null; supports: { evidence: ClaimSupportView[]; extraction: ClaimSupportView[]; synthesis: ClaimSupportView[] }; supportStatus: "supported" | "unsupported"; citationCandidates: CitationCandidateView[]; distinctPaperCount: number; citationCandidateCount: number; }
+export interface ClaimRevisionView { id: string; sequence: number | string; state: ClaimLifecycle; claimText: string | null; researcherNote?: string | null; finalizedAt?: string | null; supports: { evidence: ClaimSupportView[]; extraction: ClaimSupportView[]; synthesis: ClaimSupportView[] }; supportStatus: "supported" | "unsupported"; citationCandidates: CitationCandidateView[]; distinctPaperCount: number; citationCandidateCount: number; }
 export interface ClaimView { id: string; createdAt?: string; currentRevision: ClaimRevisionView; }
 
 function object(value: unknown): Record<string, unknown> {
@@ -16,6 +16,7 @@ function object(value: unknown): Record<string, unknown> {
 }
 function string(value: unknown, fallback = "") { return typeof value === "string" ? value : fallback; }
 function number(value: unknown, fallback = 0) { return typeof value === "number" ? value : fallback; }
+function sequence(value: unknown): number | string { return typeof value === "string" && /^-?\d+$/.test(value) ? value : number(value); }
 function array(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
 
 function paper(value: unknown): PaperView | undefined {
@@ -39,7 +40,7 @@ function evidence(value: unknown, fallbackPaper?: PaperView): EvidenceView {
 export function normalizeExtraction(value: unknown, fallbackPaper?: PaperView): ExtractionView {
   const row = object(value);
   const extractionEvidence = array(row.evidence ?? row.supportingEvidence).map((item) => evidence(item, fallbackPaper));
-  return { id: string(row.id ?? row.revisionId), sequence: number(row.sequence), valueState: string(row.valueState ?? row.state), textValue: typeof row.textValue === "string" ? row.textValue : null, numberValue: typeof row.numberValue === "string" ? row.numberValue : null, booleanValue: typeof row.booleanValue === "boolean" ? row.booleanValue : null, optionId: typeof row.optionId === "string" ? row.optionId : null, researcherNote: typeof row.researcherNote === "string" ? row.researcherNote : null, evidence: extractionEvidence, paper: paper(row.paper) ?? fallbackPaper, field: object(row.field).id ? { id: string(object(row.field).id), name: string(object(row.field).name, "Extraction field") } : undefined, isCurrent: Boolean(row.isCurrentExtractionRevision ?? row.isCurrent), paperScreeningState: typeof row.paperScreeningState === "string" ? row.paperScreeningState : typeof row.screeningState === "string" ? row.screeningState : undefined };
+  return { id: string(row.id ?? row.revisionId), sequence: sequence(row.sequence), valueState: string(row.valueState ?? row.state), textValue: typeof row.textValue === "string" ? row.textValue : null, numberValue: typeof row.numberValue === "string" ? row.numberValue : null, booleanValue: typeof row.booleanValue === "boolean" ? row.booleanValue : null, optionId: typeof row.optionId === "string" ? row.optionId : null, researcherNote: typeof row.researcherNote === "string" ? row.researcherNote : null, evidence: extractionEvidence, paper: paper(row.paper) ?? fallbackPaper, field: object(row.field).id ? { id: string(object(row.field).id), name: string(object(row.field).name, "Extraction field") } : undefined, isCurrent: Boolean(row.isCurrentExtractionRevision ?? row.isCurrent), paperScreeningState: typeof row.paperScreeningState === "string" ? row.paperScreeningState : typeof row.screeningState === "string" ? row.screeningState : undefined };
 }
 
 function support(value: unknown, kind: ClaimSupportKind): ClaimSupportView {
@@ -60,7 +61,7 @@ export function normalizeSynthesis(value: unknown): SynthesisView {
     return normalizeExtraction(supportRow.extractionRevision ?? supportRow.extraction ?? supportRow, paper(supportRow.paper));
   });
   const evidenceRows = nested.flatMap((item) => item.evidence);
-  return { id: string(row.id ?? row.revisionId), sequence: number(row.sequence), state: string(row.state, "active") as ClaimLifecycle, title: typeof row.title === "string" ? row.title : null, statementText: typeof row.statementText === "string" ? row.statementText : null, researcherNote: typeof row.researcherNote === "string" ? row.researcherNote : null, evidence: evidenceRows, extractions: nested, paperCount: number(row.supportingPaperCount), isCurrent: Boolean(row.isCurrentSynthesisRevision ?? row.isCurrent) };
+  return { id: string(row.id ?? row.revisionId), sequence: sequence(row.sequence), state: string(row.state, "active") as ClaimLifecycle, title: typeof row.title === "string" ? row.title : null, statementText: typeof row.statementText === "string" ? row.statementText : null, researcherNote: typeof row.researcherNote === "string" ? row.researcherNote : null, evidence: evidenceRows, extractions: nested, paperCount: number(row.supportingPaperCount), isCurrent: Boolean(row.isCurrentSynthesisRevision ?? row.isCurrent) };
 }
 
 function supportGroups(value: unknown): ClaimRevisionView["supports"] {
@@ -92,7 +93,7 @@ function revision(value: unknown): ClaimRevisionView {
     const candidatePaper = paper(candidate.paper) ?? paper(candidate);
     return { paper: candidatePaper ?? { id: string(candidate.paperId), title: string(candidate.paperTitle, "Untitled paper") }, pathCount: number(candidate.pathCount ?? candidate.supportPathCount, 1), paths: Array.isArray(candidate.paths) ? candidate.paths.map((path) => typeof path === "string" ? path : { kind: string(object(path).kind) as ClaimSupportKind, label: string(object(path).label) }) : undefined };
   });
-  return { id: string(row.id ?? row.revisionId), sequence: number(row.sequence), state: string(row.lifecycle ?? row.state, "active") as ClaimLifecycle, claimText: typeof row.claimText === "string" ? row.claimText : typeof claim.claimText === "string" ? claim.claimText : null, researcherNote: typeof row.researcherNote === "string" ? row.researcherNote : null, finalizedAt: typeof row.finalizedAt === "string" ? row.finalizedAt : null, supports: groups, supportStatus: string(row.supportStatus, total > 0 ? "supported" : "unsupported") as "supported" | "unsupported", citationCandidates: candidates, distinctPaperCount: number(row.distinctPaperCount ?? row.supportingPaperCount), citationCandidateCount: number(row.citationCandidateCount ?? candidates.length) };
+  return { id: string(row.id ?? row.revisionId), sequence: sequence(row.sequence), state: string(row.lifecycle ?? row.state, "active") as ClaimLifecycle, claimText: typeof row.claimText === "string" ? row.claimText : typeof claim.claimText === "string" ? claim.claimText : null, researcherNote: typeof row.researcherNote === "string" ? row.researcherNote : null, finalizedAt: typeof row.finalizedAt === "string" ? row.finalizedAt : null, supports: groups, supportStatus: string(row.supportStatus, total > 0 ? "supported" : "unsupported") as "supported" | "unsupported", citationCandidates: candidates, distinctPaperCount: number(row.distinctPaperCount ?? row.supportingPaperCount), citationCandidateCount: number(row.citationCandidateCount ?? candidates.length) };
 }
 
 export function normalizeClaim(value: unknown): ClaimView {

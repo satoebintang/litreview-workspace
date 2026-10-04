@@ -4,6 +4,9 @@
 
 Accepted for Slice 38 implementation.
 
+Implemented and published as `v0.38.0-slice38` at
+`80647ccc6a8a9169063f13ef956a2a2d19030c9c`.
+
 ## Decision
 
 Starting from `v0.37.0-slice37` at

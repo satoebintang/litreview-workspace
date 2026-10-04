@@ -1,6 +1,7 @@
 # ADR 0051: Scalable Screening and Full-Text Workflow Histories
 
-**Status:** accepted for publication
+**Status:** implemented and published as `v0.51.0-slice51` at
+`128b2c91affe65fe4f0df526b76f2380c1e6c136`
 
 **Date:** 2026-10-02
 

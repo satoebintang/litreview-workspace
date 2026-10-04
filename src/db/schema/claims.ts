@@ -46,6 +46,9 @@ export const claimRevisions = pgTable(
     projectIdentity: unique("claim_revisions_project_id_id_unique").on(table.projectId, table.id),
     claimIdentity: unique("claim_revisions_project_claim_id_id_unique").on(table.projectId, table.claimId, table.id),
     claimSequence: index("claim_revisions_project_claim_sequence_idx").on(table.projectId, table.claimId, table.sequence),
+    claimSequenceWithId: index("claim_revisions_project_claim_sequence_id_idx")
+      .on(table.projectId, table.claimId, table.sequence, table.id)
+      .where(sql`${table.finalizedAt} is not null`),
     projectSequence: index("claim_revisions_project_sequence_idx").on(table.projectId, table.sequence),
     claimOwnership: foreignKey({
       columns: [table.projectId, table.claimId],

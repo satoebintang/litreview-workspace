@@ -111,7 +111,7 @@ test.describe("Slice 4 evidence synthesis", () => {
     await page.getByRole("button", { name: "Save new synthesis revision" }).click();
     await expect(page.getByText("New synthesis revision saved.")).toBeVisible();
     await expect(page.getByText(/Backdoor attack/).first()).toBeVisible();
-    await expect(page.getByText("Complete synthesis history")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Paginated synthesis history · oldest first" })).toBeVisible();
     await expect(page.getByText(/Revision \d+ · Supported observations/)).toHaveCount(2);
 
     await page.goto(`/projects/${projectId}/screening`);

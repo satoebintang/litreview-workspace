@@ -11,12 +11,18 @@ import { createPaperSelectionReadServices } from "@/application/paper-selection-
 import { createAcquisitionReadServices } from "@/application/acquisition-read-services";
 import { createEvidenceSetWorkspaceReadServices } from "@/application/evidence-set-workspace-read-services";
 import { createSynthesisReadServices } from "@/application/synthesis-read-services";
+import { createClaimSynthesisHistoryReadServices } from "@/application/claim-synthesis-history-read-services";
+import { createSynthesisInterpretationExactReadServices } from "@/application/synthesis-interpretation-exact-read-services";
+import { createSynthesisInterpretationCurrentReadServices } from "@/application/synthesis-interpretation-current-read-services";
+import { createClaimRevisionExactAuditReadServices } from "@/application/claim-revision-exact-audit-read-services";
+import { createSynthesisRevisionExactRouteReadServices } from "@/application/synthesis-revision-exact-route-read-services";
+import type { ReviewTransaction } from "@/application/review-services/shared";
 import { boundPdfIntakeDiagnostic, type PdfMetadataInspection, type PdfMetadataProposal } from "@/application/pdf-intake-services";
 import { createAiExtractionSuggestionServices } from "@/application/ai-extraction-suggestion-services";
 import { createAiExtractionBatchServices } from "@/application/ai-extraction-batch-services";
 import { createAiSynthesisSuggestionServices } from "@/application/ai-synthesis-suggestion-services";
 import { FakeSynthesisSuggestionProvider, type ProviderSynthesisSuggestionResult, type SynthesisSuggestionInput } from "@/application/ai/synthesis-suggestion-provider";
-import { createDb } from "@/db/client";
+import { createDb, type Database } from "@/db/client";
 import { sha256Hex } from "@/domain/full-text-documents";
 import { LocalDocumentStorage, LocalPdfIntakeStorage } from "@/infrastructure/document-storage";
 import { createPdfMetadataInspector, extractPdfDoiCandidate, type PdfMetadataInspectionResult, type PdfMetadataFieldName } from "@/infrastructure/pdf-metadata-inspector";
@@ -144,6 +150,56 @@ export const paperSelectionReadServices = createPaperSelectionReadServices(datab
 export const acquisitionReadServices = createAcquisitionReadServices(database.db);
 export const evidenceSetWorkspaceReadServices = createEvidenceSetWorkspaceReadServices(database.db);
 export const synthesisReadServices = createSynthesisReadServices(database.db);
+
+export type ReviewReadTransactionContext = {
+  reviewServices: ReturnType<typeof createReviewServices>;
+  claimReadServices: ReturnType<typeof createClaimReadServices>;
+  claimSupportReadServices: ReturnType<typeof createClaimSupportReadServices>;
+  synthesisReadServices: ReturnType<typeof createSynthesisReadServices>;
+  claimSynthesisHistoryReadServices: ReturnType<typeof createClaimSynthesisHistoryReadServices>;
+  synthesisInterpretationExactReadServices: ReturnType<typeof createSynthesisInterpretationExactReadServices>;
+  synthesisInterpretationCurrentReadServices: ReturnType<typeof createSynthesisInterpretationCurrentReadServices>;
+  claimRevisionExactAuditReadServices: ReturnType<typeof createClaimRevisionExactAuditReadServices>;
+  synthesisRevisionExactRouteReadServices: ReturnType<typeof createSynthesisRevisionExactRouteReadServices>;
+  executor: ReviewTransaction;
+};
+
+/** Run a composed detail read from one read-only PostgreSQL snapshot. */
+export function withReviewReadTransaction<T>(
+  operation: (context: ReviewReadTransactionContext) => Promise<T>,
+): Promise<T> {
+  return database.db.transaction(async (tx) => {
+    // Read services accept Database for their shared query interface. Binding
+    // them to this transaction keeps every projection on the same snapshot.
+    const txDatabase = tx as unknown as Database;
+    const reviewServices = createReviewServices(txDatabase, {
+      documentStorage,
+      pdfIntakeStorage,
+      pdfMetadataInspector: adaptedPdfMetadataInspector,
+      maxDocumentBytes,
+      documentTextExtractor,
+      bibliographicParser,
+    });
+    const transactionServices: ReviewReadTransactionContext = {
+      reviewServices,
+      claimReadServices: createClaimReadServices(txDatabase),
+      claimSupportReadServices: createClaimSupportReadServices(txDatabase),
+      synthesisReadServices: createSynthesisReadServices(txDatabase),
+      claimSynthesisHistoryReadServices: createClaimSynthesisHistoryReadServices(txDatabase),
+      synthesisInterpretationExactReadServices: createSynthesisInterpretationExactReadServices(txDatabase),
+      synthesisInterpretationCurrentReadServices: createSynthesisInterpretationCurrentReadServices(txDatabase, {
+        getSynthesisProvenance: (projectId, statementId, revisionId) => reviewServices.getSynthesisProvenance(projectId, statementId, revisionId),
+      }),
+      claimRevisionExactAuditReadServices: createClaimRevisionExactAuditReadServices(
+        txDatabase,
+        (projectId, claimId, revisionId) => reviewServices.getClaimRevision(projectId, claimId, revisionId),
+      ),
+      synthesisRevisionExactRouteReadServices: createSynthesisRevisionExactRouteReadServices(txDatabase),
+      executor: tx,
+    };
+    return operation(transactionServices);
+  }, { isolationLevel: "repeatable read", accessMode: "read only" });
+}
 
 const openAiKey = process.env.OPENAI_API_KEY?.trim();
 const configuredAiModel = process.env.AI_EXTRACTION_MODEL?.trim() || "gpt-5.6-luna";

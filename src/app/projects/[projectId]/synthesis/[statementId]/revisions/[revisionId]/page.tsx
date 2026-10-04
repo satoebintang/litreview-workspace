@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { sql } from "drizzle-orm";
 import { appendSynthesisInterpretationAction } from "@/app/actions";
-import { reviewServices } from "@/app/server";
+import { withReviewReadTransaction } from "@/app/server";
 import { DomainError } from "@/domain/errors";
 import type { LimitationCategory } from "@/domain/types";
 
@@ -50,13 +51,61 @@ export default async function ExactSynthesisRevisionPage({
   const { projectId, statementId, revisionId } = await params;
   const query = searchParams ? await searchParams : {};
 
-  let projection;
+  let detail;
   try {
-    projection = await reviewServices.getSynthesisInterpretationProjection(
-      projectId,
-      statementId,
-      revisionId,
-    );
+    detail = await withReviewReadTransaction(async ({ reviewServices, claimSynthesisHistoryReadServices, synthesisRevisionExactRouteReadServices, synthesisInterpretationCurrentReadServices, executor }) => {
+      const legacyRevision = await reviewServices.getSynthesisProvenance(projectId, statementId, revisionId);
+      const [exactSequences, prepContext, history] = await Promise.all([
+        synthesisRevisionExactRouteReadServices.getSynthesisRevisionExactRouteSequences(projectId, statementId, revisionId),
+        reviewServices.getSynthesisPreparationContextForRevision(projectId, revisionId),
+        claimSynthesisHistoryReadServices.getSynthesisInterpretationHistoryPage(projectId, statementId, revisionId, {}, executor),
+      ]);
+      const revision = {
+        ...legacyRevision,
+        sequence: exactSequences.sequence,
+        supports: legacyRevision.supports.map((support) => {
+          const sequence = exactSequences.extractionRevisionSequences[support.extractionRevisionId];
+          if (sequence === undefined) throw new DomainError("DATABASE_CONSTRAINT", "Exact Synthesis support sequence is missing");
+          return { ...support, extractionRevision: { ...support.extractionRevision, sequence } };
+        }),
+      };
+      const [currentInterpretation, reviewRows] = await Promise.all([
+        history.current
+          ? synthesisInterpretationCurrentReadServices.getCurrentSynthesisInterpretationSnapshot(
+            projectId,
+            statementId,
+            revisionId,
+            legacyRevision,
+            history.current.id,
+            exactSequences.extractionRevisionSequences,
+          )
+          : Promise.resolve(null),
+        (async () => {
+          const evidenceIds = [...new Set(revision.supports.flatMap((support) => support.extractionRevision.evidence.map((evidence) => evidence.id)))];
+          if (evidenceIds.length === 0) return [] as Array<{ evidenceId: string; warning: "never_reviewed" | "needs_review" | "currently_rejected" | null }>;
+          const rows = await executor.execute(sql`
+            select distinct on (evidence_id) evidence_id, decision
+            from evidence_review_decisions
+            where project_id=${projectId}::uuid
+              and evidence_id in (${sql.join(evidenceIds.map((id) => sql`${id}::uuid`), sql`, `)})
+            order by evidence_id, sequence desc
+          `) as unknown as Array<Record<string, unknown>>;
+          const decisions = new Map(rows.map((row) => [String(row.evidence_id), String(row.decision)]));
+          return evidenceIds.map((evidenceId) => {
+            const decision = decisions.get(evidenceId);
+            const warning = !decision || decision === "unreviewed"
+              ? "never_reviewed" as const
+              : decision === "needs_review"
+                ? "needs_review" as const
+                : decision === "rejected"
+                  ? "currently_rejected" as const
+                  : null;
+            return { evidenceId, warning };
+          });
+        })(),
+      ]);
+      return { revision, prepContext, history, currentInterpretation, evidenceWarnings: reviewRows };
+    });
   } catch (error) {
     if (
       error instanceof DomainError &&
@@ -68,13 +117,7 @@ export default async function ExactSynthesisRevisionPage({
     }
     throw error;
   }
-
-  const prepContext = await reviewServices.getSynthesisPreparationContextForRevision(
-    projectId,
-    revisionId,
-  );
-
-  const { revision, currentInterpretation, history, evidenceWarnings } = projection;
+  const { revision, prepContext, currentInterpretation, history, evidenceWarnings } = detail;
   const activeWarnings = evidenceWarnings.filter((w) => w.warning !== null);
   const supports = revision.supports;
 
@@ -571,14 +614,14 @@ export default async function ExactSynthesisRevisionPage({
           </section>
 
           {/* Historical Interpretation Timeline */}
-          {history.length > 0 && (
+          {history.items.length > 0 && (
             <section className="card section-card full">
               <div className="section-heading">
                 <h2>Interpretation history</h2>
-                <span className="count">{history.length} snapshots</span>
+                <span className="count">{history.items.length} snapshots on this page</span>
               </div>
               <div className="item-list">
-                {history.map((snap) => (
+                {history.items.map((snap) => (
                   <article className="item" key={snap.id}>
                     <div className="item-row">
                       <div>
@@ -599,19 +642,21 @@ export default async function ExactSynthesisRevisionPage({
                           </span>
                         </div>
                         <div className="item-title" style={{ fontSize: "1rem" }}>
-                          {snap.summary}
+                          {snap.summaryPreview}{snap.summaryTruncated ? "…" : ""}
                         </div>
-                        {snap.researcherNote && (
-                          <div className="item-meta">Note: {snap.researcherNote}</div>
+                        {snap.researcherNotePreview && (
+                          <div className="item-meta">Note: {snap.researcherNotePreview}{snap.researcherNoteTruncated ? "…" : ""}</div>
                         )}
                         <div className="item-meta" style={{ marginTop: 4 }}>
-                          {snap.limitations.length} {snap.limitations.length === 1 ? "limitation" : "limitations"} · {snap.questions.length} {snap.questions.length === 1 ? "question" : "questions"} · {snap.contradictions.length} {snap.contradictions.length === 1 ? "contradiction pair" : "contradiction pairs"}
+                          {snap.limitationCount} {snap.limitationCount === 1 ? "limitation" : "limitations"} · {snap.questionCount} {snap.questionCount === 1 ? "question" : "questions"} · {snap.contradictionCount} {snap.contradictionCount === 1 ? "contradiction pair" : "contradiction pairs"}
                         </div>
                       </div>
+                      <Link className="button ghost small" href={snap.href}>Open exact snapshot →</Link>
                     </div>
                   </article>
                 ))}
               </div>
+              {history.hasMore && history.nextCursor && <div style={{ marginTop: 14 }}><Link className="button ghost" href={`/projects/${projectId}/synthesis/${statementId}/revisions/${revisionId}/interpretations/history?pageSize=${history.pageSize}&cursor=${encodeURIComponent(history.nextCursor)}`}>Next interpretation history page →</Link></div>}
             </section>
           )}
         </div>
