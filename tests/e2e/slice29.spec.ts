@@ -159,7 +159,7 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
     await page.getByRole("link", { name: "Return to preparation →" }).click();
     await page.getByRole("link", { name: "View finalized synthesis statement →" }).click();
     await expect(page).toHaveURL(new RegExp(`/synthesis/${statementId}$`));
-    await expect(page.getByRole("heading", { name: "Complete synthesis history" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Paginated synthesis history · oldest first" })).toBeVisible();
     await expect(page.locator("p.synthesis-statement").filter({ hasText: "Researcher edited statement from the frozen source." }).first()).toBeVisible();
 
     // The ordinary Claim workflow can explicitly attach the canonical revision.

@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { reviseSynthesisStatementAction, withdrawSynthesisStatementAction } from "@/app/actions";
-import { reviewServices, synthesisReadServices } from "@/app/server";
+import { withReviewReadTransaction } from "@/app/server";
 import { DomainError } from "@/domain/errors";
 import { ConfirmAction } from "@/components/ConfirmAction";
+import { displaySequenceLabel, withLosslessSequence } from "@/app/projects/history-sequence-display";
 
 function displayExtraction(support: { extractionRevision: { valueState: string; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null } }) {
   const revision = support.extractionRevision;
@@ -17,25 +18,41 @@ export default async function SynthesisStatementPage({ params, searchParams }: {
 }) {
   const { projectId, statementId } = await params;
   const query = searchParams ? await searchParams : {};
-  let current;
-  try { current = await reviewServices.getCurrentSynthesis(projectId, statementId); }
-  catch (error) {
+  let detail;
+  try {
+    detail = await withReviewReadTransaction(async ({ reviewServices, synthesisReadServices, claimSynthesisHistoryReadServices, synthesisInterpretationCurrentReadServices, synthesisRevisionExactRouteReadServices, executor }) => {
+      const history = await claimSynthesisHistoryReadServices.getSynthesisRevisionHistoryPage(projectId, statementId, {}, executor);
+      if (!history.current) throw new DomainError("NOT_FOUND", "Synthesis statement has no finalized revision");
+      const [legacyCurrent, exactSequences] = await Promise.all([
+        reviewServices.getSynthesisProvenance(projectId, statementId, history.current.id),
+        synthesisRevisionExactRouteReadServices.getSynthesisRevisionExactRouteSequences(projectId, statementId, history.current.id),
+      ]);
+      const current = withLosslessSequence({
+        ...legacyCurrent,
+        supports: legacyCurrent.supports.map((support) => {
+          const sequence = exactSequences.extractionRevisionSequences[support.extractionRevisionId];
+          if (sequence === undefined) throw new DomainError("DATABASE_CONSTRAINT", "Exact Synthesis support sequence is missing");
+          return { ...support, extractionRevision: { ...support.extractionRevision, sequence } };
+        }),
+      }, history.current.sequence);
+      const currentInterpretation = await synthesisInterpretationCurrentReadServices.getCurrentSynthesisInterpretationSummary(
+        projectId, statementId, current.id,
+      );
+      const [editContexts, currentPrepContext] = await Promise.all([
+        synthesisReadServices.getSynthesisRevisionEditContext(projectId, current.supports.map((support) => ({
+          paperId: support.paper.id,
+          fieldId: support.field.id,
+          extractionRevisionId: support.extractionRevisionId,
+        }))),
+        reviewServices.getSynthesisPreparationContextForRevision(projectId, current.id),
+      ]);
+      return { current, history, editContexts, currentInterpretation, currentPrepContext };
+    });
+  } catch (error) {
     if (error instanceof DomainError && ["PROJECT_NOT_FOUND", "CROSS_PROJECT_REFERENCE", "VALIDATION_ERROR", "NOT_FOUND"].includes(error.code)) notFound();
     throw error;
   }
-  if (!current) notFound();
-  const [history, editContexts, currentInterpretationProjection] = await Promise.all([
-    synthesisReadServices.getSynthesisHistorySummaries(projectId, statementId),
-    synthesisReadServices.getSynthesisRevisionEditContext(projectId, current.supports.map((support) => ({
-      paperId: support.paper.id,
-      fieldId: support.field.id,
-      extractionRevisionId: support.extractionRevisionId,
-    }))),
-    reviewServices.getSynthesisInterpretationProjection(projectId, statementId, current.id),
-  ]);
-  const preparationContexts = await synthesisReadServices.getSynthesisPreparationContextsForRevisions(projectId, history.map((revision) => revision.id));
-  const prepContextByRevisionId = new Map(preparationContexts.map((context) => [context.synthesisRevisionId, context]));
-  const currentPrepContext = prepContextByRevisionId.get(current.id) ?? null;
+  const { current, history, editContexts, currentInterpretation, currentPrepContext } = detail;
   const editContextByRevisionId = new Map(editContexts.map((context) => [context.extractionRevisionId, context]));
   const replacementBySupportId = new Map<string, NonNullable<(typeof editContexts)[number]["latestExtractionRevision"]>>();
   const usedReplacementIds = new Set<string>();
@@ -66,7 +83,7 @@ export default async function SynthesisStatementPage({ params, searchParams }: {
               </Link>
             </div>
           </div>
-          {currentInterpretationProjection.currentInterpretation && (
+          {currentInterpretation && (
             <div
               style={{
                 marginBottom: 16,
@@ -77,14 +94,16 @@ export default async function SynthesisStatementPage({ params, searchParams }: {
               }}
             >
               <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 6 }}>
-                <span className={`badge-convergence ${currentInterpretationProjection.currentInterpretation.convergenceState}`}>
-                  {currentInterpretationProjection.currentInterpretation.convergenceState}
+                <span className={`badge-convergence ${currentInterpretation.convergenceState}`}>
+                  {currentInterpretation.convergenceState}
                 </span>
-                <strong>Interpretation snapshot {currentInterpretationProjection.currentInterpretation.sequence}</strong>
+                <strong>Interpretation snapshot {currentInterpretation.sequence}</strong>
               </div>
               <p style={{ margin: 0, fontSize: "0.95rem" }}>
-                {currentInterpretationProjection.currentInterpretation.summary}
+                {currentInterpretation.summary}
               </p>
+              {currentInterpretation.researcherNote && <p className="hint">Note: {currentInterpretation.researcherNote}</p>}
+              <Link className="button ghost small" href={`/projects/${projectId}/synthesis/${statementId}/revisions/${current.id}/interpretations/${currentInterpretation.id}`}>Open exact interpretation →</Link>
             </div>
           )}
           {currentPrepContext && (
@@ -125,13 +144,17 @@ export default async function SynthesisStatementPage({ params, searchParams }: {
           )}
           {current.statementText ? <p className="synthesis-statement">{current.statementText}</p> : <p className="empty">This synthesis has been withdrawn.</p>}
           {current.researcherNote && <p className="hint">Researcher note: {current.researcherNote}</p>}
-          <div className="item-list">{current.supports.length === 0 ? <div className="empty">No supporting observations are linked to this revision.</div> : current.supports.map((support) => { const editContext = editContextByRevisionId.get(support.extractionRevisionId); const included = editContext?.finalEligibility === "included"; const excluded = editContext?.finalEligibility === "excluded" || editContext?.finalEligibility === "not_eligible"; return <article className="item" key={support.extractionRevisionId}><div className="item-row"><div><div className="item-title">{support.paper.title}</div><div className="item-meta">{support.field.name}{editContext?.fieldArchived ? " · Archived Field" : ""}: {displayExtraction(support)} · Extraction revision {support.extractionRevision.sequence}</div></div><div style={{ display: "flex", gap: 8, alignItems: "center" }}><span className={`status ${support.isCurrentExtractionRevision ? "supported" : "unsupported"}`}>{support.isCurrentExtractionRevision ? "Current extraction" : "Superseded support"}</span>{!included && <span className="status unsupported">{excluded ? "Paper excluded" : "Paper not finally included"}</span>}</div></div><div className="item-meta">{support.extractionRevision.evidence.length} {support.extractionRevision.evidence.length === 1 ? "Evidence passage" : "Evidence passages"}</div><div className="provenance-list">{support.extractionRevision.evidence.map((evidence) => <div className="quote" key={evidence.id}>“{evidence.sourceText}” <span className="item-meta">· Page {evidence.pageNumber}</span>{evidence.curationWarning && <span className="status stale"> · {evidence.curationWarning === "currently_rejected" ? "currently rejected" : evidence.curationWarning === "needs_review" ? "needs review" : "unreviewed"}</span>}</div>)}</div></article>; })}</div>
+          <div className="item-list">{current.supports.length === 0 ? <div className="empty">No supporting observations are linked to this revision.</div> : current.supports.map((support) => { const editContext = editContextByRevisionId.get(support.extractionRevisionId); const included = editContext?.finalEligibility === "included"; const excluded = editContext?.finalEligibility === "excluded" || editContext?.finalEligibility === "not_eligible"; return <article className="item" key={support.extractionRevisionId}><div className="item-row"><div><div className="item-title">{support.paper.title}</div><div className="item-meta">{support.field.name}{editContext?.fieldArchived ? " · Archived Field" : ""}: {displayExtraction(support)} · Extraction revision {displaySequenceLabel(support.extractionRevision.sequence)}</div></div><div style={{ display: "flex", gap: 8, alignItems: "center" }}><span className={`status ${support.isCurrentExtractionRevision ? "supported" : "unsupported"}`}>{support.isCurrentExtractionRevision ? "Current extraction" : "Superseded support"}</span>{!included && <span className="status unsupported">{excluded ? "Paper excluded" : "Paper not finally included"}</span>}</div></div><div className="item-meta">{support.extractionRevision.evidence.length} {support.extractionRevision.evidence.length === 1 ? "Evidence passage" : "Evidence passages"}</div><div className="provenance-list">{support.extractionRevision.evidence.map((evidence) => <div className="quote" key={evidence.id}>“{evidence.sourceText}” <span className="item-meta">· Page {evidence.pageNumber}</span>{evidence.curationWarning && <span className="status stale"> · {evidence.curationWarning === "currently_rejected" ? "currently rejected" : evidence.curationWarning === "needs_review" ? "needs review" : "unreviewed"}</span>}</div>)}</div></article>; })}</div>
         </section>
         {active && <section className="card section-card full"><div className="section-heading"><h2>Create a new revision</h2><span className="count">Exact support snapshot</span></div><p className="hint">Existing support is preselected by exact ExtractionRevision ID. Superseded observations are marked and are never silently replaced. Excluded Papers remain visible in history but cannot be selected for a new revision.</p>
           <form action={reviseSynthesisStatementAction}><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="statementId" value={statementId} /><div className="field"><label htmlFor="revision-title">Topic or title <span className="hint">optional</span></label><input id="revision-title" name="title" defaultValue={current.title ?? ""} /></div><div className="field"><label htmlFor="revision-text">Synthesis statement</label><textarea id="revision-text" name="statementText" required defaultValue={current.statementText ?? ""} /></div><div className="field"><label htmlFor="revision-note">Researcher note <span className="hint">optional</span></label><textarea id="revision-note" name="researcherNote" defaultValue={current.researcherNote ?? ""} /></div><div className="item-list">{current.supports.map((support) => { const editContext = editContextByRevisionId.get(support.extractionRevisionId); const included = editContext?.carryForwardEligible ?? false; const replacement = replacementBySupportId.get(support.extractionRevisionId); return <div className="item" key={support.extractionRevisionId}><label className="checkbox-row"><input type="checkbox" name="extractionRevisionIds" value={support.extractionRevisionId} defaultChecked={included} disabled={!included} /><span><strong>{support.paper.title}</strong><br /><span className="hint">{support.field.name}{editContext?.fieldArchived ? " · Archived Field" : ""}: {displayExtraction(support)} · {support.isCurrentExtractionRevision ? "Current extraction" : "Superseded support — replace explicitly if desired"}{!included ? " · Not eligible for carry-forward" : ""}</span></span></label>{replacement && <label className="checkbox-row"><input type="checkbox" name="extractionRevisionIds" value={replacement.id} aria-label={`Use current extraction from ${support.paper.title}`} /><span><strong>Use current extraction</strong><br /><span className="hint">{support.field.name}: {replacement.displayValue ?? replacement.valueState.replaceAll("_", " ")} · Explicit replacement for superseded revision</span></span></label>}</div>; })}</div><button className="button" type="submit">Save new synthesis revision</button></form></section>}
         {active && <section className="card section-card"><div className="section-heading"><h2>Withdraw conclusion</h2></div><p className="hint">Withdrawal preserves every prior statement and support set. Repeating withdrawal is safe and returns the existing withdrawn revision.</p><ConfirmAction action={withdrawSynthesisStatementAction} label="Withdraw synthesis" title="Withdraw this conclusion?" description="Withdrawal creates an immutable withdrawn revision and leaves the complete prior history readable." consequence="This conclusion will no longer be active for new downstream use." hiddenFields={{ projectId, statementId }} optionalTextField={{ name: "researcherNote", label: "Withdrawal note", placeholder: "Why is this conclusion being withdrawn?", maxLength: 10000 }} confirmLabel="Withdraw synthesis" /></section>}
         {!active && <section className="card section-card"><div className="section-heading"><h2>Withdrawn</h2></div><p className="hint">This conclusion is already withdrawn. No additional revision is created by repeating the operation.</p></section>}
-        <section className="card section-card full"><div className="section-heading"><h2>Complete synthesis history</h2><span className="count">{history.length} revisions</span></div><div className="item-list">{history.map((revision) => { const prepCtx = prepContextByRevisionId.get(revision.id); return <article className="item" key={revision.id}><div className="item-row"><div><div className="item-title">Revision {revision.sequence} · {revision.state === "withdrawn" ? "Withdrawn" : revision.supportStatus === "supported" ? "Supported observations" : "Unsupported"}</div><div className="item-meta">{revision.statementText ?? "Conclusion withdrawn"}</div></div><div style={{ display: "flex", gap: 10, alignItems: "center" }}><span className="status">{revision.supportingRevisionCount} revisions · {revision.supportingPaperCount} Papers</span><Link className="button ghost small" href={`/projects/${projectId}/synthesis/${statementId}/revisions/${revision.id}`}>Inspect revision & interpretation →</Link></div></div>{prepCtx && <div className="item-meta" style={{ fontStyle: "italic", marginTop: 4 }}>↳ Preparation context: Evidence Set &ldquo;{prepCtx.evidenceSetName}&rdquo; (pinned seq {prepCtx.pinnedCompositionSequence})</div>}{revision.supports.map((support) => <div className="item-meta" key={support.extractionRevisionId}>↳ {support.paperTitle} · {support.fieldName}: {support.displayValue} · Extraction revision {support.extractionRevisionSequence}{support.isCurrentExtractionRevision ? "" : " · superseded support"}</div>)}</article>; })}</div></section>
+        <section className="card section-card full"><div className="section-heading"><h2>Paginated synthesis history · oldest first</h2><span className="count">{history.items.length} revisions on this page</span></div>
+          {history.current && <p className="hint">Current revision {history.current.sequence}: <Link href={`/projects/${projectId}/synthesis/${statementId}/revisions/${history.current.id}`}>inspect exact revision →</Link></p>}
+          <div className="item-list">{history.items.map((revision) => <article className="item" key={revision.id}><div className="item-row"><div><div className="item-title">Revision {revision.sequence} · {revision.lifecycle === "withdrawn" ? "Withdrawn" : revision.supportStatus === "supported" ? "Supported observations" : "Unsupported"}{revision.isCurrent ? " · Current" : ""}</div>{revision.titlePreview && <div className="item-meta">{revision.titlePreview}{revision.titleTruncated ? "…" : ""}</div>}<div className="item-meta">{revision.statementPreview ?? "Conclusion withdrawn"}{revision.statementTruncated ? "…" : ""}</div></div><div style={{ display: "flex", gap: 10, alignItems: "center" }}><span className="status">{revision.supportingRevisionCount} observations · {revision.supportingPaperCount} Papers · {revision.supportingFieldCount} Fields</span><Link className="button ghost small" href={revision.href}>Inspect exact revision →</Link></div></div>{revision.researcherNotePreview && <div className="item-meta">Note: {revision.researcherNotePreview}{revision.researcherNoteTruncated ? "…" : ""}</div>}{revision.preparation && <div className="item-meta" style={{ fontStyle: "italic", marginTop: 4 }}>↳ Preparation context: Evidence Set &ldquo;{revision.preparation.evidenceSetNamePreview}{revision.preparation.evidenceSetNameTruncated ? "…" : ""}&rdquo; (pinned composition sequence {revision.preparation.pinnedCompositionSequence}){revision.preparation.evidenceSetArchivedAt ? " · Archived Evidence Set" : ""}</div>}</article>)}</div>
+          {history.hasMore && history.nextCursor && <div style={{ marginTop: 14 }}><Link className="button ghost" href={`/projects/${projectId}/synthesis/${statementId}/history?pageSize=${history.pageSize}&cursor=${encodeURIComponent(history.nextCursor)}`}>Next oldest-first history page →</Link></div>}
+        </section>
       </div>
       <p className="footer-note">Source-backed observations remain distinct from the researcher-authored synthesis statement.</p>
     </div></div>;

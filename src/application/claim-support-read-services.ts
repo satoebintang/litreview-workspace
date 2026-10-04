@@ -1,7 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { DomainError } from "@/domain/errors";
-import { ensureId } from "./review-services/shared";
+import { ensureId, type ReviewTransaction } from "./review-services/shared";
 
 export type ClaimSupportSearchKind = "evidence" | "extractionRevision" | "synthesisRevision";
 
@@ -324,13 +324,13 @@ export function createClaimSupportReadServices(db: Database) {
       }, { isolationLevel: "repeatable read", accessMode: "read only" });
     },
 
-    async resolveEligibleClaimSupportIds(input: ResolveEligibleClaimSupportIdsInput): Promise<EligibleClaimSupportIds> {
+    async resolveEligibleClaimSupportIds(input: ResolveEligibleClaimSupportIdsInput, executor?: ReviewTransaction): Promise<EligibleClaimSupportIds> {
       const projectId = ensureId(input.projectId);
       const evidenceIds = normalizeSupportIds(input.evidenceIds);
       const extractionRevisionIds = normalizeSupportIds(input.extractionRevisionIds);
       const synthesisRevisionIds = normalizeSupportIds(input.synthesisRevisionIds);
 
-      return db.transaction(async (tx) => {
+      const read = async (tx: ReviewTransaction) => {
         const eligible: EligibleClaimSupportIds = { evidence: [], extractionRevision: [], synthesisRevision: [] };
 
         if (evidenceIds.length > 0) {
@@ -367,7 +367,8 @@ export function createClaimSupportReadServices(db: Database) {
         }
 
         return eligible;
-      }, { isolationLevel: "repeatable read", accessMode: "read only" });
+      };
+      return executor ? read(executor) : db.transaction(read, { isolationLevel: "repeatable read", accessMode: "read only" });
     },
   };
 }

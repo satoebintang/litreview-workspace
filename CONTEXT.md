@@ -600,3 +600,86 @@ denormalized tables, or migration 0038 were added.
 
 The complete design and verification evidence are in
 [`docs/adr/0050-scalable-interactive-review-report.md`](docs/adr/0050-scalable-interactive-review-report.md).
+
+## Slice 52 Claim and Synthesis detail histories
+
+ClaimRevision, SynthesisRevision, and SynthesisInterpretation detail histories
+use independent keyset pages with a default size of 20 and a maximum of 50.
+Claim and interpretation histories are newest first; SynthesisRevision
+history remains oldest first. Cursors bind the exact parent scope, stream,
+effective page size, and last `(sequence, id)` key. Sequence values cross the
+driver boundary as canonical BIGINT decimal strings and are compared as
+PostgreSQL `bigint`.
+
+History pages return compact text previews, truncation flags, support or child
+counts, and exact-audit links. Page rows are selected before support metrics,
+preparation metadata, or interpretation child counts are computed. Exact
+ClaimRevision and SynthesisInterpretation routes retain full, ownership-scoped
+provenance; the existing exact SynthesisRevision route reads a bounded
+interpretation timeline and the complete current snapshot. Main Claim and
+Synthesis details retain their complete current support graphs.
+
+Legacy full-history APIs and writer semantics remain available. Current
+revision selection continues to use `ORDER BY sequence DESC LIMIT 1` without
+an ID tie-breaker. Each detail composition uses a read-only `REPEATABLE READ`
+snapshot; cursor traversal remains live across requests.
+
+The benchmark evidence records three stages. Stage A used the initial
+sequence-only indexes: the original Node 22.13.0 / PostgreSQL 16.15 run had
+53/53 measurements, two explicit no-SELECT plan skips, and bitmap scans of
+50,002 Claim, 49,671 Synthesis, and 50,002 interpretation index entries plus
+about 25,000 heap rows per stream; top-N sorts considered about 25,000
+candidates to return 50. Its artifact remains byte-for-byte
+preserved at
+`docs/benchmarks/slice52-claim-synthesis-history-read-paths-pre-index.json`
+(SHA-256 `f45f0eb906118bc4e613441f1feaf85396934026ca0a0b675656a026819b06c0`).
+
+Stage B applied approved migration 0038 but retained the original
+`page_candidates` query shape. Its historical artifact contains the three
+old-query deep plans and six paired plans with full SQL and parameters. The
+full-key indexes were selected, but the bitmap plans still processed 25,000
+index and heap rows per stream. These results motivated the separately
+approved query rewrite. The recorded Stage B top-N sorts still considered
+about 25,000 heap candidates. Its preserved `sortInputRows` metadata sums all
+listed child-plan rows, including EXPLAIN `InitPlan`/`SubPlan` rows, and is not
+the actual input count for an individual Sort node.
+
+Stage C applied the unchanged 0038 migration and used the current bounded
+page-key application SQL under normal planner settings; no index DDL was run.
+It recorded 53/53 completed measurements, 52 plan entries (50 completed, two
+explicit no-SELECT skips), and four completed final-application deep plans.
+The skipped plans were
+`exact-interpretation-support-resolution-1000` and
+`exact-interpretation-support-resolution-50000`; neither counted as a pass.
+Each page-key selector used the full `(project, parent, sequence, id)` range
+and stopped after reading 51 entries. Interpretation selects page keys first,
+then hydrates at most 50 visible IDs in a second SELECT:
+
+| Stage C application SELECT | Access path | Key rows; heap work; returned | Filter removals | Sorts | Shared buffers (query; index node) | Temp blocks | Planning/execution ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| Claim `claimHistoryPageQuery` | Index Only Scan on `claim_revisions_project_claim_sequence_id_idx` | 51; 51 heap fetches; 50 rows | 0 | 6; page 51, outer 50, four inactive branches 0 | 291/0; 6/0 | 0/0 | 4.096/1.412 |
+| Synthesis `synthesisHistoryPageQuery` | Index Only Scan on `synthesis_revisions_project_statement_sequence_id_idx` | 51; 51 heap fetches; 50 rows | 0 | 3 | 347/0; 6/0 | 0/0 | 0.533/1.461 |
+| Interpretation `interpretationHistoryScopeAndPageKeysQuery` | Index Scan on `synthesis_interpretations_project_revision_sequence_id_idx` | 51; 51 heap visits; 51 keys | 0 | 1; page 51 | 20/0; 5/0 | 0/0 | 1.154/0.403 |
+| Interpretation `interpretationHistoryHydrationQuery` | Contradictions: Index Only Scan on `synthesis_interpretation_contradictions_interpretation_idx`; limitations/questions: Seq Scan | 50 IDs; 0 contradiction heap fetches; 50 rows | 100 limitations; 100 questions | 4 | 570/0; contradiction index 50/0 | 0/0 | 0.737/1.458 |
+
+Synthesis visible-support aggregation used
+`synthesis_revision_supports_project_synthesis_revision_idx` for 50 probes,
+with no support heap tuples on this deep page. The three page selectors
+include their directional tuple range in the
+corresponding 0038 index condition, stop after 51 entries, and have no full-tail
+sort, filter removals, or temporary I/O. The two 100-row limitation/question
+relations were each scanned once and filtered against the bound visible IDs;
+the 500-row contradiction relation used its existing index. Counts include
+only visible IDs, though this run does not prove index-bounded work for larger
+limitation/question relations. The largest history-page DTO was 34,663 UTF-8
+bytes. Eight legacy full-history cases were explicitly skipped, with one
+completed 10k interpretation-projection sample. The final JSON retains the
+Stage A pointer/hash, Stage B plans and paired object, and Stage C exact query
+text, parameters, plan trees, measurements, and cleanup proof at
+`docs/benchmarks/slice52-claim-synthesis-history-read-paths.json`.
+The disposable database was verified absent; PostgreSQL remained Up and
+healthy and its persistent volume was preserved.
+
+Independent Luna/max review and Sol/high specialist acceptance returned
+ACCEPT after reconciling the Stage C per-node buffer counts with the benchmark
+artifact. The implementation was accepted for publication.

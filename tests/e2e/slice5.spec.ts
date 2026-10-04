@@ -38,7 +38,8 @@ test.describe("Slice 5 manuscript Claims", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Withdraw Claim" }).click();
     await expect(page).toHaveURL(/saved=withdrawn$/);
     await expect(page.getByText("withdrawn", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Complete Claim history/)).toBeVisible();
-    await expect(page.getByText("3 revisions", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Claim revision history" })).toBeVisible();
+    await expect(page.getByText("3 revisions on this page", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open exact Claim revision →" })).toHaveCount(3);
   });
 });

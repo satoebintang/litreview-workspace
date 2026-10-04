@@ -1,0 +1,3 @@
+CREATE INDEX "claim_revisions_project_claim_sequence_id_idx" ON "claim_revisions" USING btree ("project_id","claim_id","sequence","id") WHERE "claim_revisions"."finalized_at" is not null;--> statement-breakpoint
+CREATE INDEX "synthesis_interpretations_project_revision_sequence_id_idx" ON "synthesis_interpretations" USING btree ("project_id","synthesis_revision_id","sequence","id") WHERE "synthesis_interpretations"."finalized_at" is not null;--> statement-breakpoint
+CREATE INDEX "synthesis_revisions_project_statement_sequence_id_idx" ON "synthesis_revisions" USING btree ("project_id","synthesis_statement_id","sequence","id") WHERE "synthesis_revisions"."finalized_at" is not null;

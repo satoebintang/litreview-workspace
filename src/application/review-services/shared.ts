@@ -87,8 +87,12 @@ export function createRequireClaim<TClaim>(
   requireProject: (projectId: string) => Promise<unknown>,
   claimRepo: { findById(projectId: string, claimId: string): Promise<TClaim | null> },
 ) {
-  return async function requireClaim(projectId: string, claimId: string) {
-    await requireProject(projectId);
+  return async function requireClaim(
+    projectId: string,
+    claimId: string,
+    options: { projectAlreadyValidated?: boolean } = {},
+  ) {
+    if (!options.projectAlreadyValidated) await requireProject(projectId);
     ensureId(claimId);
     const claim = await claimRepo.findById(projectId, claimId);
     if (!claim) throw new DomainError("CROSS_PROJECT_REFERENCE", "Claim does not belong to this project");
