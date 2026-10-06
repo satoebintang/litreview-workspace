@@ -742,9 +742,10 @@ describe("bounded-context module boundaries", () => {
 
   it("preserves configuration bytes", () => {
     const packageJsonSlice48Sha256 = "d22e766b5161dade8a6005901db4ca41ba91228dbbaacf46e8e83ff6305bc941";
+    const packageJsonSlice54Sha256 = "53086418aec4c34349a80298ec9f3651c8c95727c0ca21f2f74287ff34f0a9ba";
     for (const manifest of fixture.configHashes) {
       if (manifest.file === "package.json") {
-        expect([manifest.sha256, packageJsonSlice48Sha256], manifest.file).toContain(sha256(manifest.file));
+        expect([manifest.sha256, packageJsonSlice48Sha256, packageJsonSlice54Sha256], manifest.file).toContain(sha256(manifest.file));
         continue;
       }
       expect(sha256(manifest.file), manifest.file).toBe(manifest.sha256);

@@ -2,15 +2,19 @@
 import "dotenv/config";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import { and, eq } from "drizzle-orm";
+import { and, eq, type SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { createDb } from "@/db/client";
 import { createReviewServices } from "@/application/services";
 import { serializeManuscriptMarkdown } from "@/application/manuscript-formatting";
 import { loadActiveSectionItems, lockSection, planSectionBlock, writeSectionBlock } from "@/application/manuscript-writer";
 import { manuscriptClaimPlacements } from "@/db/schema";
+import { createManuscriptClaimSelectionReadServices, type ManuscriptClaimSelectionReadServices } from "@/application/manuscript-claim-selection-read-services";
 
 const { db, client } = createDb(process.env.DATABASE_URL ?? "postgres://litreview:litreview@localhost:5432/litreview");
 const services = createReviewServices(db) as any;
+const claimSelection = createManuscriptClaimSelectionReadServices(db);
+const sqlDialect = new PgDialect();
 let projectId = "";
 
 /**
@@ -55,6 +59,267 @@ describe("Slice 7 manuscript workspace", () => {
   function itemsOf(view: any): any[] { return sectionsOf(view).flatMap((section) => section.items ?? []); }
   function bibliographyOf(view: any): any[] { return view?.bibliographyCandidates ?? view?.bibliography ?? view?.manuscript?.bibliographyCandidates ?? []; }
   function warningsOf(view: any): any[] { return view?.warnings ?? view?.manuscript?.warnings ?? []; }
+
+  async function captureSelectionRead<T>(read: (executor: NonNullable<Parameters<ManuscriptClaimSelectionReadServices["getPlacementClaimRevisionPage"]>[3]>) => Promise<T>) {
+    const statements: SQL[] = [];
+    const value = await db.transaction(async (tx) => {
+      const executor = { execute: (query: SQL) => { statements.push(query); return tx.execute(query); } } as unknown as NonNullable<Parameters<ManuscriptClaimSelectionReadServices["getPlacementClaimRevisionPage"]>[3]>;
+      return read(executor);
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
+    return { value, statements: statements.map((statement) => sqlDialect.sqlToQuery(statement).sql) };
+  }
+
+  async function captureRejectedSelectionRead(read: (executor: NonNullable<Parameters<ManuscriptClaimSelectionReadServices["getPlacementClaimRevisionPage"]>[3]>) => Promise<unknown>) {
+    const statements: SQL[] = [];
+    let error: unknown;
+    await db.transaction(async (tx) => {
+      const executor = { execute: (query: SQL) => { statements.push(query); return tx.execute(query); } } as unknown as NonNullable<Parameters<ManuscriptClaimSelectionReadServices["getPlacementClaimRevisionPage"]>[3]>;
+      try { await read(executor); } catch (caught) { error = caught; }
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
+    return { error, statements: statements.map((statement) => sqlDialect.sqlToQuery(statement).sql) };
+  }
+
+  it("pages project placement candidates in legacy order with current-parent eligibility and two SELECTs", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Bounded placement candidates" });
+    const historical = await claimWithDirectEvidence(projectId, await includedPaper(projectId, "Historical selector source"), "Historical active selector revision");
+    const current = await services.createClaimRevision(projectId, historical.claim.id, {
+      claimText: "Current active selector revision",
+      expectedCurrentRevisionId: historical.revision.id,
+      supports: [{ kind: "evidence", evidenceId: historical.evidence.id }],
+    });
+    const unsupported = await services.createClaim(projectId, { claimText: "Unsupported active selector revision" });
+    const withdrawn = await services.createClaim(projectId, { claimText: "Withdrawn parent selector revision" });
+    await services.withdrawClaim(projectId, withdrawn.id, { expectedCurrentRevisionId: withdrawn.revision.id });
+
+    const expected = await services.listPlaceableClaimRevisions(projectId);
+    const actual: any[] = [];
+    let cursor: string | null = null;
+    let sawContinuation = false;
+    do {
+      const captured = await captureSelectionRead((executor) => claimSelection.getPlacementClaimRevisionPage(
+        projectId,
+        section.id,
+        { pageSize: 1, cursor },
+        executor,
+      ));
+      const selects = captured.statements.filter((statement) => /^\s*(select|with)\b/i.test(statement));
+      expect(selects).toHaveLength(2);
+      expect(selects[1]).toMatch(/page_keys as materialized/i);
+      expect(selects[1]).toMatch(/visible_keys as materialized/i);
+      expect(selects[1]).toMatch(/left\(revision\.claim_text,\s*600\)/i);
+      expect(selects[1]).not.toMatch(/support|provenance/i);
+      actual.push(...captured.value.page.items);
+      if (captured.value.page.hasMore) sawContinuation = true;
+      cursor = captured.value.page.nextCursor;
+    } while (cursor);
+
+    expect(sawContinuation).toBe(true);
+    expect(actual.map((item) => item.claimRevisionId)).toEqual(expected.map((item: any) => item.id));
+    expect(actual.map((item) => item.claimId)).toEqual(expected.map((item: any) => item.claimId));
+    expect(actual.map((item) => item.isCurrent)).toEqual(expected.map((item: any) => item.isCurrent));
+    expect(actual.map((item) => item.sequence)).toEqual(expected.map((item: any) => String(item.sequence)));
+    expect(actual.map((item) => item.claimRevisionId)).toContain(historical.revision.id);
+    expect(actual.find((item) => item.claimRevisionId === historical.revision.id)?.isCurrent).toBe(false);
+    expect(actual.find((item) => item.claimRevisionId === current.revision.id)?.isCurrent).toBe(true);
+    expect(actual.map((item) => item.claimRevisionId)).toContain(unsupported.revision.id);
+    expect(actual.some((item) => item.claimRevisionId === withdrawn.revision.id)).toBe(false);
+  });
+
+  it("bounds same-Claim replacement pages, binds the placed identity, and revalidates stale writes", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Replacement candidates" });
+    const claim = await services.createClaim(projectId, { claimText: "Replacement candidate original" });
+    const placement = await call("placeClaimRevision", projectId, manuscript.id, section.id, claim.revision.id);
+    const second = await services.createClaimRevision(projectId, claim.id, { claimText: "Replacement candidate second", expectedCurrentRevisionId: claim.revision.id, supports: [] });
+    const third = await services.createClaimRevision(projectId, claim.id, { claimText: "Replacement candidate third", expectedCurrentRevisionId: second.revision.id, supports: [] });
+
+    const first = await captureSelectionRead((executor) => claimSelection.getPlacementReplacementClaimRevisionPage(
+      projectId,
+      placement.id,
+      { pageSize: 1 },
+      executor,
+    ));
+    expect(first.statements.filter((statement) => /^\s*(select|with)\b/i.test(statement))).toHaveLength(2);
+    expect(first.value.placement).toMatchObject({ id: placement.id, claimId: claim.id, claimRevisionId: claim.revision.id, claimLifecycle: "active" });
+    expect(first.value.page.items).toHaveLength(1);
+    expect(first.value.page.items[0].claimId).toBe(claim.id);
+    expect(first.value.page.items[0].sequence).toBe(String(third.revision.sequence));
+    expect(first.value.page.items[0].isCurrent).toBe(true);
+    expect(first.value.page.hasMore).toBe(true);
+
+    await call("replacePlacedClaimRevision", projectId, manuscript.id, placement.id, second.revision.id, claim.revision.id);
+    const staleBrowse = await captureRejectedSelectionRead((executor) => claimSelection.getPlacementReplacementClaimRevisionPage(
+      projectId,
+      placement.id,
+      { pageSize: 1, cursor: first.value.page.nextCursor },
+      executor,
+    ));
+    expect(staleBrowse.error).toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(staleBrowse.statements.filter((statement) => /^\s*(select|with)\b/i.test(statement))).toHaveLength(1);
+    await expect(call("replacePlacedClaimRevision", projectId, manuscript.id, placement.id, third.revision.id, claim.revision.id)).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    await call("removeClaimPlacement", projectId, manuscript.id, placement.id);
+    await expect(claimSelection.getPlacementReplacementClaimRevisionPage(projectId, placement.id, {})).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    const withdrawnClaim = await services.createClaim(projectId, { claimText: "Claim withdrawn after replacement browse" });
+    const withdrawnPlacement = await call("placeClaimRevision", projectId, manuscript.id, section.id, withdrawnClaim.revision.id);
+    const withdrawnCandidate = await services.createClaimRevision(projectId, withdrawnClaim.id, {
+      claimText: "Candidate invalidated by Claim withdrawal",
+      expectedCurrentRevisionId: withdrawnClaim.revision.id,
+      supports: [],
+    });
+    await claimSelection.getPlacementReplacementClaimRevisionPage(projectId, withdrawnPlacement.id, {});
+    await services.withdrawClaim(projectId, withdrawnClaim.id, { expectedCurrentRevisionId: withdrawnCandidate.revision.id });
+    await expect(call("replacePlacedClaimRevision", projectId, manuscript.id, withdrawnPlacement.id, withdrawnCandidate.revision.id, withdrawnClaim.revision.id)).rejects.toMatchObject({ code: expect.stringMatching(/VALIDATION_ERROR|INELIGIBLE_REFERENCE/) });
+  });
+
+  it("filters a clustered withdrawn-parent history across deep page boundaries and supports zero candidates", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Withdrawn deep boundary" });
+    const withdrawnRevisionIds: string[] = [];
+    for (let index = 0; index < 20; index += 1) {
+      await services.createClaim(projectId, { claimText: `Older eligible ${index}` });
+    }
+    for (let index = 0; index < 30; index += 1) {
+      const claim = await services.createClaim(projectId, { claimText: `Clustered withdrawn ${index}` });
+      withdrawnRevisionIds.push(claim.revision.id);
+      await services.withdrawClaim(projectId, claim.id, { expectedCurrentRevisionId: claim.revision.id });
+    }
+    for (let index = 0; index < 20; index += 1) {
+      await services.createClaim(projectId, { claimText: `Newer eligible ${index}` });
+    }
+
+    const expected = await services.listPlaceableClaimRevisions(projectId);
+    const actual: any[] = [];
+    let cursor: string | null = null;
+    let deepBoundary = false;
+    do {
+      const result = await captureSelectionRead((executor) => claimSelection.getPlacementClaimRevisionPage(
+        projectId,
+        section.id,
+        { pageSize: 10, cursor },
+        executor,
+      ));
+      const selects = result.statements.filter((statement) => /^\s*(select|with)\b/i.test(statement));
+      expect(selects).toHaveLength(2);
+      if (cursor) {
+        expect(selects[1]).toMatch(/r\.sequence\s*=\s*\$\d+::bigint\s+and\s+r\.id\s*>\s*\$\d+::uuid/i);
+        expect(selects[1]).toMatch(/r\.sequence\s*<\s*\$\d+::bigint/i);
+      }
+      actual.push(...result.value.page.items);
+      cursor = result.value.page.nextCursor;
+      deepBoundary ||= actual.length >= 40;
+    } while (cursor);
+    expect(deepBoundary).toBe(true);
+    expect(actual.map((item) => item.claimRevisionId)).toEqual(expected.map((item: any) => item.id));
+    expect(actual.some((item) => withdrawnRevisionIds.includes(item.claimRevisionId))).toBe(false);
+
+    const emptyProject = await services.createProject({ title: "Zero manuscript candidates" });
+    const emptyManuscript = await call("getOrCreateDefaultManuscript", emptyProject.id);
+    const emptySection = await call("createSection", emptyProject.id, emptyManuscript.id, { title: "Empty" });
+    const emptyClaim = await services.createClaim(emptyProject.id, { claimText: "Only withdrawn candidate" });
+    await services.withdrawClaim(emptyProject.id, emptyClaim.id, { expectedCurrentRevisionId: emptyClaim.revision.id });
+    const empty = await claimSelection.getPlacementClaimRevisionPage(emptyProject.id, emptySection.id, {});
+    expect(empty.page.items).toEqual([]);
+    expect(empty.page.hasMore).toBe(false);
+  });
+
+  it("traverses tied candidate sequences by ID ascending without choosing a UUID current winner", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Tied sequence candidates" });
+    const claim = await services.createClaim(projectId, { claimText: "Tied current revision fixture" });
+    const tiedIds: string[] = [];
+    for (const text of ["Tied revision A", "Tied revision B"]) {
+      const inserted = await client.unsafe(
+        "insert into claim_revisions (sequence, project_id, claim_id, state, claim_text) overriding system value values (1000000::bigint, $1, $2, 'active', $3) returning id",
+        [projectId, claim.id, text],
+      );
+      const id = String(inserted[0].id);
+      await client.unsafe("update claim_revisions set finalized_at=now() where project_id=$1 and id=$2", [projectId, id]);
+      tiedIds.push(id);
+    }
+    const expectedIds = [...tiedIds].sort((left, right) => left.localeCompare(right));
+    const actual: any[] = [];
+    let cursor: string | null = null;
+    do {
+      const result = await claimSelection.getPlacementClaimRevisionPage(projectId, section.id, { pageSize: 1, cursor });
+      actual.push(...result.page.items);
+      cursor = result.page.nextCursor;
+      if (actual.length === 2) break;
+    } while (cursor);
+    expect(actual.map((item) => item.claimRevisionId)).toEqual(expectedIds);
+    expect(actual.every((item) => item.sequence === "1000000")).toBe(true);
+    expect(actual.filter((item) => item.isCurrent)).toHaveLength(1);
+  });
+
+  it("returns maximum pages with SQL-truncated code-point previews inside the UTF-8 payload budget", async () => {
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Maximum candidate page" });
+    const longScopeTitle = "😀".repeat(40_000);
+    await client.unsafe("update manuscripts set title=$1 where project_id=$2::uuid and id=$3::uuid", [longScopeTitle, projectId, manuscript.id]);
+    await client.unsafe("update manuscript_sections set title=$1 where project_id=$2::uuid and id=$3::uuid", [longScopeTitle, projectId, section.id]);
+    for (let index = 0; index < 51; index += 1) {
+      await services.createClaim(projectId, { claimText: "😀".repeat(700) });
+    }
+    const projectPage = await claimSelection.getPlacementClaimRevisionPage(projectId, section.id, { pageSize: 50 });
+    expect(projectPage.page.items).toHaveLength(50);
+    expect(projectPage.page.hasMore).toBe(true);
+    expect(projectPage.page.items.every((item) => [...item.textPreview].length === 600 && item.textTruncated)).toBe(true);
+    expect(projectPage.manuscript.title).toBe("😀".repeat(600));
+    expect(projectPage.section.title).toBe("😀".repeat(600));
+    expect(Buffer.byteLength(JSON.stringify(projectPage), "utf8")).toBeLessThanOrEqual(262_144);
+    expect(Object.keys(projectPage.page.items[0]).sort()).toEqual(["claimId", "claimRevisionId", "finalizedAt", "isCurrent", "sequence", "textPreview", "textTruncated"].sort());
+
+    const replacementClaim = await services.createClaim(projectId, { claimText: "Replacement payload base revision" });
+    const placement = await call("placeClaimRevision", projectId, manuscript.id, section.id, replacementClaim.revision.id);
+    await client.unsafe(`insert into claim_revisions(project_id,claim_id,state,claim_text,finalized_at)
+      select $1::uuid,$2::uuid,'active',repeat($3::text,$4::integer),null
+      from generate_series(1,51)`, [projectId, replacementClaim.id, "😀", 700]);
+    await client.unsafe("update claim_revisions set finalized_at=now() where project_id=$1::uuid and claim_id=$2::uuid and finalized_at is null", [projectId, replacementClaim.id]);
+    const replacementPage = await claimSelection.getPlacementReplacementClaimRevisionPage(projectId, placement.id, { pageSize: 50 });
+    expect(replacementPage.page.items).toHaveLength(50);
+    expect(replacementPage.page.hasMore).toBe(true);
+    expect(replacementPage.page.items.every((item) => [...item.textPreview].length === 600 && item.textTruncated)).toBe(true);
+    expect(replacementPage.manuscript.title).toBe("😀".repeat(600));
+    expect(replacementPage.placement.sectionTitle).toBe("😀".repeat(600));
+    expect(Buffer.byteLength(JSON.stringify(replacementPage), "utf8")).toBeLessThanOrEqual(262_144);
+
+    const storedTitles = await client.unsafe(`select
+        (select char_length(title) from manuscripts where id=$1::uuid) as manuscript_title_length,
+        (select char_length(title) from manuscript_sections where id=$2::uuid) as section_title_length`, [manuscript.id, section.id]);
+    expect(storedTitles[0]).toEqual({ manuscript_title_length: 40_000, section_title_length: 40_000 });
+  });
+
+  it("compares adjacent ClaimRevision BIGINTs exactly beyond JavaScript safe integer and at the signed limit", async () => {
+    const seq = await client.unsafe("select last_value, is_called from claim_revisions_sequence_seq");
+    const originalValue = String(seq[0].last_value);
+    const wasCalled = Boolean(seq[0].is_called);
+    const manuscript = await call("getOrCreateDefaultManuscript", projectId);
+    const section = await call("createSection", projectId, manuscript.id, { title: "Lossless replacement" });
+    try {
+      await client.unsafe("select setval('claim_revisions_sequence_seq', $1::bigint, true)", ["9007199254740990"]);
+      const claim = await services.createClaim(projectId, { claimText: "Lossless original" });
+      const newer = await services.createClaimRevision(projectId, claim.id, { claimText: "Lossless newer", expectedCurrentRevisionId: claim.revision.id, supports: [] });
+      const exactAdjacent = await client.unsafe("select id::text, sequence::text from claim_revisions where project_id=$1 and id in ($2, $3)", [projectId, claim.revision.id, newer.revision.id]);
+      expect(new Map(exactAdjacent.map((row: any) => [String(row.id), String(row.sequence)])).get(claim.revision.id)).toBe("9007199254740991");
+      expect(new Map(exactAdjacent.map((row: any) => [String(row.id), String(row.sequence)])).get(newer.revision.id)).toBe("9007199254740992");
+      const placement = await call("placeClaimRevision", projectId, manuscript.id, section.id, claim.revision.id);
+      const projected = placementsOf(await call("getManuscript", projectId, manuscript.id)).find((item) => item.id === placement.id);
+      expect(projected.isSuperseded).toBe(true);
+      await expect(call("replacePlacedClaimRevision", projectId, manuscript.id, placement.id, newer.revision.id, claim.revision.id)).resolves.toMatchObject({ claimRevisionId: newer.revision.id });
+
+      await client.unsafe("select setval('claim_revisions_sequence_seq', 9223372036854775805::bigint, true)");
+      const boundaryClaim = await services.createClaim(projectId, { claimText: "Signed BIGINT boundary original" });
+      const boundaryNewer = await services.createClaimRevision(projectId, boundaryClaim.id, { claimText: "Signed BIGINT maximum candidate", expectedCurrentRevisionId: boundaryClaim.revision.id, supports: [] });
+      const exactBoundary = await client.unsafe("select id::text, sequence::text from claim_revisions where project_id=$1 and id in ($2, $3)", [projectId, boundaryClaim.revision.id, boundaryNewer.revision.id]);
+      expect(new Map(exactBoundary.map((row: any) => [String(row.id), String(row.sequence)])).get(boundaryClaim.revision.id)).toBe("9223372036854775806");
+      expect(new Map(exactBoundary.map((row: any) => [String(row.id), String(row.sequence)])).get(boundaryNewer.revision.id)).toBe("9223372036854775807");
+      const boundaryPlacement = await call("placeClaimRevision", projectId, manuscript.id, section.id, boundaryClaim.revision.id);
+      await expect(call("replacePlacedClaimRevision", projectId, manuscript.id, boundaryPlacement.id, boundaryNewer.revision.id, boundaryClaim.revision.id)).resolves.toMatchObject({ claimRevisionId: boundaryNewer.revision.id });
+    } finally {
+      await client.unsafe("select setval('claim_revisions_sequence_seq', $1::bigint, $2)", [originalValue, wasCalled]);
+    }
+  });
 
   it("lazily creates one default Manuscript, including under concurrent first access", async () => {
     const [first, second, third] = await Promise.all([

@@ -733,3 +733,43 @@ driver rows, and transferred 41,589 DTO bytes; isolated Field counts matched
 1/10/50, and current Evidence links scaled 0/50/500 with 0/5/50 Paper Evidence
 rows. The 1k history pages matched all 1,000 mapped legacy rows. Timing is
 diagnostic only.
+
+## Slice 54 Manuscript ClaimRevision placement selection
+
+The normal `/manuscript` route no longer loads the complete project-wide
+placeable ClaimRevision selector. Each active Section links to a bounded
+project-wide placement browser; only superseded placements whose canonical
+`placement.claimLifecycle` is active link to a bounded same-Claim replacement
+browser. Replacement scope, currently placed revision, and placed sequence
+come from the server. Both browsers return 20 by default, at most 50, no exact
+total, and SQL-truncated 600-codepoint previews. The existing compatibility
+selector and writer actions remain available.
+
+Placeability preserves finalized active revisions whose stable Claim's current
+finalized revision is active, including historical active and unsupported
+revisions. Current selection remains greatest sequence with no ID tie-breaker.
+Traversal preserves `sequence DESC, id ASC`, and its cursor uses the exact
+mixed-direction boundary. Selector/writer BIGINT boundaries stay decimal text
+and are compared by PostgreSQL. The manuscript projection computes
+supersession in SQL as `latest.sequence > attached.sequence`; currentness still
+uses latest revision ID equality.
+
+Bounded key selection and visible-only hydration apply only to the new
+candidate browsers. Withdrawn-parent rejection can still require the database
+to examine many ordered active candidates; no universal O(pageSize)
+database-work claim is made. Snapshot history paging remains deferred, and
+Search is excluded. This slice does not claim that the complete manuscript
+artifact is universally bounded. See
+[`docs/adr/0054-scalable-manuscript-claim-revision-selection.md`](docs/adr/0054-scalable-manuscript-claim-revision-selection.md)
+for the decision and final 0040/benchmark evidence, and
+[`docs/benchmarks/slice54-manuscript-claim-selection-read-paths.json`](docs/benchmarks/slice54-manuscript-claim-selection-read-paths.json)
+for the disposable PostgreSQL 16 plan and measurement record. Migration 0040
+contains only the measured project-wide mixed-order partial index; replacement
+continues to use the Slice 52 Claim-history index. The full run passed 21
+project scenarios, 3 replacement scenarios, and 72 page checks (144 page
+SELECTs); every page matched its direct-SQL oracle, cleanup was verified, and
+the profile-run maximum DTO was 132,019 UTF-8 bytes. A separate long-scope-title
+stress run measured 136,575 and 136,975-byte project-wide and replacement DTOs,
+so the combined maximum is 136,975 UTF-8 bytes. The 50k withdrawn-heavy and
+zero-eligible profiles confirm that parent-current rejection work can greatly
+exceed a page even though transfer and hydration remain bounded.

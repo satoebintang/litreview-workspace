@@ -281,6 +281,13 @@
       "when": 1791203334414,
       "tag": "0039_slice53_finalized_extraction_history_keysets",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791289089010,
+      "tag": "0040_slice54_manuscript_claim_selection",
+      "breakpoints": true
     }
   ]
 }

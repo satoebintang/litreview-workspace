@@ -50,6 +50,9 @@ export const claimRevisions = pgTable(
       .on(table.projectId, table.claimId, table.sequence, table.id)
       .where(sql`${table.finalizedAt} is not null`),
     projectSequence: index("claim_revisions_project_sequence_idx").on(table.projectId, table.sequence),
+    projectActiveSequenceOrder: index("claim_revisions_project_active_sequence_order_idx")
+      .on(table.projectId, table.sequence.desc(), table.id.asc())
+      .where(sql`${table.finalizedAt} is not null and ${table.state} = 'active'`),
     claimOwnership: foreignKey({
       columns: [table.projectId, table.claimId],
       foreignColumns: [claims.projectId, claims.id],

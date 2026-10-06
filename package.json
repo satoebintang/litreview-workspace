@@ -11,6 +11,7 @@
     "start": "next start --hostname 127.0.0.1",
     "benchmark:dedup": "tsx scripts/benchmark-dedup.ts",
     "benchmark:claim-read-paths": "tsx scripts/benchmark-claim-read-paths.ts",
+    "benchmark:manuscript-claim-selection": "tsx scripts/benchmark-manuscript-claim-selection-read-paths.ts",
     "benchmark:paper-collection-read-paths": "tsx scripts/benchmark-paper-collection-read-paths.ts",
     "benchmark:paper-selection-read-paths": "tsx scripts/benchmark-paper-selection-read-paths.ts",
     "benchmark:acquisition-read-paths": "tsx scripts/benchmark-acquisition-read-paths.ts",

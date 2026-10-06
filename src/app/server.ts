@@ -16,6 +16,7 @@ import { createClaimSynthesisHistoryReadServices } from "@/application/claim-syn
 import { createSynthesisInterpretationExactReadServices } from "@/application/synthesis-interpretation-exact-read-services";
 import { createSynthesisInterpretationCurrentReadServices } from "@/application/synthesis-interpretation-current-read-services";
 import { createClaimRevisionExactAuditReadServices } from "@/application/claim-revision-exact-audit-read-services";
+import { createManuscriptClaimSelectionReadServices } from "@/application/manuscript-claim-selection-read-services";
 import { createSynthesisRevisionExactRouteReadServices } from "@/application/synthesis-revision-exact-route-read-services";
 import type { ReviewTransaction } from "@/application/review-services/shared";
 import { boundPdfIntakeDiagnostic, type PdfMetadataInspection, type PdfMetadataProposal } from "@/application/pdf-intake-services";
@@ -163,6 +164,7 @@ export type ReviewReadTransactionContext = {
   claimRevisionExactAuditReadServices: ReturnType<typeof createClaimRevisionExactAuditReadServices>;
   synthesisRevisionExactRouteReadServices: ReturnType<typeof createSynthesisRevisionExactRouteReadServices>;
   extractionHistoryReadServices: ReturnType<typeof createExtractionHistoryReadServices>;
+  manuscriptClaimSelectionReadServices: ReturnType<typeof createManuscriptClaimSelectionReadServices>;
   executor: ReviewTransaction;
 };
 
@@ -198,6 +200,7 @@ export function withReviewReadTransaction<T>(
       ),
       synthesisRevisionExactRouteReadServices: createSynthesisRevisionExactRouteReadServices(txDatabase),
       extractionHistoryReadServices: createExtractionHistoryReadServices(txDatabase),
+      manuscriptClaimSelectionReadServices: createManuscriptClaimSelectionReadServices(txDatabase),
       executor: tx,
     };
     return operation(transactionServices);

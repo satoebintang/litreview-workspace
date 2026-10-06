@@ -13,6 +13,8 @@ const baseUrl = resolveDatabaseUrl();
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
 const migration0039Path = path.join(migrationFolder, "0039_slice53_finalized_extraction_history_keysets.sql");
 const migration0039Hash = createHash("sha256").update(fs.readFileSync(migration0039Path)).digest("hex");
+const migration0040Path = path.join(migrationFolder, "0040_slice54_manuscript_claim_selection.sql");
+const migration0040Hash = createHash("sha256").update(fs.readFileSync(migration0040Path)).digest("hex");
 const newIndex = "extraction_value_revisions_project_paper_field_sequence_id_idx";
 
 function urlFor(name: string) {
@@ -76,7 +78,9 @@ async function expectIndex(client: postgres.Sql) {
 async function expectTail(client: postgres.Sql, expectedId: number) {
   const [tail] = await client`select id,hash from drizzle.__drizzle_migrations order by id desc limit 1`;
   expect(Number(tail.id)).toBe(expectedId);
-  expect(tail.hash).toBe(migration0039Hash);
+  expect(tail.hash).toBe(migration0040Hash);
+  const applied = await client`select hash from drizzle.__drizzle_migrations order by id`;
+  expect(applied.map((row) => row.hash)).toContain(migration0039Hash);
 }
 
 describe("Slice 53 migration 0039 extraction history keyset", () => {
@@ -95,7 +99,7 @@ describe("Slice 53 migration 0039 extraction history keyset", () => {
 
       await migrate(freshDb.db, { migrationsFolder: migrationFolder });
       await expectIndex(freshDb.client);
-      await expectTail(freshDb.client, 40);
+      await expectTail(freshDb.client, 41);
 
       await migrate(forwardDb.db, { migrationsFolder: baseline.folder });
       const before = await forwardDb.client`
@@ -120,7 +124,7 @@ describe("Slice 53 migration 0039 extraction history keyset", () => {
       `;
       await migrate(forwardDb.db, { migrationsFolder: migrationFolder });
       await expectIndex(forwardDb.client);
-      await expectTail(forwardDb.client, 40);
+      await expectTail(forwardDb.client, 41);
       const afterRows = await forwardDb.client`
         select id::text,sequence::text,field_type,value_state,text_value,finalized_at is not null as finalized
         from extraction_value_revisions where id=${revision.id}

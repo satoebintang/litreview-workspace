@@ -11,8 +11,8 @@ import { resolveDatabaseUrl } from "@/db/config";
 
 const baseUrl = resolveDatabaseUrl();
 const migrationFolder = path.resolve(process.cwd(), "drizzle");
-const migration0039Path = path.join(migrationFolder, "0039_slice53_finalized_extraction_history_keysets.sql");
-const migration0039Hash = createHash("sha256").update(fs.readFileSync(migration0039Path)).digest("hex");
+const migration0040Path = path.join(migrationFolder, "0040_slice54_manuscript_claim_selection.sql");
+const migration0040Hash = createHash("sha256").update(fs.readFileSync(migration0040Path)).digest("hex");
 
 function databaseUrl(name: string) {
   const url = new URL(baseUrl);
@@ -95,8 +95,8 @@ describe("Slice 48 traceability epoch migration", () => {
         order by t.tgname
       `;
       expect(freshEpoch.epoch).toBe("0");
-      expect(Number(freshTail.id)).toBe(40);
-      expect(freshTail.hash).toBe(migration0039Hash);
+      expect(Number(freshTail.id)).toBe(41);
+      expect(freshTail.hash).toBe(migration0040Hash);
       expect(freshTriggers).toHaveLength(4);
       expect(freshTriggers.every((trigger) => trigger.tgenabled === "O")).toBe(true);
       await freshApp.client`
@@ -136,8 +136,8 @@ describe("Slice 48 traceability epoch migration", () => {
         action: beforeMigration.action,
         note: beforeMigration.note,
       });
-      expect(Number(forwardTail.id)).toBe(40);
-      expect(forwardTail.hash).toBe(migration0039Hash);
+      expect(Number(forwardTail.id)).toBe(41);
+      expect(forwardTail.hash).toBe(migration0040Hash);
 
       const nextClaimId = randomUUID();
       await forwardApp.client`insert into claims (id,project_id) values (${nextClaimId},${forwardIds.projectId})`;
