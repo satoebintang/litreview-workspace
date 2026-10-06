@@ -274,6 +274,13 @@
       "when": 1791026254946,
       "tag": "0038_slice52_finalized_history_keysets",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791203334414,
+      "tag": "0039_slice53_finalized_extraction_history_keysets",
+      "breakpoints": true
     }
   ]
 }

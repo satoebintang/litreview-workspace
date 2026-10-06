@@ -1,0 +1,1 @@
+CREATE INDEX "extraction_value_revisions_project_paper_field_sequence_id_idx" ON "extraction_value_revisions" USING btree ("project_id","paper_id","field_id","sequence","id") WHERE "extraction_value_revisions"."finalized_at" is not null;

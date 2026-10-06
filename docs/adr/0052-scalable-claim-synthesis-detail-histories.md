@@ -1,6 +1,8 @@
 # ADR 0052: Scalable Claim and Synthesis Detail Histories
 
-**Status:** ACCEPT; independent Luna/max and Sol/high reviews complete; accepted for publication
+**Status:** implemented and published as `v0.52.0-slice52`
+
+**Published merge SHA:** `565727c039d1716baf00816dd85a2292d74dae56`
 
 **Date:** 2026-10-03
 

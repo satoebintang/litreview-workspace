@@ -6,6 +6,12 @@ import { createPlaywrightTestDatabaseClient } from "./playwright-database";
 test.describe("Slice 37 Extraction workspace", () => {
   test("keeps protocol edits, bounded progress pages, and included or historical worksheets usable", async ({ page }) => {
     test.setTimeout(180_000);
+    const expectGenericNotFound = async (path: string) => {
+      const response = await page.goto(path);
+      expect(response?.status()).toBe(404);
+      await expect(page.getByText("This page could not be found.", { exact: true })).toBeVisible();
+      await expect(page.getByText(/DomainError|VALIDATION_ERROR|PostgreSQL|extraction_value_revisions/i)).toHaveCount(0);
+    };
     const unique = Date.now();
     const paperTitle = `Slice 37 Extraction study ${unique}`;
 
@@ -69,8 +75,9 @@ test.describe("Slice 37 Extraction workspace", () => {
     await page.getByRole("button", { name: "Add extraction field" }).click();
     const retiredField = page.locator(".extraction-field-item").filter({ hasText: "Retired field" });
     await retiredField.getByRole("button", { name: "Archive" }).click();
-    await page.getByRole("dialog", { name: "Archive this extraction field?" }).getByRole("button", { name: "Archive field" }).click();
-    await expect(retiredField.getByText("archived", { exact: true })).toBeVisible();
+    const retiredFieldArchiveDialog = page.getByRole("dialog", { name: "Archive this extraction field?" });
+    const retiredFieldId = await retiredFieldArchiveDialog.locator('input[name="fieldId"]').inputValue();
+    await retiredFieldArchiveDialog.getByRole("button", { name: "Cancel" }).click();
 
     const sampleSizeLink = page.locator("a.extraction-progress-item").filter({ hasText: paperTitle });
     await expect(sampleSizeLink).toBeVisible();
@@ -87,10 +94,42 @@ test.describe("Slice 37 Extraction workspace", () => {
     await sampleSize.getByLabel(/Page 9/).uncheck();
     await sampleSize.getByRole("button", { name: "Save new revision" }).click();
     await expect(sampleSize.locator(".current-observation")).toContainText("1600");
-    await sampleSize.locator("summary", { hasText: "Revision history (2)" }).click();
-    await expect(sampleSize.getByText("Revision 1", { exact: true })).toBeVisible();
-    await expect(sampleSize.getByText("Revision 2", { exact: true })).toBeVisible();
-    await expect(sampleSize.locator(".history-evidence")).toContainText("Page 9");
+    await expect(sampleSize.getByText(/Revision history \(/)).toHaveCount(0);
+    await sampleSize.getByRole("link", { name: /Open Field revision history/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/fields/[^/]+/history$`));
+    await expect(page.getByText("1 Evidence · grounded", { exact: true })).toBeVisible();
+    const sampleSizeHistory = page.locator(".item");
+    await expect(sampleSizeHistory).toHaveCount(2);
+    await expect(sampleSizeHistory.first()).toContainText("Current");
+    await expect(sampleSizeHistory.first()).toContainText("1600");
+    await expect(sampleSizeHistory.last()).toContainText("1500");
+    const sampleSizeHistoryHref = new URL(page.url()).pathname;
+    const sampleExactHref = await sampleSizeHistory.first().getByRole("link", { name: /Open exact revision/ }).getAttribute("href");
+    const sampleScope = sampleExactHref?.match(/\/fields\/([^/]+)\/revisions\/([^/?]+)$/);
+    expect(sampleScope).not.toBeNull();
+    const sampleSizeFieldId = sampleScope![1];
+    const sampleSizeCurrentRevisionId = sampleScope![2];
+    await sampleSizeHistory.last().getByRole("link", { name: /Open exact revision/ }).click();
+    await expect(page.getByText("Exact immutable value")).toBeVisible();
+    await expect(page.locator(".quote")).toContainText("The study included 1,500 participants.");
+    await expect(page.getByText("Superseded revision", { exact: true })).toBeVisible();
+    await page.getByRole("link", { name: /Return to Field revision history/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/fields/[^/]+/history$`));
+    await page.getByRole("link", { name: /Return to current worksheet/ }).click();
+    await expect(page).toHaveURL(`/projects/${projectId}/extraction/${paperId}`);
+
+    await page.goto(`${sampleSizeHistoryHref}?pageSize=1`);
+    const continuationItems = page.locator(".item");
+    await expect(continuationItems).toHaveCount(1);
+    await expect(continuationItems.first()).toContainText("1600");
+    await page.getByRole("link", { name: /Next Field history page/ }).click();
+    await expect(page).toHaveURL(/pageSize=1&cursor=/);
+    await expect(continuationItems).toHaveCount(1);
+    await expect(continuationItems.first()).toContainText("1500");
+    await expect(page.getByRole("link", { name: /Next Field history page/ })).toHaveCount(0);
+    await expectGenericNotFound(`${sampleSizeHistoryHref}?cursor=not-a-cursor`);
+    await page.goto(`/projects/${projectId}/extraction/${paperId}`);
+    await expect(page).toHaveURL(`/projects/${projectId}/extraction/${paperId}`);
 
     const effectEstimate = page.locator(".extraction-value").filter({ hasText: "Effect estimate" });
     await effectEstimate.getByLabel("Structured value").fill("0.35");
@@ -102,11 +141,20 @@ test.describe("Slice 37 Extraction workspace", () => {
     await studyDesign.getByRole("button", { name: "Save new revision" }).click();
     await expect(studyDesign.locator(".current-observation")).toContainText("Cohort");
 
+    const retiredValue = page.locator(".extraction-value").filter({ hasText: "Retired field" });
+    await retiredValue.getByLabel("Structured value").fill("Archived-field audit value");
+    await retiredValue.getByRole("button", { name: "Save new revision" }).click();
+    await expect(retiredValue.locator(".current-observation")).toContainText("Archived-field audit value");
+
     await page.goto(`/projects/${projectId}/extraction`);
     const designProtocol = page.locator(".extraction-field-item").filter({ hasText: "Study design" });
     await designProtocol.locator(".option-row").filter({ hasText: "Cohort" }).getByRole("button", { name: "Archive" }).click();
     await page.getByRole("dialog", { name: "Archive this extraction option?" }).getByRole("button", { name: "Archive option" }).click();
     await expect(designProtocol.locator(".option-row").filter({ hasText: "Cohort" })).toHaveCount(0);
+    const retiredProtocol = page.locator(".extraction-field-item").filter({ hasText: "Retired field" });
+    await retiredProtocol.getByRole("button", { name: "Archive" }).click();
+    await page.getByRole("dialog", { name: "Archive this extraction field?" }).getByRole("button", { name: "Archive field" }).click();
+    await expect(retiredProtocol.getByText("archived", { exact: true })).toBeVisible();
 
     await page.goto(`/projects/${projectId}/extraction/${paperId}`);
     const studyDesignValue = page.locator(".extraction-value").filter({ hasText: "Study design" }).getByLabel("Structured value");
@@ -115,6 +163,22 @@ test.describe("Slice 37 Extraction workspace", () => {
     await expect(archivedCohort).not.toBeDisabled();
     await expect(studyDesignValue).toHaveValue(await archivedCohort.getAttribute("value") ?? "");
     await expect(page.locator(".extraction-value").filter({ hasText: "Retired field" })).toHaveCount(0);
+    await page.goto(`/projects/${projectId}/extraction/${paperId}/fields/${retiredFieldId}/history`);
+    await expect(page.getByText("Extraction audit · Archived Field", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Sequence \d+ · present · Current/)).toBeVisible();
+    await page.getByRole("link", { name: /Open exact revision/ }).click();
+    await expect(page.locator(".workspace-header")).toContainText("Archived Field");
+    await expect(page.locator(".section-card").first()).toContainText("Archived-field audit value");
+
+    await expectGenericNotFound(`/projects/${projectId}/extraction/${paperId}/fields/${retiredFieldId}/revisions/not-a-uuid`);
+    await expectGenericNotFound(`/projects/${projectId}/extraction/${paperId}/fields/${retiredFieldId}/revisions/${sampleSizeCurrentRevisionId}`);
+
+    await page.goto("/");
+    await page.getByLabel("Project title").fill(`Slice 37 Cross-scope ${unique}`);
+    await page.getByRole("button", { name: /Create project/ }).click();
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+$/);
+    const otherProjectId = new URL(page.url()).pathname.split("/").pop()!;
+    await expectGenericNotFound(`/projects/${otherProjectId}/extraction/${paperId}/fields/${sampleSizeFieldId}/history`);
 
     const databaseClient = createPlaywrightTestDatabaseClient({ prepare: false });
     try {
