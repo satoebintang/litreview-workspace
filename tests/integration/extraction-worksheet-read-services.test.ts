@@ -91,7 +91,6 @@ describe("Slice 37 Extraction worksheet reads", () => {
     await services!.archiveExtractionOption(project.id, option.id);
 
     const legacy = await services!.getPaperExtraction(project.id, paper.id);
-    const legacyHistory = await services!.getExtractionValueHistory(project.id, paper.id, field.id);
     const legacyEvidence = (await services!.listEvidence(project.id)).filter((item) => item.paperId === paper.id);
     const legacyProgress = (await services!.getProjectExtractionProgress(project.id)).papers.find((item) => item.paper.id === paper.id)!;
     const worksheet = await worksheetServices!.getPaperExtractionWorksheet(project.id, paper.id);
@@ -112,7 +111,7 @@ describe("Slice 37 Extraction worksheet reads", () => {
       supportStatus: value.supportStatus,
       currentRevision: value.currentRevision && {
         id: value.currentRevision.id,
-        sequence: value.currentRevision.sequence,
+        sequence: String(value.currentRevision.sequence),
         valueState: value.currentRevision.valueState,
         optionId: value.currentRevision.optionId,
         evidenceIds: value.currentRevision.evidence.map((item) => item.id),
@@ -123,24 +122,15 @@ describe("Slice 37 Extraction worksheet reads", () => {
       supportStatus: value.supportStatus,
       currentRevision: value.currentRevision && {
         id: value.currentRevision.id,
-        sequence: value.currentRevision.sequence,
+        sequence: String(value.currentRevision.sequence),
         valueState: value.currentRevision.valueState,
         optionId: value.currentRevision.optionId,
         evidenceIds: value.currentRevision.evidence.map((item) => item.id),
       },
     })));
-    expect(worksheet.values.find((value) => value.fieldId === emptyField.id)).toMatchObject({ id: "", currentRevision: null, supportStatus: "ungrounded", history: [] });
-    expect(worksheet.values.find((value) => value.fieldId === field.id)?.history.map((revision) => ({
-      id: revision.id,
-      sequence: revision.sequence,
-      optionId: revision.optionId,
-      evidenceIds: revision.evidence.map((item) => item.id),
-    }))).toEqual(legacyHistory.map((revision) => ({
-      id: revision.id,
-      sequence: revision.sequence,
-      optionId: revision.optionId,
-      evidenceIds: revision.evidence.map((item) => item.id),
-    })));
+    expect(worksheet.values.find((value) => value.fieldId === emptyField.id)).toMatchObject({ id: "", currentRevision: null, supportStatus: "ungrounded", hasHistory: false, historyHref: null });
+    expect(worksheet.values.find((value) => value.fieldId === field.id)).toMatchObject({ hasHistory: true, historyHref: `/projects/${project.id}/extraction/${paper.id}/fields/${field.id}/history` });
+    expect(worksheet.values.every((value) => !Object.hasOwn(value, "history"))).toBe(true);
     expect(legacyEvidence.find((item) => item.id === firstEvidence.id)).toMatchObject({ reviewState: "rejected" });
     expect(worksheet.evidence.find((item) => item.id === firstEvidence.id)).toMatchObject({
       id: firstEvidence.id,
@@ -197,7 +187,7 @@ describe("Slice 37 Extraction worksheet reads", () => {
         queryLog.length = 0;
         const worksheet = await worksheetServices!.getPaperExtractionWorksheet(project.id, paper.id);
         expect(worksheet.fields).toHaveLength(fieldCount);
-        expect(worksheet.values.every((value) => value.history.length === historyCount)).toBe(true);
+        expect(worksheet.values.every((value) => value.hasHistory)).toBe(true);
         statementCounts.push({
           total: queryLog.length,
           reads: queryLog.filter((query) => /^\s*(select|with)\b/i.test(query)).length,
@@ -207,6 +197,6 @@ describe("Slice 37 Extraction worksheet reads", () => {
 
     expect(new Set(statementCounts.map(({ total }) => total)).size).toBe(1);
     expect(new Set(statementCounts.map(({ reads }) => reads)).size).toBe(1);
-    expect(statementCounts[0].reads).toBe(9);
+    expect(statementCounts[0].reads).toBe(7);
   });
 });

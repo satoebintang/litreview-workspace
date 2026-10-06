@@ -60,8 +60,10 @@ test.describe("Slice 26 AI extraction proposal boundary", () => {
       await page.goto(`/projects/${projectId}/extraction/${paperId}`);
       const acceptedField = page.locator(".extraction-value").filter({ hasText: "Participants" });
       await expect(acceptedField.locator(".current-observation")).toContainText("43 participants");
-      await acceptedField.getByText(/Revision history/).click();
-      await expect(acceptedField.locator(".history-evidence").filter({ hasText: quote })).toBeVisible();
+      await acceptedField.getByRole("link", { name: /Open Field revision history/ }).click();
+      await expect(page).toHaveURL(new RegExp(`/fields/${fieldId}/history$`));
+      await page.getByRole("link", { name: /Open exact revision/ }).click();
+      await expect(page.locator(".quote")).toContainText(quote);
     } finally {
       await sql.end();
     }

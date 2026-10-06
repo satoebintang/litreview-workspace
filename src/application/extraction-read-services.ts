@@ -5,6 +5,7 @@ import { ensureId } from "@/application/review-services/shared";
 import { EvidenceRepository, PaperRepository, PaperReviewRepository } from "@/application/repositories";
 import { createExtractionProgressReadServices } from "@/application/extraction-progress-read-services";
 import { createExtractionWorksheetReadServices } from "@/application/extraction-worksheet-read-services";
+import { createExtractionHistoryReadServices } from "@/application/extraction-history-read-services";
 
 export type ExtractionProtocolField = typeof extractionFields.$inferSelect & {
   options: Array<typeof extractionOptions.$inferSelect>;
@@ -24,10 +25,12 @@ export function createExtractionReadServices(db: Database) {
     paperReviewRepo,
     evidenceRepo,
   });
+  const historyReads = createExtractionHistoryReadServices(db);
 
   return {
     ...progressReads,
     ...worksheetReads,
+    ...historyReads,
 
     async getExtractionProtocol(projectId: string): Promise<{ fields: ExtractionProtocolField[] }> {
       ensureId(projectId);

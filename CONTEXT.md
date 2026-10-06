@@ -683,3 +683,53 @@ healthy and its persistent volume was preserved.
 Independent Luna/max review and Sol/high specialist acceptance returned
 ACCEPT after reconciling the Stage C per-node buffer counts with the benchmark
 artifact. The implementation was accepted for publication.
+
+## Slice 53 Extraction revision histories
+
+The Extraction worksheet now returns current-only state: active Fields in
+released order, their Options, stable slots, one current finalized revision per
+Field, full current values/notes, selected Option identity/label, and Evidence
+linked to current revisions. Current selection preserves
+`ORDER BY sequence DESC LIMIT 1` without an ID tie-breaker; its BIGINT sequence
+is a decimal string in the specialized DTO. Historical revision streams and
+historical Evidence hydration have moved to a separate Field history route.
+
+Field history uses page sizes 20/50, canonical 512-character scope-bound
+base64url cursors, lossless sequence strings, and deterministic
+`sequence DESC, id DESC` traversal. SQL selects at most `pageSize + 1` keys
+first and hydrates/counts Evidence only for visible rows. Exact revision audit
+binds Project, Paper, Field, stable slot, and finalized revision, preserves
+complete historical values and immutable Evidence membership, and keeps
+Evidence in `pageNumber ASC, createdAt ASC` order without an ID tie-breaker.
+Archived Fields/Options and revisions on later-excluded Papers remain
+auditable.
+
+History traversal is live across page requests, not an MVCC commit-order
+snapshot. A lower sequence reserved earlier may commit behind an already
+traversed cursor; restart from the first page to include that late commit.
+
+The approved migration 0039 adds the finalized partial tuple index
+`(project_id, paper_id, field_id, sequence, id)` while retaining prior indexes.
+History summaries cap text at 448 code points, notes at 192, and Option/Field
+labels at 500; the max-50 response must remain within 256 KiB UTF-8.
+
+Paper Evidence picker scaling is explicitly deferred. The valid Slice 53
+boundedness claim is that complete historical ExtractionRevision streams and
+historical revision-Evidence hydration are no longer materialized by the
+normal worksheet. This is not a claim that the complete worksheet is
+universally bounded: active Field/Option catalogs remain separate
+configuration growth, and current/exact artifacts may scale with exact
+Evidence support size. Legacy full-history APIs and all writer behavior remain
+compatible. See [`docs/adr/0053-scalable-extraction-revision-histories.md`](docs/adr/0053-scalable-extraction-revision-histories.md)
+for the full decision and
+[`docs/benchmarks/slice53-extraction-history-read-paths.json`](docs/benchmarks/slice53-extraction-history-read-paths.json)
+for final SQL plans and measurements. Under Node 22.13.0 and PostgreSQL 16.15,
+the completed disposable run applied migrations through 0039, passed 22/22
+measurements and 14/14 EXPLAIN plans, and verified database cleanup. The 50k
+deep page used a backward scan of the approved index and examined 51 page keys
+and heap rows with no oversized sort or temp I/O. Worksheet scenarios with 10,
+10k, and 100k total historical revisions each used seven SELECTs, returned 77
+driver rows, and transferred 41,589 DTO bytes; isolated Field counts matched
+1/10/50, and current Evidence links scaled 0/50/500 with 0/5/50 Paper Evidence
+rows. The 1k history pages matched all 1,000 mapped legacy rows. Timing is
+diagnostic only.

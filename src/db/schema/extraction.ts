@@ -136,6 +136,9 @@ export const extractionValueRevisions = pgTable(
       name: "extraction_value_revisions_option_fk",
     }).onDelete("restrict"),
     valueLookup: index("extraction_value_revisions_current_idx").on(table.projectId, table.paperId, table.fieldId, table.sequence),
+    finalizedHistory: index("extraction_value_revisions_project_paper_field_sequence_id_idx")
+      .on(table.projectId, table.paperId, table.fieldId, table.sequence, table.id)
+      .where(sql`${table.finalizedAt} is not null`),
     stateValid: check("extraction_value_revisions_state_valid", sql`${table.valueState} in ('present', 'not_reported', 'not_applicable', 'cleared')`),
     typeValid: check("extraction_value_revisions_type_valid", sql`${table.fieldType} in ('short_text', 'long_text', 'number', 'boolean', 'single_select')`),
     valueShape: check("extraction_value_revisions_value_shape", sql`(

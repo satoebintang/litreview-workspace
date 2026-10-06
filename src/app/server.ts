@@ -5,6 +5,7 @@ import { createScreeningHistoryReadServices } from "@/application/screening-hist
 import { createClaimSupportReadServices } from "@/application/claim-support-read-services";
 import { createClaimReadServices } from "@/application/claim-read-services";
 import { createExtractionReadServices } from "@/application/extraction-read-services";
+import { createExtractionHistoryReadServices } from "@/application/extraction-history-read-services";
 import { createEvidenceWorkspaceReadServices } from "@/application/evidence-workspace-read-services";
 import { createPaperCollectionReadServices } from "@/application/paper-collection-read-services";
 import { createPaperSelectionReadServices } from "@/application/paper-selection-read-services";
@@ -161,6 +162,7 @@ export type ReviewReadTransactionContext = {
   synthesisInterpretationCurrentReadServices: ReturnType<typeof createSynthesisInterpretationCurrentReadServices>;
   claimRevisionExactAuditReadServices: ReturnType<typeof createClaimRevisionExactAuditReadServices>;
   synthesisRevisionExactRouteReadServices: ReturnType<typeof createSynthesisRevisionExactRouteReadServices>;
+  extractionHistoryReadServices: ReturnType<typeof createExtractionHistoryReadServices>;
   executor: ReviewTransaction;
 };
 
@@ -195,6 +197,7 @@ export function withReviewReadTransaction<T>(
         (projectId, claimId, revisionId) => reviewServices.getClaimRevision(projectId, claimId, revisionId),
       ),
       synthesisRevisionExactRouteReadServices: createSynthesisRevisionExactRouteReadServices(txDatabase),
+      extractionHistoryReadServices: createExtractionHistoryReadServices(txDatabase),
       executor: tx,
     };
     return operation(transactionServices);
