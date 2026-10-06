@@ -1,0 +1,1 @@
+CREATE INDEX "claim_revisions_project_active_sequence_order_idx" ON "claim_revisions" USING btree ("project_id","sequence" DESC NULLS LAST,"id") WHERE "claim_revisions"."finalized_at" is not null and "claim_revisions"."state" = 'active';

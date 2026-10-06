@@ -1,6 +1,8 @@
 # ADR 0053: Scalable Extraction Revision Histories and Exact Audit
 
-**Status:** ACCEPT; independent Luna/max review complete; Sol/high specialist acceptance complete; accepted for publication; implementation remains uncommitted until publication
+**Status:** implemented and published as v0.53.0-slice53
+
+**Published merge SHA:** `43e9c5cf23d03f662d0dbcc91d132587c3b63d54`
 
 **Date:** 2026-10-05
 
@@ -110,6 +112,7 @@ times are diagnostic only. Full plans, statement/row/byte accounting, sort and
 buffer details, and cleanup evidence are in
 `docs/benchmarks/slice53-extraction-history-read-paths.json`.
 
-Independent Luna/max review is complete with ACCEPT, and Sol/high specialist
-acceptance is complete. The implementation is accepted for publication. The
-implementation remains uncommitted until publication.
+Independent Luna/max review returned ACCEPT, and Sol/high specialist acceptance
+completed before publication. The implementation was published as
+`v0.53.0-slice53` at merge SHA
+`43e9c5cf23d03f662d0dbcc91d132587c3b63d54`.
