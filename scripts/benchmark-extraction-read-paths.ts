@@ -8,7 +8,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { createExtractionProgressReadServices } from "@/application/extraction-progress-read-services";
 import { createExtractionWorksheetReadServices } from "@/application/extraction-worksheet-read-services";
-import { EvidenceRepository, PaperRepository, PaperReviewRepository } from "@/application/repositories";
+import { PaperRepository, PaperReviewRepository } from "@/application/repositories";
 import { createReviewServices } from "@/application/services";
 import { schema } from "@/db/schema";
 import { resolveDatabaseUrl } from "@/db/config";
@@ -69,7 +69,7 @@ type LegacyWorksheetProjection = {
     researcherNote: string | null;
     createdAt: Date | string;
     finalizedAt: Date | string | null;
-    evidence: Array<{ id: string }>;
+    evidence: Array<{ id: string; paperId: string; reviewState: string; curationWarning: string | null }>;
   }>>;
   paperEvidence: Array<{ id: string; paperId: string; reviewState: string; curationWarning: string | null }>;
   projectEvidenceRows: number;
@@ -348,36 +348,6 @@ async function seedScenario(client: postgres.Sql, projectId: string, paperCount:
     activeOptionId,
     archivedOptionId,
   };
-}
-
-function historyProjection(history: Array<{
-  id: string;
-  sequence: number;
-  fieldType: string;
-  valueState: string;
-  textValue: string | null;
-  numberValue: string | number | null;
-  booleanValue: boolean | null;
-  optionId: string | null;
-  researcherNote: string | null;
-  createdAt: Date | string;
-  finalizedAt: Date | string | null;
-  evidence: Array<{ id: string }>;
-}>) {
-  return history.map((revision) => ({
-    id: revision.id,
-    sequence: Number(revision.sequence),
-    fieldType: revision.fieldType,
-    valueState: revision.valueState,
-    textValue: revision.textValue,
-    numberValue: revision.numberValue == null ? null : String(revision.numberValue),
-    booleanValue: revision.booleanValue,
-    optionId: revision.optionId,
-    researcherNote: revision.researcherNote,
-    createdAt: dateValue(revision.createdAt),
-    finalizedAt: dateValue(revision.finalizedAt),
-    evidenceIds: revision.evidence.map((item) => item.id),
-  }));
 }
 
 function explainTableNames(query: string) {
@@ -666,9 +636,8 @@ async function benchmarkScenario(args: {
 
   const paperRepo = new PaperRepository(db);
   const paperReviewRepo = new PaperReviewRepository(db);
-  const evidenceRepo = new EvidenceRepository(db);
   const progressRead = createExtractionProgressReadServices(db);
-  const worksheetRead = createExtractionWorksheetReadServices(db, { paperRepo, paperReviewRepo, evidenceRepo });
+  const worksheetRead = createExtractionWorksheetReadServices(db, { paperRepo, paperReviewRepo });
 
   const legacyProgress = await measureLegacyProgress(
     client,
@@ -748,11 +717,18 @@ async function benchmarkScenario(args: {
       newWorksheet.fields.map((field) => [field.id, field.options.map(optionFacts)])), "Worksheet option labels/order/archive state differ from released behavior");
     assert(isDeepStrictEqual(oldWorksheet.extraction.values.map((value) => [value.field.id, value.currentRevision?.id ?? null, value.supportStatus]),
       newWorksheet.values.map((value) => [value.field.id, value.currentRevision?.id ?? null, value.supportStatus])), "Current finalized revision identities or supportStatus differ from released behavior");
-    const oldHistoryByField = new Map(oldFieldRows.map((field, index) => [field.id, historyProjection(oldWorksheet.histories[index])]));
-    const newHistoryByField = new Map(newWorksheet.values.map((value) => [value.field.id, historyProjection(value.history)]));
-    assert(isDeepStrictEqual([...oldHistoryByField].sort(), [...newHistoryByField].sort()), "Finalized history or revision Evidence links differ from released behavior");
-    assert(isDeepStrictEqual(evidenceFacts(oldWorksheet.paperEvidence), evidenceFacts(newWorksheet.evidence)),
-      "Paper Evidence review states or warnings differ from released behavior");
+    const oldValueByField = new Map(oldWorksheet.extraction.values.map((value) => [value.field.id, value]));
+    const oldCurrentSupportByField = new Map(oldFieldRows.map((field, index) => {
+      const revisionId = oldValueByField.get(field.id)?.currentRevision?.id;
+      const revision = oldWorksheet.histories[index].find((item) => item.id === revisionId);
+      return [field.id, evidenceFacts(revision?.evidence ?? [])];
+    }));
+    const newCurrentSupportByField = new Map(newWorksheet.values.map((value) => [
+      value.field.id,
+      evidenceFacts(value.currentRevision?.evidence ?? []),
+    ]));
+    assert(isDeepStrictEqual([...oldCurrentSupportByField].sort(), [...newCurrentSupportByField].sort()),
+      "Exact current selected-support memberships or current review warnings differ from released behavior");
     assert(isDeepStrictEqual(oldWorksheet.extraction.reviewStatus, newWorksheet.reviewStatus), "Paper review status differs from released behavior");
     const oldTargetProgress = oldProgress?.papers.find((item) => item.paper.id === seeded.targetPaperId);
     if (oldTargetProgress) {
@@ -768,8 +744,7 @@ async function benchmarkScenario(args: {
       fieldOrder: true,
       optionsIncludeArchived: true,
       currentRevisionIdentities: true,
-      allFinalizedHistoryAndEvidenceLinks: true,
-      paperEvidenceAndCurrentReviewWarnings: true,
+      exactCurrentSupportMembershipsAndReviewWarnings: true,
       reviewStatus: true,
       progress: oldTargetProgress ? true : null,
     };
@@ -777,6 +752,10 @@ async function benchmarkScenario(args: {
 
   const progressSelects = selectQueries(pagedProgress);
   const worksheetSelects = selectQueries(worksheet);
+  const candidateUniverseSelects = worksheetSelects.filter(({ query }) => /from\s+evidence\s+e\b/i.test(query)
+    && !/extraction_revision_evidence\s+link/i.test(query));
+  const selectedSupportItems = newWorksheet.values.flatMap((value) => value.currentRevision?.evidence ?? []);
+  assert(candidateUniverseSelects.length === 0, "Normal worksheet projection performed a complete Paper Evidence candidate read");
   const planRecords: Array<Awaited<ReturnType<typeof explain>>> = [];
   if (paperCount === 50_000) {
     for (let index = 0; index < progressSelects.length; index += 1) {
@@ -841,8 +820,11 @@ async function benchmarkScenario(args: {
         loggedStatementCount: worksheet.statementCount,
         fields: newWorksheet.fields.length,
         optionRows: newWorksheet.fields.reduce((total, field) => total + field.options.length, 0),
-        finalizedHistoryRows: newWorksheet.values.reduce((total, value) => total + value.history.length, 0),
-        PaperEvidenceRowsReturned: newWorksheet.evidence.length,
+        fixtureCandidateUniverseRows: seeded.projectEvidenceCount,
+        candidateUniverseRowsReadByWorksheet: 0,
+        candidateUniverseSelectStatements: candidateUniverseSelects.length,
+        currentSelectedSupportMemberships: selectedSupportItems.length,
+        selectedSupportDtoUtf8Bytes: jsonBytes(selectedSupportItems),
         payloadBytes: jsonBytes(newWorksheet),
       },
       equivalence: worksheetEquivalence,

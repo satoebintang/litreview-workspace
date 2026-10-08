@@ -12,6 +12,8 @@
     "benchmark:dedup": "tsx scripts/benchmark-dedup.ts",
     "benchmark:claim-read-paths": "tsx scripts/benchmark-claim-read-paths.ts",
     "benchmark:manuscript-claim-selection": "tsx scripts/benchmark-manuscript-claim-selection-read-paths.ts",
+    "benchmark:extraction-evidence-selection": "tsx scripts/benchmark-extraction-evidence-selection-read-paths.ts",
+    "audit:release": "tsx scripts/audit-release.ts",
     "benchmark:paper-collection-read-paths": "tsx scripts/benchmark-paper-collection-read-paths.ts",
     "benchmark:paper-selection-read-paths": "tsx scripts/benchmark-paper-selection-read-paths.ts",
     "benchmark:acquisition-read-paths": "tsx scripts/benchmark-acquisition-read-paths.ts",
@@ -22,7 +24,7 @@
     "e2e:server": "tsx tests/e2e/playwright-server.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "tsx tests/vitest-runner.ts",
+    "test": "tsx tests/vitest-runner.ts --reporter=dot",
     "test:watch": "vitest",
     "test:integration": "tsx tests/vitest-runner.ts tests/integration",
     "db:generate": "drizzle-kit generate",
@@ -39,8 +41,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dotenv": "^17.4.2",
-    "drizzle-orm": "^0.44.5",
-    "next": "15.5.26",
+    "drizzle-orm": "^0.45.3",
+    "next": "15.5.27",
     "openai": "^7.18.0",
     "pdfjs-dist": "6.3.289",
     "postgres": "^3.4.7",
@@ -62,5 +64,10 @@
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "next@15.5.27": {
+      "postcss": "^8.5.23"
+    }
   }
 }

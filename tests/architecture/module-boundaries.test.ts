@@ -67,9 +67,14 @@ const actionsFacade = path.join(sourceRoot, "app", "actions.ts");
 const actionsDirectory = path.join(sourceRoot, "app", "actions");
 const actionHelpers = path.join(sourceRoot, "app", "action-helpers.ts");
 
-let program: ts.Program;
-let checker: ts.TypeChecker;
+let sourceFiles: ts.SourceFile[] = [];
+let sourceFilesByPath = new Map<string, ts.SourceFile>();
 let compilerOptions: ts.CompilerOptions;
+let cachedModuleEdges: ModuleEdge[] | undefined;
+const moduleResolutionCache = new Map<string, string | undefined>();
+const moduleExportsCache = new Map<string, string[]>();
+
+type SemanticContext = { program: ts.Program; checker: ts.TypeChecker };
 
 type ModuleEdge = {
   from: string;
@@ -97,20 +102,57 @@ function sameFile(left: string, right: string): boolean {
 }
 
 function sourceFile(file: string): ts.SourceFile {
-  const result = program.getSourceFile(path.resolve(file));
-  if (!result) throw new Error(`TypeScript program did not include ${file}`);
+  const result = sourceFilesByPath.get(normalized(file));
+  if (!result) throw new Error(`Parsed architecture source files did not include ${file}`);
   return result;
 }
 
-function moduleSymbol(file: string): ts.Symbol {
-  const source = sourceFile(file);
-  const symbol = (source as ts.SourceFile & { symbol?: ts.Symbol }).symbol ?? checker.getSymbolAtLocation(source);
-  if (!symbol) throw new Error(`TypeScript module symbol was unavailable for ${file}`);
-  return symbol;
+function semanticContext(rootNames: string[]): SemanticContext {
+  const program = ts.createProgram({ rootNames: rootNames.map((file) => path.resolve(file)), options: compilerOptions });
+  return { program, checker: program.getTypeChecker() };
+}
+
+function resolvedModuleFile(specifier: string, containingFile: string): string | undefined {
+  const cacheKey = `${normalized(containingFile)}\0${specifier}`;
+  if (moduleResolutionCache.has(cacheKey)) return moduleResolutionCache.get(cacheKey);
+  const resolved = ts.resolveModuleName(specifier, containingFile, compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
+  moduleResolutionCache.set(cacheKey, resolved);
+  return resolved;
+}
+
+function programSourceFile(program: ts.Program, file: string): ts.SourceFile {
+  const result = program.getSourceFiles().find((source) => sameFile(source.fileName, file));
+  if (!result) throw new Error(`Semantic TypeScript program did not include ${file}`);
+  return result;
+}
+
+function semanticCounterpart(node: ts.Node, program: ts.Program): ts.Node {
+  const source = programSourceFile(program, node.getSourceFile().fileName);
+  const start = node.getStart(node.getSourceFile());
+  let result: ts.Node | undefined;
+  const visit = (candidate: ts.Node) => {
+    if (candidate.kind === node.kind && candidate.getStart(source) === start) {
+      result = candidate;
+      return;
+    }
+    if (!result) ts.forEachChild(candidate, visit);
+  };
+  visit(source);
+  if (!result) throw new Error(`Could not locate semantic counterpart for ${ts.SyntaxKind[node.kind]} in ${source.fileName}`);
+  return result;
 }
 
 function moduleExports(file: string): string[] {
-  return checker.getExportsOfModule(moduleSymbol(file)).map((symbol) => symbol.getName()).sort();
+  const cacheKey = normalized(file);
+  const cached = moduleExportsCache.get(cacheKey);
+  if (cached !== undefined) return [...cached];
+  const context = semanticContext([file]);
+  const source = programSourceFile(context.program, file);
+  const symbol = (source as ts.SourceFile & { symbol?: ts.Symbol }).symbol ?? context.checker.getSymbolAtLocation(source);
+  if (!symbol) throw new Error(`TypeScript module symbol was unavailable for ${file}`);
+  const exports = context.checker.getExportsOfModule(symbol).map((exported) => exported.getName()).sort();
+  moduleExportsCache.set(cacheKey, exports);
+  return [...exports];
 }
 
 function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
@@ -126,20 +168,21 @@ function hasUseServerDirective(source: ts.SourceFile): boolean {
 }
 
 function moduleEdges(): ModuleEdge[] {
+  if (cachedModuleEdges) return cachedModuleEdges;
   const edges: ModuleEdge[] = [];
-  const sourceFiles = program.getSourceFiles().filter((source) => isInside(source.fileName, sourceRoot));
+  const architectureSourceFiles = sourceFiles.filter((source) => isInside(source.fileName, sourceRoot));
 
-  for (const source of sourceFiles) {
+  for (const source of architectureSourceFiles) {
     const add = (
       specifier: string,
       syntax: ModuleEdge["syntax"],
       typeOnly: boolean,
     ) => {
-      const resolved = ts.resolveModuleName(specifier, source.fileName, compilerOptions, ts.sys).resolvedModule;
-      if (!resolved) return;
+      const resolvedFileName = resolvedModuleFile(specifier, source.fileName);
+      if (!resolvedFileName) return;
       edges.push({
         from: path.resolve(source.fileName),
-        to: path.resolve(resolved.resolvedFileName),
+        to: path.resolve(resolvedFileName),
         specifier,
         syntax,
         typeOnly,
@@ -176,11 +219,12 @@ function moduleEdges(): ModuleEdge[] {
 
     visit(source);
   }
-  return edges;
+  cachedModuleEdges = edges;
+  return cachedModuleEdges;
 }
 
 function contextModules(): string[] {
-  return program.getSourceFiles()
+  return sourceFiles
     .map((source) => path.resolve(source.fileName))
     .filter((file) => isInside(file, sourceRoot))
     .filter((file) => sameFile(file, schemaFacade)
@@ -276,7 +320,9 @@ function factoryReturnExpression(factory: ts.Node): ts.Expression {
   return returned.expression;
 }
 
-function factoryObjectKeys(factory: ts.Node): string[] {
+function factoryObjectKeys(factory: ts.Node, providedContext?: SemanticContext): string[] {
+  const context = providedContext ?? semanticContext([factory.getSourceFile().fileName]);
+  const { program, checker } = context;
   const appendUnique = (target: string[], additions: string[]) => {
     for (const key of additions) if (!target.includes(key)) target.push(key);
   };
@@ -307,7 +353,8 @@ function factoryObjectKeys(factory: ts.Node): string[] {
       return keys;
     }
     if (ts.isIdentifier(expression)) {
-      const symbol = checker.getSymbolAtLocation(expression);
+      const semanticExpression = semanticCounterpart(expression, program);
+      const symbol = checker.getSymbolAtLocation(semanticExpression);
       if (!symbol || seen.has(symbol)) throw new Error(`Could not resolve service object ${expression.text}`);
       seen.add(symbol);
       const declaration = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol).valueDeclaration : symbol.valueDeclaration;
@@ -315,7 +362,7 @@ function factoryObjectKeys(factory: ts.Node): string[] {
         throw new Error(`Expected ${expression.text} to refer to a service object initializer`);
       }
       if (!declaration.initializer || declaration.initializer.kind === ts.SyntaxKind.NullKeyword) {
-        const nonNullableType = checker.getNonNullableType(checker.getTypeAtLocation(expression));
+        const nonNullableType = checker.getNonNullableType(checker.getTypeAtLocation(semanticExpression));
         const typedKeys = checker.getPropertiesOfType(nonNullableType).map((property) => property.getName());
         if (typedKeys.length) return typedKeys;
       }
@@ -397,10 +444,11 @@ function findFactoryDeclaration(files: string[], name: string): ts.Node | undefi
   return undefined;
 }
 
-function factoryDeclarationFromCall(call: ts.CallExpression): ts.Node {
-  const symbol = checker.getSymbolAtLocation(call.expression);
+function factoryDeclarationFromCall(call: ts.CallExpression, context: SemanticContext): ts.Node {
+  const semanticExpression = semanticCounterpart(call.expression, context.program);
+  const symbol = context.checker.getSymbolAtLocation(semanticExpression);
   if (!symbol) throw new Error(`Could not resolve factory ${call.expression.getText(call.getSourceFile())}`);
-  const target = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+  const target = symbol.flags & ts.SymbolFlags.Alias ? context.checker.getAliasedSymbol(symbol) : symbol;
   const declaration = target.declarations?.find((candidate) => ts.isFunctionDeclaration(candidate)
     || (ts.isVariableDeclaration(candidate) && !!candidate.initializer
       && (ts.isArrowFunction(candidate.initializer) || ts.isFunctionExpression(candidate.initializer))));
@@ -417,7 +465,11 @@ function firstCallExpression(node: ts.Node): ts.CallExpression | undefined {
   return result;
 }
 
-function functionSignature(declaration: ts.FunctionLikeDeclaration): string {
+function normalizedParameterType(type: string): string {
+  return type.replace(/;\s*}/g, " }").replace(/\s+/g, " ").trim();
+}
+
+function functionSignature(declaration: ts.FunctionLikeDeclaration, checker: ts.TypeChecker): string {
   const signature = checker.getSignatureFromDeclaration(declaration);
   if (!signature) throw new Error(`Could not read signature for ${declaration.getText(declaration.getSourceFile())}`);
   const parameters = signature.getParameters().map((symbol, index) => {
@@ -432,24 +484,25 @@ function functionSignature(declaration: ts.FunctionLikeDeclaration): string {
   return `(${parameters.join(", ")}) => ${checker.typeToString(result, declaration, ts.TypeFormatFlags.NoTruncation)}`;
 }
 
-function normalizedParameterType(type: string): string {
-  return type.replace(/;\s*}/g, " }").replace(/\s+/g, " ").trim();
-}
-
-function parameterContract(declaration: ts.FunctionLikeDeclaration): Array<{
+function parameterContract(declaration: ts.FunctionLikeDeclaration, context: SemanticContext): Array<{
   name: string;
   optional: boolean;
   rest: boolean;
   type: string;
 }> {
   const source = declaration.getSourceFile();
+  const semanticDeclaration = semanticCounterpart(declaration, context.program) as ts.FunctionLikeDeclaration;
   return declaration.parameters.map((parameter) => ({
     name: parameter.name.getText(source),
     optional: !!parameter.questionToken || !!parameter.initializer,
     rest: !!parameter.dotDotDotToken,
     type: normalizedParameterType(parameter.type
       ? parameter.type.getText(source)
-      : checker.typeToString(checker.getTypeAtLocation(parameter), declaration, ts.TypeFormatFlags.NoTruncation)),
+      : context.checker.typeToString(
+          context.checker.getTypeAtLocation(semanticCounterpart(parameter, context.program)),
+          semanticDeclaration,
+          ts.TypeFormatFlags.NoTruncation,
+        )),
   }));
 }
 
@@ -482,6 +535,10 @@ function sha256(file: string): string {
   return createHash("sha256").update(readFileSync(absolute(file))).digest("hex");
 }
 
+function sha256Text(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 beforeAll(() => {
   const configPath = path.join(root, "tsconfig.json");
   const config = ts.readConfigFile(configPath, ts.sys.readFile);
@@ -489,8 +546,21 @@ beforeAll(() => {
   const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root);
   if (parsed.errors.length) throw new Error(parsed.errors.map((error) => ts.flattenDiagnosticMessageText(error.messageText, "\n")).join("\n"));
   compilerOptions = parsed.options;
-  program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
-  checker = program.getTypeChecker();
+  // Graph and syntax assertions need every src file, but a single semantic
+  // Program for that entire graph exceeds the architecture test's memory
+  // budget. Parse all sources once, then create checker Programs only for the
+  // individual public API scopes whose assertions require semantic types.
+  sourceFiles = parsed.fileNames
+    .filter((file) => isInside(file, sourceRoot))
+    .map((file) => {
+      const extension = path.extname(file).toLowerCase();
+      const scriptKind = extension === ".tsx" ? ts.ScriptKind.TSX
+        : extension === ".jsx" ? ts.ScriptKind.JSX
+          : extension === ".js" || extension === ".mjs" || extension === ".cjs" ? ts.ScriptKind.JS
+            : ts.ScriptKind.TS;
+      return ts.createSourceFile(file, readFileSync(file, "utf8"), parsed.options.target ?? ts.ScriptTarget.Latest, true, scriptKind);
+    });
+  sourceFilesByPath = new Map(sourceFiles.map((source) => [normalized(source.fileName), source]));
 });
 
 describe("bounded-context module boundaries", () => {
@@ -511,7 +581,7 @@ describe("bounded-context module boundaries", () => {
 
   it("keeps all 22 repository classes on the compatibility barrel", () => {
     expect(moduleExports(repositoriesFacade)).toEqual([...fixture.repositories.exports].sort());
-    const repositoryClasses = program.getSourceFiles()
+    const repositoryClasses = sourceFiles
       .filter((source) => isInside(source.fileName, repositoriesDirectory))
       .flatMap((source) => source.statements.filter((statement): statement is ts.ClassDeclaration =>
         ts.isClassDeclaration(statement) && !!statement.name && hasModifier(statement, ts.SyntaxKind.ExportKeyword))
@@ -593,6 +663,8 @@ describe("bounded-context module boundaries", () => {
       "createRetrievedRecordForRunAction",
       "selectSynthesisPreparationRevisionAction",
       "deselectSynthesisPreparationRevisionAction",
+      "saveExtractionWorksheetRevisionAction",
+      "getPaperExtractionEvidenceCandidatePageAction",
     ];
     const expectedActionFunctions = [
       ...fixture.actions.functions,
@@ -601,12 +673,16 @@ describe("bounded-context module boundaries", () => {
       { name: "createRetrievedRecordForRunAction", signature: "(form: FormData) => Promise<void>" },
       { name: "selectSynthesisPreparationRevisionAction", signature: "(form: FormData) => Promise<void>" },
       { name: "deselectSynthesisPreparationRevisionAction", signature: "(form: FormData) => Promise<void>" },
+      { name: "saveExtractionWorksheetRevisionAction", signature: "(previousState: ExtractionWorksheetActionState, form: FormData) => Promise<ExtractionWorksheetActionState>" },
+      { name: "getPaperExtractionEvidenceCandidatePageAction", signature: "(projectId: string, paperId: string, options: { pageSize?: number; after?: string | null; }) => Promise<ExtractionEvidenceCandidatePageActionResult>" },
     ];
+    const actionContext = semanticContext([actionsFacade]);
+    const semanticFacade = programSourceFile(actionContext.program, actionsFacade);
     const facade = sourceFile(actionsFacade);
     expect(hasUseServerDirective(facade)).toBe(true);
     const exportedStatements = facade.statements.filter((statement) => hasModifier(statement, ts.SyntaxKind.ExportKeyword)
       || ts.isExportDeclaration(statement) || ts.isExportAssignment(statement));
-    expect(exportedStatements).toHaveLength(142);
+    expect(exportedStatements).toHaveLength(144);
     expect(exportedStatements.every((statement) => ts.isFunctionDeclaration(statement)
       && hasModifier(statement, ts.SyntaxKind.AsyncKeyword))).toBe(true);
 
@@ -621,13 +697,13 @@ describe("bounded-context module boundaries", () => {
       .filter((statement): statement is ts.FunctionDeclaration => ts.isFunctionDeclaration(statement) && !!statement.name)
       .map((declaration) => [declaration.name!.text, declaration]));
     expect([...wrappers.keys()].sort()).toEqual([...expectedActionExports].sort());
-    expect(wrappers.size).toBe(142);
+    expect(wrappers.size).toBe(144);
 
     const implementationModules = new Set<string>();
     const implementationExports: string[] = [];
     const implementations = new Map<string, ts.FunctionDeclaration>();
     for (const [, specifier] of namespaceImports) {
-      const resolved = ts.resolveModuleName(specifier, facade.fileName, compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
+      const resolved = resolvedModuleFile(specifier, facade.fileName);
       expect(resolved, `Could not resolve action module ${specifier}`).toBeTruthy();
       const implementation = sourceFile(resolved!);
       expect(isInside(implementation.fileName, actionsDirectory)).toBe(true);
@@ -636,9 +712,19 @@ describe("bounded-context module boundaries", () => {
 
       const exportedFunctions = implementation.statements.filter((statement): statement is ts.FunctionDeclaration =>
         ts.isFunctionDeclaration(statement) && hasModifier(statement, ts.SyntaxKind.ExportKeyword));
+      const exportedTypes = implementation.statements.filter((statement): statement is ts.InterfaceDeclaration | ts.TypeAliasDeclaration =>
+        (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement))
+          && hasModifier(statement, ts.SyntaxKind.ExportKeyword));
+      const expectedTypeExports = sameFile(implementation.fileName, path.join(actionsDirectory, "extraction-evidence-selection.ts"))
+        ? ["ExtractionEvidenceCandidatePageActionResult"] : [];
+      expect(exportedTypes.map((statement) => statement.name.text), `Unexpected type export in ${implementation.fileName}`)
+        .toEqual(expectedTypeExports);
       const otherExports = implementation.statements.filter((statement) =>
         (ts.isExportDeclaration(statement) || ts.isExportAssignment(statement))
-        || (hasModifier(statement, ts.SyntaxKind.ExportKeyword) && !ts.isFunctionDeclaration(statement)));
+        || (hasModifier(statement, ts.SyntaxKind.ExportKeyword)
+          && !ts.isFunctionDeclaration(statement)
+          && !ts.isInterfaceDeclaration(statement)
+          && !ts.isTypeAliasDeclaration(statement)));
       expect(otherExports, `Unexpected runtime export in ${implementation.fileName}`).toEqual([]);
       for (const declaration of exportedFunctions) {
         expect(hasModifier(declaration, ts.SyntaxKind.AsyncKeyword), declaration.name?.text).toBe(true);
@@ -647,24 +733,33 @@ describe("bounded-context module boundaries", () => {
       }
 
     }
-    expect(implementationModules.size).toBe(16);
+    expect(implementationModules.size).toBe(17);
     expect(implementationExports.sort()).toEqual([...expectedActionExports].sort());
 
     for (const expected of expectedActionFunctions) {
       const wrapper = wrappers.get(expected.name);
       const implementation = implementations.get(expected.name);
+      const semanticWrapper = semanticFacade.statements.find((statement): statement is ts.FunctionDeclaration =>
+        ts.isFunctionDeclaration(statement) && statement.name?.text === expected.name);
+      const semanticImplementationFile = implementation
+        ? programSourceFile(actionContext.program, implementation.getSourceFile().fileName)
+        : undefined;
+      const semanticImplementation = semanticImplementationFile?.statements.find((statement): statement is ts.FunctionDeclaration =>
+        ts.isFunctionDeclaration(statement) && statement.name?.text === expected.name);
       expect(wrapper, `Missing façade wrapper ${expected.name}`).toBeDefined();
       expect(implementation, `Missing implementation ${expected.name}`).toBeDefined();
+      expect(semanticWrapper, `Missing semantic façade wrapper ${expected.name}`).toBeDefined();
+      expect(semanticImplementation, `Missing semantic implementation ${expected.name}`).toBeDefined();
       expect(hasModifier(wrapper!, ts.SyntaxKind.AsyncKeyword), expected.name).toBe(true);
-      expect(functionSignature(implementation!)).toBe(expected.signature);
-
-      const wrapperType = checker.getTypeAtLocation(wrapper!.name!);
-      const implementationType = checker.getTypeAtLocation(implementation!.name!);
-      expect(checker.isTypeAssignableTo(wrapperType, implementationType), `${expected.name} wrapper accepts extra or different inputs`).toBe(true);
-      expect(checker.isTypeAssignableTo(implementationType, wrapperType), `${expected.name} wrapper changes its return or input contract`).toBe(true);
+      expect(functionSignature(semanticImplementation!, actionContext.checker), expected.name).toBe(expected.signature);
       expect(wrapper!.parameters.map((parameter) => parameter.name.getText(facade)))
         .toEqual(implementation!.parameters.map((parameter) => parameter.name.getText(implementation!.getSourceFile())));
       expect(wrapper!.parameters).toHaveLength(implementation!.parameters.length);
+
+      const wrapperType = actionContext.checker.getTypeAtLocation(semanticWrapper!.name!);
+      const implementationType = actionContext.checker.getTypeAtLocation(semanticImplementation!.name!);
+      expect(actionContext.checker.isTypeAssignableTo(wrapperType, implementationType), `${expected.name} wrapper accepts extra or different inputs`).toBe(true);
+      expect(actionContext.checker.isTypeAssignableTo(implementationType, wrapperType), `${expected.name} wrapper changes its return or input contract`).toBe(true);
 
       const statements = wrapper!.body?.statements ?? [];
       expect(statements).toHaveLength(1);
@@ -679,9 +774,10 @@ describe("bounded-context module boundaries", () => {
         .toEqual(wrapper!.parameters.map((parameter) => parameter.name.getText(facade)));
       const specifier = namespaceImports.get(namespace.getText(facade));
       expect(specifier).toBeDefined();
-      const resolved = ts.resolveModuleName(specifier!, facade.fileName, compilerOptions, ts.sys).resolvedModule?.resolvedFileName;
+      const resolved = resolvedModuleFile(specifier!, facade.fileName);
       expect(resolved && sameFile(resolved, implementation!.getSourceFile().fileName)).toBe(true);
     }
+
   });
 
   it("keeps the shared action helpers outside use-server modules", () => {
@@ -694,7 +790,7 @@ describe("bounded-context module boundaries", () => {
     const contexts = contextModules();
     expect(stronglyConnectedComponents(contexts, edges)).toEqual([]);
 
-    const unresolvedModules = program.getSourceFiles()
+    const unresolvedModules = sourceFiles
       .filter((source) => isInside(source.fileName, sourceRoot))
       .flatMap((source) => {
         const unresolved: string[] = [];
@@ -706,7 +802,7 @@ describe("bounded-context module boundaries", () => {
               : undefined;
           const isStaticAsset = !!specifier && /\.(css|scss|sass|less|svg|png|jpe?g|webp|avif|ico)$/i.test(specifier);
           if (specifier && !isStaticAsset && (specifier.startsWith("@/") || specifier.startsWith("."))
-            && !ts.resolveModuleName(specifier, source.fileName, compilerOptions, ts.sys).resolvedModule) unresolved.push(`${source.fileName}: ${specifier}`);
+            && !resolvedModuleFile(specifier, source.fileName)) unresolved.push(`${source.fileName}: ${specifier}`);
           ts.forEachChild(node, visit);
         };
         visit(source);
@@ -740,12 +836,15 @@ describe("bounded-context module boundaries", () => {
     expect(violations.map((edge) => `${path.relative(root, edge.from)} -> ${edge.specifier}`)).toEqual([]);
   });
 
-  it("preserves configuration bytes", () => {
-    const packageJsonSlice48Sha256 = "d22e766b5161dade8a6005901db4ca41ba91228dbbaacf46e8e83ff6305bc941";
-    const packageJsonSlice54Sha256 = "53086418aec4c34349a80298ec9f3651c8c95727c0ca21f2f74287ff34f0a9ba";
+  it("preserves configuration bytes except the authorized Slice 55 benchmark script", () => {
+    const packageJsonSlice55Sha256 = "ffb54d2870bd6091d05a086af867f70a250b6f955f599b64f7139fef262952dc";
     for (const manifest of fixture.configHashes) {
       if (manifest.file === "package.json") {
-        expect([manifest.sha256, packageJsonSlice48Sha256, packageJsonSlice54Sha256], manifest.file).toContain(sha256(manifest.file));
+        const packageText = readFileSync(absolute(manifest.file), "utf8");
+        const benchmarkScript = /^    "benchmark:extraction-evidence-selection": "tsx scripts\/benchmark-extraction-evidence-selection-read-paths\.ts",\r?\n/gm;
+        expect([...packageText.matchAll(benchmarkScript)], manifest.file).toHaveLength(1);
+        const baselinePackageText = packageText.replace(benchmarkScript, "");
+        expect(sha256Text(baselinePackageText), manifest.file).toBe(packageJsonSlice55Sha256);
         continue;
       }
       expect(sha256(manifest.file), manifest.file).toBe(manifest.sha256);
@@ -753,6 +852,7 @@ describe("bounded-context module boundaries", () => {
   });
 
   it.skipIf(!existsSync(reviewServicesDirectory))("preserves review-service ownership, composition order, collisions, and core signatures", () => {
+    const serviceContext = semanticContext([servicesFacade]);
     const services = sourceFile(servicesFacade);
     const createReviewServices = findFunctionDeclaration(servicesFacade, "createReviewServices");
     const coreVariables = fixture.services.coreFactories.map(({ factory }) => factory.replace(/^create/, "").replace(/^./, (letter) => letter.toLowerCase()));
@@ -786,7 +886,7 @@ describe("bounded-context module boundaries", () => {
     for (const expected of fixture.services.coreMethods) {
       const declaration = methodDeclarations.get(expected.name);
       expect(declaration, `Missing core method ${expected.name}`).toBeDefined();
-      expect(parameterContract(declaration!), expected.name).toEqual(expectedParameterContract(expected.signature));
+      expect(parameterContract(declaration!, serviceContext), expected.name).toEqual(expectedParameterContract(expected.signature));
     }
 
     const coreServices = findVariableDeclaration(services, "services");
@@ -822,8 +922,8 @@ describe("bounded-context module boundaries", () => {
       const call = variable.initializer && firstCallExpression(variable.initializer);
       expect(call, `Expected ${factory.source} to be initialized from a service factory`).toBeDefined();
       if (!call) continue;
-      const declaration = factoryDeclarationFromCall(call);
-      factoryKeys.set(factory.source, factoryObjectKeys(declaration));
+      const declaration = factoryDeclarationFromCall(call, serviceContext);
+      factoryKeys.set(factory.source, factoryObjectKeys(declaration, serviceContext));
       const reorderIndex = factory.keys.indexOf("reorderEvidenceSet");
       const expectedKeys = factory.source === "evidenceSetServices" && reorderIndex >= 0
         ? [

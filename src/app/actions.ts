@@ -9,6 +9,7 @@ import * as actionsDocumentsEvidence from "./actions/documents-evidence";
 import * as actionsDoiIntake from "./actions/doi-intake";
 import * as actionsEvidenceSets from "./actions/evidence-sets";
 import * as actionsExtraction from "./actions/extraction";
+import * as actionsExtractionEvidenceSelection from "./actions/extraction-evidence-selection";
 import * as actionsManuscript from "./actions/manuscript";
 import * as actionsPdfIntake from "./actions/pdf-intake";
 import * as actionsProjectsPapers from "./actions/projects-papers";
@@ -244,6 +245,19 @@ export async function archiveExtractionOptionAction(  form: Parameters<typeof ac
 }
 export async function reviseExtractionValueAction(  form: Parameters<typeof actionsExtraction.reviseExtractionValueAction>[0]): Promise<Awaited<ReturnType<typeof actionsExtraction.reviseExtractionValueAction>>> {
   return actionsExtraction.reviseExtractionValueAction(form);
+}
+export async function saveExtractionWorksheetRevisionAction(
+  previousState: Parameters<typeof actionsExtraction.saveExtractionWorksheetRevisionAction>[0],
+  form: Parameters<typeof actionsExtraction.saveExtractionWorksheetRevisionAction>[1],
+): Promise<Awaited<ReturnType<typeof actionsExtraction.saveExtractionWorksheetRevisionAction>>> {
+  return actionsExtraction.saveExtractionWorksheetRevisionAction(previousState, form);
+}
+export async function getPaperExtractionEvidenceCandidatePageAction(
+  projectId: Parameters<typeof actionsExtractionEvidenceSelection.getPaperExtractionEvidenceCandidatePageAction>[0],
+  paperId: Parameters<typeof actionsExtractionEvidenceSelection.getPaperExtractionEvidenceCandidatePageAction>[1],
+  options?: Parameters<typeof actionsExtractionEvidenceSelection.getPaperExtractionEvidenceCandidatePageAction>[2],
+): Promise<Awaited<ReturnType<typeof actionsExtractionEvidenceSelection.getPaperExtractionEvidenceCandidatePageAction>>> {
+  return actionsExtractionEvidenceSelection.getPaperExtractionEvidenceCandidatePageAction(projectId, paperId, options);
 }
 export async function linkExtractionEvidenceAction(  form: Parameters<typeof actionsExtraction.linkExtractionEvidenceAction>[0]): Promise<Awaited<ReturnType<typeof actionsExtraction.linkExtractionEvidenceAction>>> {
   return actionsExtraction.linkExtractionEvidenceAction(form);

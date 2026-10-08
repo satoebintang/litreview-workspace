@@ -2,9 +2,10 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { extractionFields, extractionOptions } from "@/db/schema";
 import { ensureId } from "@/application/review-services/shared";
-import { EvidenceRepository, PaperRepository, PaperReviewRepository } from "@/application/repositories";
+import { PaperRepository, PaperReviewRepository } from "@/application/repositories";
 import { createExtractionProgressReadServices } from "@/application/extraction-progress-read-services";
 import { createExtractionWorksheetReadServices } from "@/application/extraction-worksheet-read-services";
+import { createExtractionEvidenceSelectionReadServices } from "@/application/extraction-evidence-selection-read-services";
 import { createExtractionHistoryReadServices } from "@/application/extraction-history-read-services";
 
 export type ExtractionProtocolField = typeof extractionFields.$inferSelect & {
@@ -18,18 +19,18 @@ export type ExtractionProtocolField = typeof extractionFields.$inferSelect & {
 export function createExtractionReadServices(db: Database) {
   const paperRepo = new PaperRepository(db);
   const paperReviewRepo = new PaperReviewRepository(db);
-  const evidenceRepo = new EvidenceRepository(db);
   const progressReads = createExtractionProgressReadServices(db);
   const worksheetReads = createExtractionWorksheetReadServices(db, {
     paperRepo,
     paperReviewRepo,
-    evidenceRepo,
   });
+  const evidenceSelectionReads = createExtractionEvidenceSelectionReadServices(db);
   const historyReads = createExtractionHistoryReadServices(db);
 
   return {
     ...progressReads,
     ...worksheetReads,
+    ...evidenceSelectionReads,
     ...historyReads,
 
     async getExtractionProtocol(projectId: string): Promise<{ fields: ExtractionProtocolField[] }> {

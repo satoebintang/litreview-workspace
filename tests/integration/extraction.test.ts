@@ -76,6 +76,24 @@ describe("Slice 3 extraction provenance", () => {
     expect((await services.getProjectExtractionProgress(projectId)).papers[0].status).toBe("complete");
   });
 
+  it("rejects duplicate Evidence IDs without appending a revision or changing current supports", async () => {
+    const paper = await includedPaper();
+    const field = await services.createExtractionField(projectId, { name: "Duplicate support guard", fieldType: "short_text" });
+    const originalEvidence = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "Original support", pageNumber: 1 });
+    const duplicateEvidence = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "Duplicate candidate", pageNumber: 2 });
+    await services.reviseExtractionValue(projectId, paper.id, field.id, { value: "Original value", evidenceIds: [originalEvidence.id] });
+    const before = await services.getExtractionValueHistory(projectId, paper.id, field.id);
+
+    await expect(services.reviseExtractionValue(projectId, paper.id, field.id, {
+      value: "Must not be written",
+      evidenceIds: [duplicateEvidence.id, duplicateEvidence.id],
+    })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    expect(await services.getExtractionValueHistory(projectId, paper.id, field.id)).toEqual(before);
+    expect(await client`select count(*)::int as count from extraction_value_revisions where project_id=${projectId}::uuid and paper_id=${paper.id}::uuid and field_id=${field.id}::uuid`).toEqual([{ count: 1 }]);
+    expect(await client`select evidence_id::text as evidence_id from extraction_revision_evidence where project_id=${projectId}::uuid and revision_id=${before[0]!.id}::uuid`).toEqual([{ evidence_id: originalEvidence.id }]);
+  });
+
   it("serializes concurrent field appends on the Project row", async () => {
     const held = await holdTransaction(locks.blocker, (tx) => tx`select id from projects where id=${projectId}::uuid for update`.then(() => undefined));
     try {
