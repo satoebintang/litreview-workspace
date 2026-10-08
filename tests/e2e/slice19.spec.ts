@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
 import { selectEvidencePaper } from "./evidence-paper-picker";
+import { addEvidenceToExtractionField, expectSelectedEvidenceSupport, getExtractionField } from "./extraction-evidence-picker";
 
 test.describe("Slice 19 Synthesis Interpretation Context", () => {
   test("authors interpretation snapshots over exact finalized SynthesisRevision, records limitations, questions, and contradiction pairs, and drafts manuscript Claim with exact synthesis support", async ({ page }) => {
@@ -92,20 +93,32 @@ test.describe("Slice 19 Synthesis Interpretation Context", () => {
     const alphaExtractionLink = await page.locator("a.extraction-progress-item").filter({ hasText: "Study Alpha" }).getAttribute("href");
     expect(alphaExtractionLink).toBeTruthy();
     await page.goto(`${alphaExtractionLink}`);
-    await page.getByLabel("Structured value").fill("85% efficacy rate");
-    await page.locator('input[name="evidenceIds"]').first().check();
+    const alphaField = getExtractionField(page, "Efficacy Rate");
+    await alphaField.getByLabel("Structured value").fill("85% efficacy rate");
+    const alphaEvidence = await addEvidenceToExtractionField(page, "Efficacy Rate", {
+      pageNumber: 12,
+      sourceText: "Primary outcome was significantly enhanced by 85%.",
+    });
     await page.getByRole("button", { name: "Save new revision" }).click();
     await expect(page.getByText("Extraction revision saved.")).toBeVisible();
+    await expect(alphaField.getByText("● Grounded")).toBeVisible();
+    await expectSelectedEvidenceSupport(alphaField, alphaEvidence);
 
     // Extract for Study Beta
     await page.goto(`/projects/${projectId}/extraction`);
     const betaExtractionLink = await page.locator("a.extraction-progress-item").filter({ hasText: "Study Beta" }).getAttribute("href");
     expect(betaExtractionLink).toBeTruthy();
     await page.goto(`${betaExtractionLink}`);
-    await page.getByLabel("Structured value").fill("15% efficacy rate");
-    await page.locator('input[name="evidenceIds"]').first().check();
+    const betaField = getExtractionField(page, "Efficacy Rate");
+    await betaField.getByLabel("Structured value").fill("15% efficacy rate");
+    const betaEvidence = await addEvidenceToExtractionField(page, "Efficacy Rate", {
+      pageNumber: 34,
+      sourceText: "Primary outcome showed minimal change of only 15%.",
+    });
     await page.getByRole("button", { name: "Save new revision" }).click();
     await expect(page.getByText("Extraction revision saved.")).toBeVisible();
+    await expect(betaField.getByText("● Grounded")).toBeVisible();
+    await expectSelectedEvidenceSupport(betaField, betaEvidence);
 
     // 6. Create Synthesis Statement with both observations
     await page.goto(`/projects/${projectId}/synthesis`);

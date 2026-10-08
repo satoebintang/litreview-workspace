@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
 import { selectEvidencePaper } from "./evidence-paper-picker";
+import { addEvidenceToExtractionField, expectSelectedEvidenceSupport, getExtractionField } from "./extraction-evidence-picker";
 
 test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
   test("creates preparation workspace from Evidence Set, manages selections with connecting evidence, and finalizes to synthesis statement with preparation context", async ({ page }) => {
@@ -60,10 +61,16 @@ test.describe("Slice 18 Synthesis Preparation from Evidence Sets", () => {
     const extractionLink = await page.locator("a.extraction-progress-item").filter({ hasText: "Study Alpha" }).getAttribute("href");
     expect(extractionLink).toBeTruthy();
     await page.goto(`${extractionLink}`);
-    await page.getByLabel("Structured value").fill("42% enhancement");
-    await page.locator('input[name="evidenceIds"]').first().check();
+    const extractionField = getExtractionField(page, "Effect Size");
+    await extractionField.getByLabel("Structured value").fill("42% enhancement");
+    const selectedEvidence = await addEvidenceToExtractionField(page, "Effect Size", {
+      pageNumber: 4,
+      sourceText: "Primary outcome was significantly enhanced by 42%.",
+    });
     await page.getByRole("button", { name: "Save new revision" }).click();
     await expect(page.getByText("Extraction revision saved.")).toBeVisible();
+    await expect(extractionField.getByText("● Grounded")).toBeVisible();
+    await expectSelectedEvidenceSupport(extractionField, selectedEvidence);
 
     // 5. Create Evidence Set and add evidence
     await page.goto(`/projects/${projectId}/evidence-sets`);

@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
 import { selectEvidencePaper } from "./evidence-paper-picker";
 import { createPlaywrightTestDatabaseClient } from "./playwright-database";
+import { addEvidenceToExtractionField, expectSelectedEvidenceSupport, getExtractionField } from "./extraction-evidence-picker";
 
 
 async function getTestDbClient() {
@@ -71,12 +72,18 @@ test.describe("Slice 29 AI-assisted synthesis", () => {
     const extractionLink = await page.locator("a.extraction-progress-item").filter({ hasText: "Study Alpha" }).getAttribute("href");
     expect(extractionLink).toBeTruthy();
     await page.goto(`${extractionLink}`);
-    await page.getByLabel("Structured value").fill("Improved");
-    const extractionNote = page.getByLabel("Researcher note").last();
+    const extractionField = getExtractionField(page, "Outcome");
+    await extractionField.getByLabel("Structured value").fill("Improved");
+    const extractionNote = extractionField.getByLabel("Researcher note");
     if (await extractionNote.count()) await extractionNote.fill("Frozen extraction note");
-    await page.locator('input[name="evidenceIds"]').first().check();
+    const selectedEvidence = await addEvidenceToExtractionField(page, "Outcome", {
+      pageNumber: 4,
+      sourceText: maliciousSource,
+    });
     await page.getByRole("button", { name: "Save new revision" }).click();
     await expect(page.getByText("Extraction revision saved.")).toBeVisible();
+    await expect(extractionField.getByText("● Grounded")).toBeVisible();
+    await expectSelectedEvidenceSupport(extractionField, selectedEvidence);
 
     await page.goto(`/projects/${projectId}/evidence-sets`);
     await page.getByLabel("Name").fill("Outcome Evidence Set");

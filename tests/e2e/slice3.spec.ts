@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
 import { selectEvidencePaper } from "./evidence-paper-picker";
+import { addEvidenceToExtractionField, expectSelectedEvidenceSupport, getExtractionField } from "./extraction-evidence-picker";
 
 test.describe("Slice 3 structured extraction", () => {
   test("configures a field, records revision-specific provenance, and derives progress", async ({ page }) => {
@@ -52,19 +53,25 @@ test.describe("Slice 3 structured extraction", () => {
 
     await page.getByRole("link", { name: /Poisoning Attacks in Vision Models/ }).click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+\/extraction\/[0-9a-f-]+$/);
-    const field = page.locator(".extraction-value").filter({ hasText: "Attack technique" });
+    const field = getExtractionField(page, "Attack technique Required");
     await field.getByLabel("Structured value").selectOption({ label: "Data poisoning" });
     await field.getByRole("button", { name: "Save new revision" }).click();
     await expect(page.getByText("Extraction revision saved.")).toBeVisible();
     await expect(field.getByText("○ Not yet grounded")).toBeVisible();
 
-    await field.getByLabel(/Page 7/).check();
+    const page7Evidence = await addEvidenceToExtractionField(page, "Attack technique Required", {
+      pageNumber: 7,
+      sourceText: "We introduce poisoned samples into five percent of the training data.",
+    });
     await field.getByRole("button", { name: "Save new revision" }).click();
     await expect(field.getByText("● Grounded")).toBeVisible();
+    await expectSelectedEvidenceSupport(field, page7Evidence);
 
     await field.getByLabel("Structured value").selectOption({ label: "Evasion" });
     await field.getByRole("button", { name: "Save new revision" }).click();
     await expect(field.getByText("Evasion", { exact: true }).last()).toBeVisible();
+    await expect(field.getByText("● Grounded")).toBeVisible();
+    await expectSelectedEvidenceSupport(field, page7Evidence);
     await field.getByRole("link", { name: /Open Field revision history/ }).click();
     await expect(page).toHaveURL(new RegExp(`/fields/[^/]+/history$`));
     const revisions = page.locator(".item");
