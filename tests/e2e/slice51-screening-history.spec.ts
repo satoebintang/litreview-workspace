@@ -18,6 +18,7 @@ test.describe("Slice 51 bounded screening histories", () => {
     const sourceReference = `Retrieval source reference ${"S".repeat(500)}`;
     const fullTextNote = `Full-text audit note ${"F".repeat(700)}`;
     const paperAbstract = `Exact abstract, fully retained. ${"Abstract detail ".repeat(100)}`;
+    const historicalAttemptedAt = new Date("1900-01-01T12:00:00.000Z");
 
     try {
       const project = await services.createProject({ title: `Slice 51 history ${unique}` });
@@ -69,7 +70,7 @@ test.describe("Slice 51 bounded screening histories", () => {
       const retrievalCurrent = await services.recordFullTextRetrievalAttempt(project.id, paper.id, {
         outcome: "retrieved",
         method: "publisher",
-        attemptedAt: new Date("1900-01-01T12:00:00.000Z"),
+        attemptedAt: historicalAttemptedAt,
       });
 
       const fullTextFirst = await services.recordFullTextScreeningDecision(project.id, paper.id, {
@@ -149,7 +150,22 @@ test.describe("Slice 51 bounded screening histories", () => {
       await expect(page.getByText(retrievalNote, { exact: true })).toBeVisible();
       await page.goto(retrievalDetailPath);
       await retrievalDetailHistory.getByRole("link", { name: "View exact current attempt →" }).click();
-      await expect(page.getByText("1900", { exact: false })).toHaveCount(2);
+      await expect(page.getByRole("heading", { name: "Historical attempt", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: paper.title, exact: true })).toBeVisible();
+      expect(new URL(page.url()).pathname).toBe(`${retrievalDetailPath}/history/${retrievalCurrent.id}`);
+      await expect(page.locator(".workspace-header .status")).toHaveText("retrieved");
+      await expect(page.locator(".workspace-header")).toContainText(
+        `Sequence ${retrievalCurrent.sequence} · attempted ${historicalAttemptedAt.toLocaleString()}`,
+      );
+      const exactEventRow = (label: string) => page.locator("dl .item-row").filter({
+        has: page.locator("dt").getByText(label, { exact: true }),
+      });
+      await expect(exactEventRow("Event ID").locator("dd")).toHaveText(retrievalCurrent.id);
+      await expect(exactEventRow("Outcome").locator("dd")).toHaveText("retrieved");
+      await expect(exactEventRow("Sequence").locator("dd")).toHaveText(String(retrievalCurrent.sequence));
+      await expect(exactEventRow("Attempted at").locator("dd")).toHaveText(historicalAttemptedAt.toLocaleString());
+      await expect(exactEventRow("Recorded").locator("dd")).toHaveText(retrievalCurrent.createdAt.toLocaleString());
+      expect(retrievalCurrent.createdAt.getTime()).not.toBe(historicalAttemptedAt.getTime());
       await page.goto(retrievalDetailPath);
       await retrievalDetailHistory.getByRole("link", { name: "More retrieval history →" }).click();
       await expect(page.getByRole("heading", { name: "History", exact: true })).toBeVisible();

@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
 import { selectEvidencePaper } from "./evidence-paper-picker";
 import { createPlaywrightTestDatabaseClient } from "./playwright-database";
+import { addEvidenceToExtractionField, expectSelectedEvidenceSupport, getExtractionField } from "./extraction-evidence-picker";
 
 
 async function getTestDbClient() {
@@ -109,10 +110,16 @@ test.describe("Slice 20 Research Questions Traceability", () => {
     const extractionLink = await page.locator("a.extraction-progress-item").filter({ hasText: "Study Alpha" }).getAttribute("href");
     expect(extractionLink).toBeTruthy();
     await page.goto(`${extractionLink}`);
-    await page.getByLabel("Structured value").fill("92% reduction");
-    await page.locator('input[name="evidenceIds"]').first().check();
+    const extractionField = getExtractionField(page, "Intrusion Reduction Rate");
+    await extractionField.getByLabel("Structured value").fill("92% reduction");
+    const selectedEvidence = await addEvidenceToExtractionField(page, "Intrusion Reduction Rate", {
+      pageNumber: 8,
+      sourceText: "Automated defense mechanisms reduced intrusion success by 92%.",
+    });
     await page.getByRole("button", { name: "Save new revision" }).click();
     await expect(page.getByText("Extraction revision saved.")).toBeVisible();
+    await expect(extractionField.getByText("● Grounded")).toBeVisible();
+    await expectSelectedEvidenceSupport(extractionField, selectedEvidence);
 
     // Evidence set
     await page.goto(`/projects/${projectId}/evidence-sets`);

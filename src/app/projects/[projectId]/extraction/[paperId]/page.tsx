@@ -1,29 +1,45 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { beginAiExtractionSuggestionAction, reviseExtractionValueAction } from "@/app/actions";
 import { aiExtractionProviderAvailable, extractionReadServices, reviewServices } from "@/app/server";
+import { decodeExtractionEvidenceCandidateCursor } from "@/application/extraction-evidence-selection-cursor";
 import { DomainError } from "@/domain/errors";
+import type { ExtractionFieldType } from "@/domain/types";
+import { ExtractionWorksheet } from "./ExtractionWorksheet";
 
-function displayValue(revision: { valueState: string; textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null }, options: { id: string; label: string }[]) {
-  if (revision.valueState !== "present") return revision.valueState.replace("_", " ");
-  if (revision.optionId) return options.find((option) => option.id === revision.optionId)?.label ?? "Archived option";
-  if (revision.textValue !== null) return revision.textValue;
-  if (revision.numberValue !== null) return revision.numberValue;
-  if (revision.booleanValue !== null) return revision.booleanValue ? "Yes" : "No";
-  return "—";
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function queryValue(query: SearchParams, key: string): string | null {
+  const value = query[key];
+  return typeof value === "string" ? value : null;
 }
 
-function inputValue(revision: { textValue: string | null; numberValue: string | null; booleanValue: boolean | null; optionId: string | null } | null) {
-  if (!revision) return "";
-  if (revision.textValue !== null) return revision.textValue;
-  if (revision.numberValue !== null) return revision.numberValue;
-  if (revision.booleanValue !== null) return revision.booleanValue ? "true" : "false";
-  return revision.optionId ?? "";
+function boundedBrowseState(query: SearchParams, projectId: string, paperId: string, fieldIds: string[]) {
+  const hasBrowseState = ["evidenceField", "evidenceAfter", "evidencePageSize"].some((key) => query[key] !== undefined);
+  const firstFieldId = fieldIds[0] ?? null;
+  if (!hasBrowseState || !firstFieldId) {
+    return { open: false, fieldId: firstFieldId, after: null, pageSize: 20 };
+  }
+  const requestedField = queryValue(query, "evidenceField");
+  const fieldId = requestedField && fieldIds.includes(requestedField) ? requestedField : firstFieldId;
+  const requestedSize = queryValue(query, "evidencePageSize");
+  let pageSize = requestedSize && /^\d+$/.test(requestedSize) ? Number(requestedSize) : 20;
+  const invalidPageSize = !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 50;
+  if (invalidPageSize) pageSize = 20;
+  let after = queryValue(query, "evidenceAfter");
+  if (!requestedField || !fieldIds.includes(requestedField) || query.evidenceAfter !== after || invalidPageSize) after = null;
+  if (after) {
+    try {
+      decodeExtractionEvidenceCandidateCursor(after, { projectId, paperId, pageSize });
+    } catch {
+      after = null;
+      pageSize = 20;
+    }
+  }
+  return { open: true, fieldId, after, pageSize };
 }
 
 export default async function ExtractionPaperPage({ params, searchParams }: {
   params: Promise<{ projectId: string; paperId: string }>;
-  searchParams?: Promise<{ error?: string; saved?: string }>;
+  searchParams?: Promise<SearchParams>;
 }) {
   const { projectId, paperId } = await params;
   const query = searchParams ? await searchParams : {};
@@ -39,28 +55,36 @@ export default async function ExtractionPaperPage({ params, searchParams }: {
   const included = extraction.reviewStatus.finalEligibility === "included";
   const historicalOnly = !included && extraction.reviewStatus.warnings.includes("legacy_analysis_precedes_full_text_screening");
   const savedMessage = query.saved === "value" ? "Extraction revision saved." : query.saved === "evidence" ? "Evidence support revised as a new extraction revision." : undefined;
+  const fieldIds = extraction.fields.map((field) => field.id);
+  const initialBrowse = boundedBrowseState(query, projectId, paperId, fieldIds);
+  const requestedDraftField = queryValue(query, "draftField");
+  const activeDraftFieldId = requestedDraftField && fieldIds.includes(requestedDraftField) ? requestedDraftField : null;
+  const aiSuggestion = preferredDocument && sourceExtraction ? {
+    providerAvailable: aiExtractionProviderAvailable,
+    fullTextDocumentId: preferredDocument.id,
+    documentTextExtractionId: sourceExtraction.id,
+  } : null;
 
   return <div className="project-page">
     <div className="container workspace"><div className="workspace-header"><div><p className="eyebrow">Structured extraction · {included ? "Included paper" : "Paper not included"}</p><h1>{extraction.paper.title}</h1><p>{extraction.paper.authors.join(", ") || "Author details not added"}{extraction.paper.publicationYear ? ` · ${extraction.paper.publicationYear}` : ""}{extraction.paper.venue ? ` · ${extraction.paper.venue}` : ""}</p></div><span className={`status screening-${extraction.reviewStatus.titleAbstractState}`}>{extraction.reviewStatus.titleAbstractState}</span></div>
       {query.error && <div className="error-banner" role="alert">{query.error}</div>}{savedMessage && <div className="success-note" role="status">{savedMessage}</div>}
       {!included && <div className="error-banner" role="status">{historicalOnly ? "This Paper has historical extraction work from before full-text screening. Its existing revisions remain readable in Field audit pages, but new revisions cannot be saved until it is finally included." : "Extraction is available for finally included Papers only. This Paper’s existing revisions remain readable in Field audit pages, but new revisions cannot be saved."}</div>}
       <section className="card section-card extraction-worksheet"><div className="section-heading"><div><h2>Extraction worksheet</h2><p className="hint">Structured observations are separate from the verbatim Evidence passages that support them.</p></div><span className="count">{extraction.progress.completedRequired} / {extraction.progress.requiredCount} required · {extraction.progress.percentage ?? 0}%</span></div>
-        {extraction.values.length === 0 ? <div className="empty">No active extraction fields are configured yet.</div> : <div className="extraction-values">{extraction.values.map((item) => { const field = item.field; const options = field.options; const current = item.currentRevision; return <article className="extraction-value" key={field.id}><div className="extraction-value-header"><div><h3>{field.name} {field.required && <span className="required-mark">Required</span>}</h3>{field.description && <p className="hint">{field.description}</p>}</div>{current && <span className={`status ${item.supportStatus === "grounded" ? "supported" : "unsupported"}`}>{item.supportStatus === "grounded" ? "● Grounded" : "○ Not yet grounded"}</span>}</div>
-          {included && sourceExtraction && preferredDocument && (aiExtractionProviderAvailable ? <form action={beginAiExtractionSuggestionAction} className="ai-suggestion-form"><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="paperId" value={paperId} /><input type="hidden" name="fieldId" value={field.id} /><input type="hidden" name="fullTextDocumentId" value={preferredDocument.id} /><input type="hidden" name="documentTextExtractionId" value={sourceExtraction.id} /><input type="hidden" name="disclosureVersion" value="openai-extraction-transmission-v1" /><details><summary>Suggest with AI</summary><p className="hint">The suggestion is assistive and must be reviewed before it can become a canonical extraction revision.</p><label className="checkbox-row"><input type="checkbox" name="externalTransmissionAcknowledged" required /><span>Selected extracted text will be transmitted to the configured OpenAI API service. Tracework requests that the response not be stored as Responses API application state, but provider retention and organizational data controls may still apply.</span></label><button className="button" type="submit">Begin suggestion</button></details></form> : <p className="hint">AI suggestions are unavailable until an OpenAI provider is configured on the server.</p>)}
-          <form action={reviseExtractionValueAction} className="extraction-form"><input type="hidden" name="projectId" value={projectId} /><input type="hidden" name="paperId" value={paperId} /><input type="hidden" name="fieldId" value={field.id} /><input type="hidden" name="valueKind" value={field.fieldType} />
-            <div className="field"><label htmlFor={`state-${field.id}`}>Response state</label><select id={`state-${field.id}`} name="state" defaultValue={current?.valueState ?? "present"} disabled={!included}><option value="present">Value reported</option><option value="not_reported">Not reported in paper</option><option value="not_applicable">Not applicable</option><option value="cleared">Clear response</option></select></div>
-            {field.fieldType === "short_text" && <div className="field"><label htmlFor={`value-${field.id}`}>Structured value</label><input id={`value-${field.id}`} name="value" defaultValue={inputValue(current)} maxLength={500} disabled={!included} /></div>}
-            {field.fieldType === "long_text" && <div className="field"><label htmlFor={`value-${field.id}`}>Structured value</label><textarea id={`value-${field.id}`} name="value" defaultValue={inputValue(current)} maxLength={10000} disabled={!included} /></div>}
-            {field.fieldType === "number" && <div className="field"><label htmlFor={`value-${field.id}`}>Structured value</label><input id={`value-${field.id}`} name="value" type="number" step="any" defaultValue={inputValue(current)} disabled={!included} /></div>}
-            {field.fieldType === "boolean" && <div className="field"><label htmlFor={`value-${field.id}`}>Structured value</label><select id={`value-${field.id}`} name="value" defaultValue={inputValue(current)} disabled={!included}><option value="">Select yes or no</option><option value="true">Yes</option><option value="false">No</option></select></div>}
-            {field.fieldType === "single_select" && <div className="field"><label htmlFor={`value-${field.id}`}>Structured value</label><select id={`value-${field.id}`} name="value" defaultValue={inputValue(current)} disabled={!included}><option value="">Select an option</option>{options.map((option) => <option key={option.id} value={option.id} disabled={Boolean(option.archivedAt) && option.id !== current?.optionId}>{option.label}{option.archivedAt ? " (archived)" : ""}</option>)}</select></div>}
-            <div className="field"><label htmlFor={`note-${field.id}`}>Researcher note <span className="hint">optional · interpretation/commentary</span></label><textarea id={`note-${field.id}`} name="researcherNote" defaultValue={current?.researcherNote ?? ""} disabled={!included} /></div>
-            <fieldset className="evidence-picker"><legend>Supporting Evidence <span className="hint">verbatim passages from this Paper</span></legend>{extraction.evidence.length === 0 ? <div className="empty">No Evidence has been captured for this Paper yet.</div> : extraction.evidence.map((item) => { const rejected = item.reviewState === "rejected"; return <label className="checkbox-row" key={item.id}><input type="checkbox" name="evidenceIds" value={item.id} defaultChecked={Boolean(current?.evidence.some((linked) => linked.id === item.id))} disabled={!included || rejected} /><span><strong>Page {item.pageNumber}</strong> — <span className="quote-inline">“{item.sourceText}”</span>{item.note && <small>Researcher note: {item.note}</small>}{item.curationWarning && <small className="support-warning">{rejected ? "Currently rejected for new direct use." : item.reviewState === "needs_review" ? "Needs review; direct use remains allowed." : "Never reviewed; direct use remains allowed."}</small>}</span></label>; })}</fieldset>
-            <button className="button" type="submit" disabled={!included}>Save new revision</button>
-          </form>
-          <div className="current-observation"><div className="item-meta">Current structured observation</div><p>{current ? displayValue(current, options) : "Not yet extracted"}</p>{current?.researcherNote && <p className="item-meta">Researcher note: {current.researcherNote}</p>}{item.hasHistory && item.historyHref && <p><Link href={item.historyHref}>Open Field revision history →</Link></p>}</div>
-        </article>; })}</div>}
+        {extraction.values.length === 0 ? <div className="empty">No active extraction fields are configured yet.</div> : <ExtractionWorksheet
+          projectId={projectId}
+          paperId={paperId}
+          values={extraction.values.map((value) => ({
+            ...value,
+            field: { ...value.field, fieldType: value.field.fieldType as ExtractionFieldType },
+          }))}
+          included={included}
+          initialBrowse={initialBrowse}
+          activeDraftFieldId={activeDraftFieldId}
+          aiSuggestion={aiSuggestion}
+        />}
       </section>
-      <p className="footer-note">Each save records the complete observation, note, and Evidence set as a new immutable revision. Older revisions retain their own provenance.</p>
+      <p className="footer-note">Each save records the complete observation, note, and Evidence set as a new immutable revision. Older revisions retain their own provenance. A successful save redirects the page, so unsaved drafts in other Fields are not guaranteed to survive.</p>
+      <p className="footer-note">The Evidence browser loads bounded pages only when opened. Candidate search is not available in this slice.</p>
+      <p className="footer-note">When a response state is not “Value reported,” the released save parser omits the researcher note from the new revision. The note remains visible in the draft until a successful save, but is not saved for those states.</p>
     </div></div>;
 }

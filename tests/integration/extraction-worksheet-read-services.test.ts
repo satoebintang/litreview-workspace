@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createExtractionWorksheetReadServices } from "@/application/extraction-worksheet-read-services";
 import { createReviewServices } from "@/application/services";
 import { createDb } from "@/db/client";
-import { EvidenceRepository, PaperRepository, PaperReviewRepository } from "@/application/repositories";
+import { PaperRepository, PaperReviewRepository } from "@/application/repositories";
 import { extractionFields, extractionValueRevisions, extractionValues, schema } from "@/db/schema";
 
 const BASE_URL = process.env.DATABASE_URL ?? "postgres://litreview:litreview@127.0.0.1:5432/litreview";
@@ -41,7 +41,6 @@ describe("Slice 37 Extraction worksheet reads", () => {
     worksheetServices = createExtractionWorksheetReadServices(countedDb, {
       paperRepo: new PaperRepository(countedDb),
       paperReviewRepo: new PaperReviewRepository(countedDb),
-      evidenceRepo: new EvidenceRepository(countedDb),
     });
   });
 
@@ -88,11 +87,13 @@ describe("Slice 37 Extraction worksheet reads", () => {
     await services!.appendEvidenceReviewDecision(project.id, firstEvidence.id, { decision: "accepted" });
     await services!.appendEvidenceReviewDecision(project.id, firstEvidence.id, { decision: "rejected" });
     await services!.appendEvidenceReviewDecision(project.id, currentEvidence.id, { decision: "accepted" });
+    await services!.appendEvidenceReviewDecision(project.id, currentEvidence.id, { decision: "rejected" });
     await services!.archiveExtractionOption(project.id, option.id);
 
     const legacy = await services!.getPaperExtraction(project.id, paper.id);
     const legacyEvidence = (await services!.listEvidence(project.id)).filter((item) => item.paperId === paper.id);
     const legacyProgress = (await services!.getProjectExtractionProgress(project.id)).papers.find((item) => item.paper.id === paper.id)!;
+    queryLog.length = 0;
     const worksheet = await worksheetServices!.getPaperExtractionWorksheet(project.id, paper.id);
 
     expect(worksheet.paper).toEqual(legacy.paper);
@@ -132,13 +133,22 @@ describe("Slice 37 Extraction worksheet reads", () => {
     expect(worksheet.values.find((value) => value.fieldId === field.id)).toMatchObject({ hasHistory: true, historyHref: `/projects/${project.id}/extraction/${paper.id}/fields/${field.id}/history` });
     expect(worksheet.values.every((value) => !Object.hasOwn(value, "history"))).toBe(true);
     expect(legacyEvidence.find((item) => item.id === firstEvidence.id)).toMatchObject({ reviewState: "rejected" });
-    expect(worksheet.evidence.find((item) => item.id === firstEvidence.id)).toMatchObject({
-      id: firstEvidence.id,
+    const currentSupports = worksheet.values.find((value) => value.fieldId === field.id)!.currentRevision!.evidence;
+    expect(currentSupports).toHaveLength(1);
+    expect(currentSupports[0]).toMatchObject({
+      id: currentEvidence.id,
+      projectId: project.id,
+      paperId: paper.id,
+      pageNumber: 9,
+      sourceTextPreview: "Current passage",
       reviewState: "rejected",
       curationWarning: "currently_rejected",
+      href: `/projects/${project.id}/evidence/${currentEvidence.id}`,
     });
-    expect(worksheet.evidence).toEqual(legacyEvidence);
-    expect(worksheet.evidence.map((item) => item.id)).not.toContain((await services!.listEvidence(project.id)).find((item) => item.paperId === otherPaper.id)!.id);
+    expect(currentSupports.map((item) => item.id)).not.toContain(firstEvidence.id);
+    expect(Object.hasOwn(worksheet, "evidence")).toBe(false);
+    expect(queryLog.some((query) => /from evidence\s+(?:as\s+)?(?:evidence\b|e\b)/i.test(query))).toBe(false);
+    expect(legacyEvidence.find((item) => item.id === firstEvidence.id)).toMatchObject({ reviewState: "rejected" });
     expect(worksheet.progress).toEqual({
       completedRequired: legacyProgress.completedRequired,
       requiredCount: legacyProgress.requiredCount,
@@ -197,6 +207,6 @@ describe("Slice 37 Extraction worksheet reads", () => {
 
     expect(new Set(statementCounts.map(({ total }) => total)).size).toBe(1);
     expect(new Set(statementCounts.map(({ reads }) => reads)).size).toBe(1);
-    expect(statementCounts[0].reads).toBe(7);
+    expect(statementCounts[0].reads).toBe(6);
   });
 });

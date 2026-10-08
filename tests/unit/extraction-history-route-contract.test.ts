@@ -8,6 +8,8 @@ const paths = {
   historyPage: "src/app/projects/[projectId]/extraction/[paperId]/fields/[fieldId]/history/page.tsx",
   exactPage: "src/app/projects/[projectId]/extraction/[paperId]/fields/[fieldId]/revisions/[revisionId]/page.tsx",
   worksheetPage: "src/app/projects/[projectId]/extraction/[paperId]/page.tsx",
+  worksheetClient: "src/app/projects/[projectId]/extraction/[paperId]/ExtractionWorksheet.tsx",
+  revisionForm: "src/app/projects/[projectId]/extraction/[paperId]/ExtractionRevisionForm.tsx",
 };
 
 function source(path: string) {
@@ -21,18 +23,23 @@ describe("Slice 53 extraction history route contracts", () => {
       expect(worksheet).not.toContain(forbidden);
     }
     expect(worksheet).toContain("currentRevisionIds");
-    expect(worksheet).toContain("inArray(extractionRevisionEvidence.revisionId, currentRevisionIds)");
+    expect(worksheet).toContain("link.revision_id in (");
+    expect(worksheet).toContain("left(e.source_text, 1200)");
+    expect(worksheet).toContain("left(e.note, 600)");
     expect(worksheet).toContain("order by r.sequence desc\n            limit 1");
     expect(worksheet).not.toMatch(/order by r\.sequence desc\s*,\s*r\.id/i);
   });
 
-  it("keeps the full Paper Evidence picker explicitly deferred and unchanged", () => {
+  it("keeps candidate browsing lazy and separate from the exact selected-support projection", () => {
     const worksheet = source(paths.worksheet);
     const page = source(paths.worksheetPage);
-    expect(worksheet).toContain("deps.evidenceRepo.listForPaper(projectId, paperId, tx)");
-    expect(worksheet).toContain("complete Paper Evidence picker is intentionally retained as deferred debt");
-    expect(page).toContain("extraction.evidence.map");
-    expect(page).toContain("name=\"evidenceIds\"");
+    const client = source(paths.worksheetClient);
+    const form = source(paths.revisionForm);
+    expect(worksheet).not.toContain("evidenceRepo.listForPaper");
+    expect(worksheet).not.toContain("getPaperExtractionEvidenceCandidatePage");
+    expect(page).not.toContain("extraction.evidence.map");
+    expect(client).toContain("<ExtractionWorksheetEvidencePicker");
+    expect(form).toContain('name="evidenceIds"');
   });
 
   it("selects stop-early history keys before visible-only hydration and Evidence counting", () => {

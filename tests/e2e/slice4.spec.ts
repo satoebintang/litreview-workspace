@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { addManualPaper } from "./manual-paper";
 import { selectEvidencePaper } from "./evidence-paper-picker";
+import { addEvidenceToExtractionField, expectSelectedEvidenceSupport, getExtractionField } from "./extraction-evidence-picker";
 
 test.describe("Slice 4 evidence synthesis", () => {
   test("compares observations and retains exact historical support through revision, exclusion, and withdrawal", async ({ page }) => {
@@ -74,15 +75,27 @@ test.describe("Slice 4 evidence synthesis", () => {
     expect(studyALink).toBeTruthy();
     expect(studyBLink).toBeTruthy();
     await page.goto(`${studyALink}`);
-    await page.getByLabel("Structured value").fill("Data poisoning");
-    await page.locator('input[name="evidenceIds"]').first().check();
+    const studyAField = getExtractionField(page, "Attack technique");
+    await studyAField.getByLabel("Structured value").fill("Data poisoning");
+    const studyAEvidence = await addEvidenceToExtractionField(page, "Attack technique", {
+      pageNumber: 7,
+      sourceText: "Study A reports data poisoning.",
+    });
     await page.getByRole("button", { name: "Save new revision" }).click();
     await expect(page.getByText("Extraction revision saved.")).toBeVisible();
+    await expect(studyAField.getByText("● Grounded")).toBeVisible();
+    await expectSelectedEvidenceSupport(studyAField, studyAEvidence);
     await page.goto(`${studyBLink}`);
-    await page.getByLabel("Structured value").fill("Data poisoning");
-    await page.locator('input[name="evidenceIds"]').first().check();
+    const studyBField = getExtractionField(page, "Attack technique");
+    await studyBField.getByLabel("Structured value").fill("Data poisoning");
+    const studyBEvidence = await addEvidenceToExtractionField(page, "Attack technique", {
+      pageNumber: 7,
+      sourceText: "Study B reports data poisoning.",
+    });
     await page.getByRole("button", { name: "Save new revision" }).click();
     await expect(page.getByText("Extraction revision saved.")).toBeVisible();
+    await expect(studyBField.getByText("● Grounded")).toBeVisible();
+    await expectSelectedEvidenceSupport(studyBField, studyBEvidence);
 
     await page.goto(`/projects/${projectId}/synthesis`);
     await expect(page.getByRole("heading", { name: "Evidence matrix" })).toBeVisible();
@@ -98,9 +111,12 @@ test.describe("Slice 4 evidence synthesis", () => {
     await expect(page.getByText("Study B reports data poisoning.")).toBeVisible();
 
     await page.goto(`${studyBLink}`);
-    await page.getByLabel("Structured value").fill("Backdoor attack");
+    const revisedStudyBField = getExtractionField(page, "Attack technique");
+    await revisedStudyBField.getByLabel("Structured value").fill("Backdoor attack");
     await page.getByRole("button", { name: "Save new revision" }).click();
     await expect(page.getByText("Extraction revision saved.")).toBeVisible({ timeout: 30_000 });
+    await expect(revisedStudyBField.getByText("● Grounded")).toBeVisible();
+    await expectSelectedEvidenceSupport(revisedStudyBField, studyBEvidence);
     await page.goto(statementUrl);
     await expect(page.getByText("Superseded support", { exact: true })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(/Extraction revision \d+/).first()).toBeVisible({ timeout: 30_000 });

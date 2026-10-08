@@ -101,13 +101,13 @@ function summarizeValue(value: unknown): unknown {
   const row = value as Record<string, unknown>;
   const values = Array.isArray(row.values) ? row.values as Array<{ currentRevision?: { evidence?: unknown[] } | null }> : [];
   const items = Array.isArray(row.items) ? row.items : [];
-  const evidenceRows = Array.isArray(row.evidence) ? row.evidence.length : 0;
+  const candidateRowsReturnedByWorksheet = Array.isArray(row.evidence) ? row.evidence.length : 0;
   return {
     keys: Object.keys(row).slice(0, 24),
     itemCount: items.length || undefined,
     worksheetFieldCount: values.length || undefined,
     currentEvidenceMemberships: values.reduce((sum, item) => sum + (item.currentRevision?.evidence?.length ?? 0), 0) || undefined,
-    paperEvidencePickerRows: evidenceRows || undefined,
+    candidateRowsReturnedByWorksheet,
     hasMore: row.hasMore,
     nextCursorPresent: typeof row.nextCursor === "string" && row.nextCursor.length > 0,
   };
@@ -627,6 +627,8 @@ async function main() {
       measurements.push(result.measurement);
       const currentQuery = worksheetCurrentQuery(result.measurement);
       const currentRows = result.measurement.queryStatements.filter(({ sql: query }) => /^(with|select)\b/i.test(query.trim()) && /from\s+extraction_fields\s+f\b/i.test(query) && /left\s+join\s+lateral/i.test(query));
+      const candidateUniverseQueries = result.measurement.queryStatements.filter(({ sql: query }) => /^(with|select)\b/i.test(query.trim())
+        && /from\s+evidence\s+e\b/i.test(query) && !/extraction_revision_evidence\s+link/i.test(query));
       const evidenceLinks = await appClient.unsafe(
         `SELECT count(*)::int AS links FROM extraction_revision_evidence link
          JOIN papers paper ON paper.project_id=link.project_id AND paper.id=link.paper_id
@@ -634,6 +636,11 @@ async function main() {
         [scenario.projectId, scenario.paperId],
       );
       const sequenceMetrics = result.value === null ? null : sequenceNormalizedDtoMetrics(result.value);
+      const worksheetValue = result.value && typeof result.value === "object"
+        ? result.value as { values?: Array<{ currentRevision?: { evidence?: unknown[] } | null }>; evidence?: unknown[] }
+        : null;
+      const selectedSupportItems = worksheetValue?.values?.flatMap((value) => value.currentRevision?.evidence ?? []) ?? [];
+      const candidateRowsReturnedByWorksheet = worksheetValue?.evidence?.length ?? 0;
       const actualActiveFieldCount = result.value && typeof result.value === "object"
         && Array.isArray((result.value as { values?: unknown }).values)
         ? (result.value as { values: unknown[] }).values.length
@@ -644,8 +651,12 @@ async function main() {
         actualActiveFieldCount,
         revisionsPerField: scenario.revisionsPerField,
         totalHistoricalRevisions: scenario.fieldCount * scenario.revisionsPerField,
-        paperEvidencePickerRows: scenario.evidenceCount,
+        candidateUniverseEvidenceRows: scenario.evidenceCount,
+        candidateRowsReturnedByWorksheet,
+        candidateUniverseSelectStatements: candidateUniverseQueries.length,
         currentRevisionEvidenceLinks: Number((evidenceLinks[0] as { links: number }).links),
+        currentSelectedSupportMemberships: selectedSupportItems.length,
+        currentSelectedSupportDtoUtf8Bytes: jsonBytes(selectedSupportItems),
         normalizedDtoUtf8Bytes: sequenceMetrics?.normalizedUtf8Bytes ?? null,
         currentRevisionSequenceCount: sequenceMetrics?.sequenceCount ?? null,
         currentRevisionSequenceCharacters: sequenceMetrics?.sequenceCharacters ?? null,
@@ -681,8 +692,11 @@ async function main() {
         normalizedDtoUtf8Bytes: item.normalizedDtoUtf8Bytes,
         currentRevisionSequenceCount: item.currentRevisionSequenceCount,
         currentRevisionSequenceCharacters: item.currentRevisionSequenceCharacters,
-        paperEvidencePickerRows: item.paperEvidencePickerRows,
+        candidateUniverseEvidenceRows: item.candidateUniverseEvidenceRows,
+        candidateRowsReturnedByWorksheet: item.candidateRowsReturnedByWorksheet,
         currentRevisionEvidenceLinks: item.currentRevisionEvidenceLinks,
+        currentSelectedSupportMemberships: item.currentSelectedSupportMemberships,
+        currentSelectedSupportDtoUtf8Bytes: item.currentSelectedSupportDtoUtf8Bytes,
       };
     });
     const normalizedHistoryTransferSignatures = new Set(historyDepthFlat.map((row) => JSON.stringify([
@@ -690,7 +704,8 @@ async function main() {
       row.driverRows,
       row.normalizedDtoUtf8Bytes,
       row.currentRevisionSequenceCount,
-      row.paperEvidencePickerRows,
+      row.candidateUniverseEvidenceRows,
+      row.candidateRowsReturnedByWorksheet,
       row.currentRevisionEvidenceLinks,
     ])));
     const sequenceByteDeltasAccounted = historyDepthFlat.every((row) =>
@@ -715,15 +730,20 @@ async function main() {
     }));
     const evidenceRows = worksheetMeasurements.filter((item) => String(item.scenario).startsWith("worksheet_evidence_"));
     const evidenceLinksMatch = evidenceRows.every((item) =>
-      item.currentRevisionEvidenceLinks === Number(item.fieldCount) * Number(item.paperEvidencePickerRows),
+      item.currentRevisionEvidenceLinks === Number(item.fieldCount) * Number(item.candidateUniverseEvidenceRows)
+      && item.candidateRowsReturnedByWorksheet === 0 && item.candidateUniverseSelectStatements === 0,
     );
     structuralGate.worksheetEvidenceSupportCounts = evidenceLinksMatch ? "pass" : "fail";
     structuralGate.worksheetEvidenceSupportMeasurements = evidenceRows.map((item) => ({
       scenario: item.scenario,
       fieldCount: item.fieldCount,
-      paperEvidencePickerRows: item.paperEvidencePickerRows,
-      expectedCurrentRevisionEvidenceLinks: Number(item.fieldCount) * Number(item.paperEvidencePickerRows),
+      candidateUniverseEvidenceRows: item.candidateUniverseEvidenceRows,
+      candidateRowsReturnedByWorksheet: item.candidateRowsReturnedByWorksheet,
+      candidateUniverseSelectStatements: item.candidateUniverseSelectStatements,
+      expectedCurrentRevisionEvidenceLinks: Number(item.fieldCount) * Number(item.candidateUniverseEvidenceRows),
       actualCurrentRevisionEvidenceLinks: item.currentRevisionEvidenceLinks,
+      currentSelectedSupportMemberships: item.currentSelectedSupportMemberships,
+      currentSelectedSupportDtoUtf8Bytes: item.currentSelectedSupportDtoUtf8Bytes,
     }));
     if (structuralGate.status !== "pass") runStatus = "failed";
     if (!historyDepthBounded || !fieldCountsMatch || !evidenceLinksMatch) runStatus = "failed";
@@ -778,7 +798,7 @@ async function main() {
       },
       fixtureSummary: {
         extractionHistorySlots: corpora.map((corpus) => ({ label: corpus.label, paperId: corpus.paperId, fieldId: corpus.fieldId, finalizedRevisions: corpus.population, currentRevisionEvidenceLinks: corpus.evidencePerCurrentRevision })),
-        worksheetScenarios: worksheetScenarios.map((scenario) => ({ label: scenario.label, fieldCount: scenario.fieldCount, revisionsPerField: scenario.revisionsPerField, totalHistoricalRevisions: scenario.fieldCount * scenario.revisionsPerField, paperEvidenceRows: scenario.evidenceCount })),
+        worksheetScenarios: worksheetScenarios.map((scenario) => ({ label: scenario.label, fieldCount: scenario.fieldCount, revisionsPerField: scenario.revisionsPerField, totalHistoricalRevisions: scenario.fieldCount * scenario.revisionsPerField, candidateUniverseEvidenceRows: scenario.evidenceCount })),
         expectedGeneratedRevisionCount: corpora.reduce((sum, corpus) => sum + corpus.population, 0) + worksheetScenarios.reduce((sum, scenario) => sum + scenario.fieldCount * scenario.revisionsPerField, 0),
       },
       historyMeasurements,
@@ -787,8 +807,8 @@ async function main() {
       plans,
       structuralGates: structuralGate,
       boundaries: {
-        paperEvidencePicker: "Deferred unbounded debt: retained by approval; its returned rows and DTO bytes may grow with Paper Evidence count.",
-        boundednessClaim: "Complete historical ExtractionRevision streams and historical revision-Evidence hydration are no longer materialized by the normal worksheet.",
+        paperEvidenceCandidateUniverse: "Fixture candidate counts are recorded separately. The current worksheet reads zero candidate-universe rows and returns only exact current selected-support memberships.",
+        boundednessClaim: "Complete historical ExtractionRevision streams, historical revision-Evidence hydration, and the full Paper Evidence candidate universe are not materialized by the normal worksheet.",
         separateReads: "Project layout plus unchanged conditional preferred-document and text-extraction reads are outside this getPaperExtractionWorksheet-only measurement.",
         artifactGrowth: "Current worksheet and exact revision DTOs may grow with their exact current/exact Evidence support membership.",
         legacyHistory: "Full legacy history is measured only on the practical safe-sequence 1k fixture because the released API performs per-revision Evidence reads; larger legacy history is not executed.",

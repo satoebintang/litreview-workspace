@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createExtractionHistoryReadServices } from "@/application/extraction-history-read-services";
 import { createExtractionWorksheetReadServices } from "@/application/extraction-worksheet-read-services";
-import { EvidenceRepository, PaperRepository, PaperReviewRepository } from "@/application/repositories";
+import { PaperRepository, PaperReviewRepository } from "@/application/repositories";
 import { createReviewServices } from "@/application/services";
 import { createDb } from "@/db/client";
 import { evidence, extractionFields, extractionOptions, extractionRevisionEvidence, extractionValueRevisions, extractionValues, schema } from "@/db/schema";
@@ -48,7 +48,6 @@ describe("Slice 53 Extraction revision history and exact audit", () => {
     worksheetServices = createExtractionWorksheetReadServices(countedDb, {
       paperRepo: new PaperRepository(countedDb),
       paperReviewRepo: new PaperReviewRepository(countedDb),
-      evidenceRepo: new EvidenceRepository(countedDb),
     });
   });
 

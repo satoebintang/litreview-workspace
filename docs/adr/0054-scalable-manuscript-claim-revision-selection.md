@@ -1,6 +1,8 @@
 # ADR 0054: Scalable Manuscript ClaimRevision Placement Selection
 
-**Status:** implemented and accepted
+**Status:** implemented and published as `v0.54.0-slice54`
+
+**Published merge SHA:** `971f3623b9176da7a08c00cf54015535d7f2f698`
 
 **Date:** 2026-10-06
 

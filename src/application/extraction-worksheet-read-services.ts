@@ -1,22 +1,19 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { DomainError } from "@/domain/errors";
-import type { Evidence, ExtractionFieldType, ExtractionValueState, PaperReviewStatus } from "@/domain/types";
+import type { ExtractionFieldType, ExtractionValueState, PaperReviewStatus } from "@/domain/types";
 import {
-  evidence,
   extractionFields,
   extractionOptions,
-  extractionRevisionEvidence,
   papers,
   projects,
 } from "@/db/schema";
-import type { EvidenceRepository, PaperRepository, PaperReviewRepository } from "./repositories";
+import type { PaperRepository, PaperReviewRepository } from "./repositories";
 import { createPaperReviewHelpers } from "./review-services/paper-review-helpers";
 import { ensureId, evidenceCurationWarning, evidenceReviewState } from "./review-services/shared";
 
 const WORKSHEET_STATEMENT_TIMEOUT_MS = 15_000;
 
-type EvidenceRepositoryForWorksheet = Pick<EvidenceRepository, "listForPaper">;
 type PaperReviewRepositoryForWorksheet = Pick<PaperReviewRepository, "find" | "list">;
 type RawRow = Record<string, unknown>;
 
@@ -27,6 +24,25 @@ export type ExtractionWorksheetProgress = {
   percentage: number | null;
   writeEligible: boolean;
 };
+
+export type ExtractionWorksheetEvidence = {
+  id: string;
+  projectId: string;
+  paperId: string;
+  pageNumber: number;
+  createdAt: Date;
+  sourceTextPreview: string;
+  sourceTextTruncated: boolean;
+  notePreview: string | null;
+  noteTruncated: boolean;
+  reviewState: "unreviewed" | "needs_review" | "accepted" | "rejected";
+  curationWarning: "never_reviewed" | "needs_review" | "currently_rejected" | null;
+  href: string;
+};
+
+function bool(value: unknown): boolean {
+  return value === true || value === "t" || value === 1;
+}
 
 function rows(value: unknown): RawRow[] {
   return value as unknown as RawRow[];
@@ -50,7 +66,6 @@ export function createExtractionWorksheetReadServices(
   deps: {
     paperRepo: Pick<PaperRepository, "findForUpdate">;
     paperReviewRepo: PaperReviewRepositoryForWorksheet;
-    evidenceRepo: EvidenceRepositoryForWorksheet;
   },
 ) {
   const { getPaperReviewStatusFor } = createPaperReviewHelpers(db, deps.paperRepo, deps.paperReviewRepo);
@@ -118,33 +133,49 @@ export function createExtractionWorksheetReadServices(
         `));
 
         const currentRevisionIds = currentRows.filter((row) => row.revision_id != null).map((row) => String(row.revision_id));
-        const currentEvidenceLinks = currentRevisionIds.length === 0 ? [] : await tx.select({
-          revisionId: extractionRevisionEvidence.revisionId,
-          item: evidence,
-        }).from(extractionRevisionEvidence)
-          .innerJoin(evidence, and(
-            eq(evidence.projectId, extractionRevisionEvidence.projectId),
-            eq(evidence.paperId, extractionRevisionEvidence.paperId),
-            eq(evidence.id, extractionRevisionEvidence.evidenceId),
-          ))
-          .where(and(
-            eq(extractionRevisionEvidence.projectId, projectId),
-            eq(extractionRevisionEvidence.paperId, paperId),
-            inArray(extractionRevisionEvidence.revisionId, currentRevisionIds),
-          ))
-          // Preserve the released exact support order: pageNumber ASC, createdAt ASC.
-          .orderBy(asc(evidence.pageNumber), asc(evidence.createdAt));
+        const currentEvidenceLinks = currentRevisionIds.length === 0 ? [] : rows(await tx.execute(sql`
+          select link.revision_id::text as revision_id,
+            e.id::text as evidence_id, e.project_id::text as project_id, e.paper_id::text as paper_id,
+            e.page_number, e.created_at,
+            left(e.source_text, 1200) as source_text_preview,
+            char_length(e.source_text) > 1200 as source_text_truncated,
+            left(e.note, 600) as note_preview,
+            coalesce(char_length(e.note) > 600, false) as note_truncated,
+            latest_review.decision as current_review_decision
+          from extraction_revision_evidence link
+          join evidence e on e.project_id=link.project_id and e.paper_id=link.paper_id and e.id=link.evidence_id
+          left join lateral (
+            select decision.decision
+            from evidence_review_decisions decision
+            where decision.project_id=e.project_id and decision.evidence_id=e.id
+            order by decision.sequence desc
+            limit 1
+          ) latest_review on true
+          where link.project_id=${projectId}::uuid and link.paper_id=${paperId}::uuid
+            and link.revision_id in (${sql.join(currentRevisionIds.map((id) => sql`${id}::uuid`), sql`, `)})
+          -- Preserve the released exact support order: pageNumber ASC, createdAt ASC.
+          order by e.page_number asc, e.created_at asc
+        `));
 
-        // The complete Paper Evidence picker is intentionally retained as deferred debt.
-        const paperEvidenceRows = await deps.evidenceRepo.listForPaper(projectId, paperId, tx);
-        const paperEvidence = paperEvidenceRows.map(({ currentReviewDecision, ...item }) => {
-          const reviewState = evidenceReviewState(currentReviewDecision ?? undefined);
-          return { ...item, reviewState, curationWarning: evidenceCurationWarning(reviewState) };
-        });
-
-        const evidenceByRevisionId = new Map<string, Evidence[]>();
+        const evidenceByRevisionId = new Map<string, ExtractionWorksheetEvidence[]>();
         for (const link of currentEvidenceLinks) {
-          evidenceByRevisionId.set(link.revisionId, [...(evidenceByRevisionId.get(link.revisionId) ?? []), link.item]);
+          const reviewState = evidenceReviewState(link.current_review_decision == null ? undefined : String(link.current_review_decision));
+          const item: ExtractionWorksheetEvidence = {
+            id: String(link.evidence_id),
+            projectId: String(link.project_id),
+            paperId: String(link.paper_id),
+            pageNumber: Number(link.page_number),
+            createdAt: date(link.created_at),
+            sourceTextPreview: String(link.source_text_preview ?? ""),
+            sourceTextTruncated: bool(link.source_text_truncated),
+            notePreview: link.note_preview == null ? null : String(link.note_preview),
+            noteTruncated: bool(link.note_truncated),
+            reviewState,
+            curationWarning: evidenceCurationWarning(reviewState),
+            href: `/projects/${projectId}/evidence/${String(link.evidence_id)}`,
+          };
+          const revisionId = String(link.revision_id);
+          evidenceByRevisionId.set(revisionId, [...(evidenceByRevisionId.get(revisionId) ?? []), item]);
         }
         const currentByFieldId = new Map(currentRows.map((row) => [String(row.field_id), row]));
 
@@ -208,7 +239,7 @@ export function createExtractionWorksheetReadServices(
           writeEligible: reviewStatus.finalEligibility === "included",
         };
 
-        return { paper, reviewStatus, fields: worksheetFields, values, evidence: paperEvidence, progress };
+        return { paper, reviewStatus, fields: worksheetFields, values, progress };
       }, { isolationLevel: "repeatable read", accessMode: "read only" });
     },
   };

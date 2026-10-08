@@ -85,13 +85,24 @@ test.describe("Slice 37 Extraction workspace", () => {
     await expect(page.getByText("Structured extraction · Included paper", { exact: true })).toBeVisible();
     const sampleSize = page.locator(".extraction-value").filter({ hasText: "Sample size" });
     await sampleSize.getByLabel("Structured value").fill("1500");
-    await sampleSize.getByLabel(/Page 9/).check();
+    const evidenceBrowser = page.getByRole("region", { name: "Shared Evidence browser" });
+    await expect(evidenceBrowser).toHaveCount(1);
+    await expect(evidenceBrowser.locator(".candidate-evidence")).toHaveCount(0);
+    await sampleSize.getByRole("button", { name: "Browse Evidence to add to Sample size" }).click();
+    const pageNineCandidate = evidenceBrowser.locator(".candidate-evidence").filter({ hasText: /Page 9/ });
+    await expect(pageNineCandidate).toHaveCount(1);
+    await pageNineCandidate.getByRole("button", { name: "Add to this Field" }).click();
+    await expect(sampleSize.locator('input[name="evidenceIds"]')).toHaveCount(1);
+    await expect(sampleSize.locator('input[name="evidenceIds"]')).toBeChecked();
     await sampleSize.getByRole("button", { name: "Save new revision" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Extraction revision saved" })).toBeVisible();
     await expect(sampleSize.getByText("● Grounded")).toBeVisible();
 
     await sampleSize.getByLabel("Structured value").fill("1600");
-    await sampleSize.getByLabel(/Page 9/).uncheck();
+    const selectedEvidence = sampleSize.locator('input[name="evidenceIds"]');
+    await expect(selectedEvidence).toHaveCount(1);
+    await selectedEvidence.click({ noWaitAfter: true });
+    await expect(selectedEvidence).toHaveCount(0);
     await sampleSize.getByRole("button", { name: "Save new revision" }).click();
     await expect(sampleSize.locator(".current-observation")).toContainText("1600");
     await expect(sampleSize.getByText(/Revision history \(/)).toHaveCount(0);

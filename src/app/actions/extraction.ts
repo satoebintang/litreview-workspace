@@ -3,6 +3,10 @@
 import { redirect } from "next/navigation";
 import { reviewServices } from "../server";
 import { fail, optional, text } from "../action-helpers";
+import { extractionReadServices } from "../server";
+import { nextExtractionWorksheetResponseVersion, parseExtractionValueFormData, type ExtractionWorksheetActionState } from "../extraction-form-state";
+import { DomainError } from "@/domain/errors";
+import type { ExtractionEvidencePreview } from "@/application/extraction-evidence-selection-read-services";
 
 export async function createExtractionFieldAction(form: FormData) {
   const projectId = text(form, "projectId");
@@ -50,19 +54,7 @@ export async function archiveExtractionOptionAction(form: FormData) {
 }
 
 function extractionValue(form: FormData) {
-  const state = text(form, "state") || "present";
-  if (state !== "present") return { state: state as "not_reported" | "not_applicable" | "cleared", evidenceIds: form.getAll("evidenceIds").filter((id): id is string => typeof id === "string") };
-  const kind = text(form, "valueKind");
-  const raw = form.get("value");
-  let value: unknown = typeof raw === "string" ? raw : undefined;
-  if (kind === "number") value = typeof raw === "string" && raw !== "" ? Number(raw) : undefined;
-  if (kind === "boolean") value = raw === "true";
-  return {
-    state: "present" as const,
-    value,
-    researcherNote: optional(form, "researcherNote"),
-    evidenceIds: form.getAll("evidenceIds").filter((id): id is string => typeof id === "string"),
-  };
+  return parseExtractionValueFormData(form);
 }
 
 export async function reviseExtractionValueAction(form: FormData) {
@@ -72,6 +64,54 @@ export async function reviseExtractionValueAction(form: FormData) {
     await reviewServices.reviseExtractionValue(projectId, paperId, text(form, "fieldId"), extractionValue(form));
   } catch (error) {
     fail(`/projects/${projectId}/extraction/${paperId}`, error);
+  }
+  redirect(`/projects/${projectId}/extraction/${paperId}?saved=value`);
+}
+
+function rawFormText(form: FormData, key: string): string {
+  const value = form.get(key);
+  return typeof value === "string" ? value : "";
+}
+
+function safeExtractionErrorMessage(error: unknown): string {
+  return error instanceof DomainError
+    ? error.message
+    : "The extraction revision could not be saved. Your draft is still available.";
+}
+
+export async function saveExtractionWorksheetRevisionAction(
+  previousState: ExtractionWorksheetActionState,
+  form: FormData,
+): Promise<ExtractionWorksheetActionState> {
+  const projectId = text(form, "projectId");
+  const paperId = text(form, "paperId");
+  const fieldId = text(form, "fieldId");
+  const rawState = rawFormText(form, "state") || "present";
+  const rawValue = rawFormText(form, "value");
+  const rawResearcherNote = rawFormText(form, "researcherNote");
+  const submittedEvidenceIds = form.getAll("evidenceIds").filter((id): id is string => typeof id === "string");
+  const responseVersion = nextExtractionWorksheetResponseVersion(previousState?.responseVersion ?? 0);
+
+  try {
+    await reviewServices.reviseExtractionValue(projectId, paperId, fieldId, parseExtractionValueFormData(form));
+  } catch (error) {
+    let supportMetadata: ExtractionEvidencePreview[] = [];
+    try {
+      supportMetadata = await extractionReadServices.getPaperExtractionEvidenceSupportMetadata(projectId, paperId, submittedEvidenceIds);
+    } catch {
+      // Preserve the attempted IDs even when the submitted scope cannot be refreshed.
+    }
+    return {
+      response: "failed",
+      fieldId,
+      responseVersion,
+      rawState,
+      rawValue,
+      rawResearcherNote,
+      submittedEvidenceIds,
+      supportMetadata,
+      safeErrorMessage: safeExtractionErrorMessage(error),
+    };
   }
   redirect(`/projects/${projectId}/extraction/${paperId}?saved=value`);
 }
