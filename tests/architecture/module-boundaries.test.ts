@@ -836,15 +836,16 @@ describe("bounded-context module boundaries", () => {
     expect(violations.map((edge) => `${path.relative(root, edge.from)} -> ${edge.specifier}`)).toEqual([]);
   });
 
-  it("preserves configuration bytes except the authorized Slice 55 benchmark script", () => {
-    const packageJsonSlice55Sha256 = "ffb54d2870bd6091d05a086af867f70a250b6f955f599b64f7139fef262952dc";
+  it("preserves configuration bytes against the approved Slice 56 script manifest", () => {
+    // Normalize only the separately authorized Slice 55 benchmark script; the fixed digest includes all Slice 56 commands.
+    const packageJsonAfterSlice56ScriptsSha256 = "3764982c7d75d4de0b0e58b52031e41be19d71cbc0b68a6c9a8bd2c084a5d2ac";
     for (const manifest of fixture.configHashes) {
       if (manifest.file === "package.json") {
         const packageText = readFileSync(absolute(manifest.file), "utf8");
         const benchmarkScript = /^    "benchmark:extraction-evidence-selection": "tsx scripts\/benchmark-extraction-evidence-selection-read-paths\.ts",\r?\n/gm;
         expect([...packageText.matchAll(benchmarkScript)], manifest.file).toHaveLength(1);
         const baselinePackageText = packageText.replace(benchmarkScript, "");
-        expect(sha256Text(baselinePackageText), manifest.file).toBe(packageJsonSlice55Sha256);
+        expect(sha256Text(baselinePackageText), manifest.file).toBe(packageJsonAfterSlice56ScriptsSha256);
         continue;
       }
       expect(sha256(manifest.file), manifest.file).toBe(manifest.sha256);

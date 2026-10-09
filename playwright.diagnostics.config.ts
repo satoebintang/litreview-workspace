@@ -1,20 +1,19 @@
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
-  testDir: "./tests/e2e",
+  testDir: "./tests/e2e-diagnostics",
   fullyParallel: false,
   workers: 1,
-  timeout: 60_000,
-  expect: { timeout: 30_000 },
+  timeout: 15_000,
+  expect: { timeout: 2_000 },
   retries: 0,
   reporter: "list",
-  globalTeardown: "./tests/e2e/playwright-teardown.ts",
+  outputDir: process.env.PLAYWRIGHT_DIAGNOSTICS_OUTPUT_DIR ?? "test-results-diagnostics",
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    ...devices["Desktop Chrome"],
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
   },
-  webServer: { command: "npm run e2e:server", url: "http://127.0.0.1:3000", reuseExistingServer: false, timeout: 300_000 },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

@@ -27,12 +27,37 @@ const serverHost = "127.0.0.1";
 const serverPort = 3000;
 const readinessUrl = `http://${serverHost}:${serverPort}/`;
 const readinessTimeoutMs = 300_000;
+const lifecycleDiagnosticsPath = process.env.PLAYWRIGHT_DIAGNOSTICS_FILE;
+let lifecycleDiagnosticsWriteFailed = false;
 
 type SchemaRow = { table_name: string; column_name: string };
 
 function formatError(error: unknown) {
   const message = error instanceof Error ? error.name + ": " + error.message : String(error);
   return message.replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted database URL]");
+}
+
+function recordLifecycleEvent(phase: string, status: string, elapsedMs?: number, exitCode?: number, signal?: string) {
+  const event = {
+    at: new Date().toISOString(),
+    phase,
+    status,
+    ...(typeof elapsedMs === "number" ? { elapsedMs } : {}),
+    ...(typeof exitCode === "number" ? { exitCode } : {}),
+    ...(signal ? { signal } : {}),
+  };
+  const line = JSON.stringify(event);
+  console.error(`[playwright-lifecycle] ${line}`);
+  if (lifecycleDiagnosticsPath && !lifecycleDiagnosticsWriteFailed) {
+    try {
+      fs.mkdirSync(path.dirname(path.resolve(lifecycleDiagnosticsPath)), { recursive: true });
+      fs.appendFileSync(lifecycleDiagnosticsPath, `${line}\n`, "utf8");
+    } catch (error) {
+      lifecycleDiagnosticsWriteFailed = true;
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[playwright-lifecycle] diagnostics file write failed; continuing lifecycle cleanup: ${message}`);
+    }
+  }
 }
 
 function quoteIdentifier(value: string) {
@@ -71,15 +96,18 @@ function logNextEnvironment(phase: string, args: string[], env: NodeJS.ProcessEn
 }
 
 function waitForProcess(childProcess: ReturnType<typeof spawn>, phase: string) {
+  const startedAt = Date.now();
   if (childProcess.exitCode !== null || childProcess.signalCode !== null) return Promise.resolve(childProcess.exitCode ?? (childProcess.signalCode ? 1 : 0));
   return new Promise<number>((resolve, reject) => {
     childProcess.once("error", (error) => {
       console.error(`[playwright-next] ${phase} process error: ${error instanceof Error ? error.message : String(error)}`);
+      recordLifecycleEvent(phase, "process-error", Date.now() - startedAt);
       reject(error);
     });
     childProcess.once("exit", (code, signal) => {
       const exitCode = code ?? (signal ? 1 : 0);
       console.error(`[playwright-next] ${phase} process exited: code=${code ?? "null"}; signal=${signal ?? "none"}; effectiveExitCode=${exitCode}`);
+      recordLifecycleEvent(phase, signal ? "stopped" : exitCode === 0 ? "succeeded" : "failed", Date.now() - startedAt, exitCode, signal ?? undefined);
       resolve(exitCode);
     });
   });
@@ -87,6 +115,7 @@ function waitForProcess(childProcess: ReturnType<typeof spawn>, phase: string) {
 
 function spawnNext(phase: string, args: string[], env: NodeJS.ProcessEnv) {
   logNextEnvironment(phase, args, env);
+  recordLifecycleEvent(phase, "started");
   const childProcess = spawn(process.execPath, args, {
     env,
     stdio: "inherit",
@@ -96,9 +125,11 @@ function spawnNext(phase: string, args: string[], env: NodeJS.ProcessEnv) {
 
 async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
   const startedAt = Date.now();
+  recordLifecycleEvent("readiness", "started");
   let lastError = "no response";
   while (Date.now() - startedAt < readinessTimeoutMs) {
     if (childProcess.exitCode !== null) {
+      recordLifecycleEvent("readiness", "failed", Date.now() - startedAt, childProcess.exitCode, childProcess.signalCode ?? undefined);
       throw new Error(`Next exited before readiness: code=${childProcess.exitCode ?? "null"}; signal=${childProcess.signalCode ?? "none"}; last readiness error=${lastError}`);
     }
 
@@ -109,6 +140,7 @@ async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
       await response.text();
       if (response.ok) {
         console.error(`[playwright-next] readiness confirmed: ${readinessUrl}; status=${response.status}; elapsedMs=${Date.now() - startedAt}`);
+        recordLifecycleEvent("readiness", "succeeded", Date.now() - startedAt);
         return;
       }
       lastError = `HTTP ${response.status}`;
@@ -119,6 +151,7 @@ async function waitForReadiness(childProcess: ReturnType<typeof spawn>) {
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
+  recordLifecycleEvent("readiness", "failed", Date.now() - startedAt, childProcess.exitCode ?? 1, childProcess.signalCode ?? undefined);
   throw new Error(`Next readiness timed out after ${readinessTimeoutMs}ms at ${readinessUrl}; last readiness error=${lastError}; childExitCode=${childProcess.exitCode ?? "null"}`);
 }
 
@@ -174,43 +207,63 @@ async function main() {
   let child: ReturnType<typeof spawn> | undefined;
   let requestedExitCode: number | undefined;
   const lifecycleStartedAt = Date.now();
+  recordLifecycleEvent("lifecycle", "started");
 
   console.error(`[playwright-lifecycle] webServer command=npm run e2e:server; readiness=${readinessUrl}; reuseExistingServer=false; timeoutMs=${readinessTimeoutMs}`);
   console.error(`[playwright-db] admin database identity: ${databaseIdentity(adminUrl)}`);
   console.error(`[playwright-db] effective test database identity: ${databaseIdentity(testDatabaseUrl)}`);
 
   const cleanup = async () => {
-    const processToStop = child;
-    if (processToStop && processToStop.exitCode === null && processToStop.signalCode === null) {
-      console.error(`[playwright-lifecycle] stopping Next process during cleanup: pid=${processToStop.pid ?? "unknown"}`);
-      if (!processToStop.killed) processToStop.kill("SIGTERM");
-      await waitForProcess(processToStop, "next-cleanup").catch((error) => console.error(`[playwright-lifecycle] Next cleanup wait failed: ${error instanceof Error ? error.message : String(error)}`));
+    recordLifecycleEvent("cleanup", "started");
+    try {
+      const processToStop = child;
+      if (processToStop && processToStop.exitCode === null && processToStop.signalCode === null) {
+        console.error(`[playwright-lifecycle] stopping Next process during cleanup: pid=${processToStop.pid ?? "unknown"}`);
+        if (!processToStop.killed) processToStop.kill("SIGTERM");
+        try {
+          await waitForProcess(processToStop, "next-cleanup");
+        } catch (error) {
+          console.error(`[playwright-lifecycle] Next process stop wait failed; continuing database and storage cleanup: ${formatError(error)}`);
+        }
+      }
+      child = undefined;
+      await admin.unsafe(`drop database if exists ${quoteIdentifier(databaseName)} with (force)`);
+      const resolvedStorageRoot = path.resolve(storageRoot);
+      const resolvedTempRoot = path.resolve(os.tmpdir());
+      if (!path.basename(resolvedStorageRoot).startsWith("litreview_playwright_storage_") || !resolvedStorageRoot.startsWith(`${resolvedTempRoot}${path.sep}`)) {
+        throw new Error(`Refusing to remove unexpected Playwright storage root: ${resolvedStorageRoot}`);
+      }
+      fs.rmSync(resolvedStorageRoot, { recursive: true, force: true });
+      fs.rmSync(databaseMarkerPath, { force: true });
+      await admin.end();
+      console.error(`[playwright-lifecycle] cleanup complete: database=${databaseName}; elapsedMs=${Date.now() - lifecycleStartedAt}`);
+      recordLifecycleEvent("cleanup", "succeeded", Date.now() - lifecycleStartedAt);
+    } catch (error) {
+      recordLifecycleEvent("cleanup", "failed", Date.now() - lifecycleStartedAt);
+      throw error;
     }
-    child = undefined;
-    await admin.unsafe(`drop database if exists ${quoteIdentifier(databaseName)} with (force)`);
-    const resolvedStorageRoot = path.resolve(storageRoot);
-    const resolvedTempRoot = path.resolve(os.tmpdir());
-    if (!path.basename(resolvedStorageRoot).startsWith("litreview_playwright_storage_") || !resolvedStorageRoot.startsWith(`${resolvedTempRoot}${path.sep}`)) {
-      throw new Error(`Refusing to remove unexpected Playwright storage root: ${resolvedStorageRoot}`);
-    }
-    fs.rmSync(resolvedStorageRoot, { recursive: true, force: true });
-    fs.rmSync(databaseMarkerPath, { force: true });
-    await admin.end();
-    console.error(`[playwright-lifecycle] cleanup complete: database=${databaseName}; elapsedMs=${Date.now() - lifecycleStartedAt}`);
   };
 
   try {
-    await admin.unsafe(`create database ${quoteIdentifier(databaseName)}`);
-    fs.mkdirSync(path.dirname(databaseMarkerPath), { recursive: true });
-    fs.writeFileSync(databaseMarkerPath, JSON.stringify({ databaseName, storageRoot }), "utf8");
-    const database = createDb(testDatabaseUrl);
+    const migrationStartedAt = Date.now();
+    recordLifecycleEvent("database-migration-schema", "started");
     try {
-      await migrate(database.db, { migrationsFolder: migrationFolder });
-      await assertSchema(database.client, databaseName);
-    } finally {
-      await database.client.end();
+      await admin.unsafe(`create database ${quoteIdentifier(databaseName)}`);
+      fs.mkdirSync(path.dirname(databaseMarkerPath), { recursive: true });
+      fs.writeFileSync(databaseMarkerPath, JSON.stringify({ databaseName, storageRoot }), "utf8");
+      const database = createDb(testDatabaseUrl);
+      try {
+        await migrate(database.db, { migrationsFolder: migrationFolder });
+        await assertSchema(database.client, databaseName);
+      } finally {
+        await database.client.end();
+      }
+    } catch (error) {
+      recordLifecycleEvent("database-migration-schema", "failed", Date.now() - migrationStartedAt);
+      throw error;
     }
-  console.error(`[playwright-db] ready: ${databaseName}; migration and public schema tail verified; storage=${storageRoot}`);
+    recordLifecycleEvent("database-migration-schema", "succeeded", Date.now() - migrationStartedAt);
+    console.error(`[playwright-db] ready: ${databaseName}; migration and public schema tail verified; storage=${storageRoot}`);
 
     child = spawnNext("next-build", [nextBin, "build"], nextEnv);
     const buildExitCode = await waitForProcess(child, "next-build");
@@ -230,6 +283,7 @@ async function main() {
     process.exitCode = requestedExitCode ?? childExitCode;
   } catch (error) {
     console.error(formatError(error));
+    recordLifecycleEvent("lifecycle", "failed", Date.now() - lifecycleStartedAt);
     try {
       await cleanup();
     } catch (cleanupError) {
