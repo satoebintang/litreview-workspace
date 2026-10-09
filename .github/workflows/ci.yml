@@ -17,8 +17,124 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: verify
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    # Drizzle requires a nonblank URL at config-load time. The unreachable URL
+    # keeps this lane PostgreSQL-free; db:check/build were verified against it.
+    env:
+      DATABASE_URL: postgres://litreview:litreview@127.0.0.1:1/litreview
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.13.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify fast runtime and environment preflight
+        env:
+          DATABASE_URL: ""
+        run: npm run verify:preflight -- --mode fast
+
+      - name: Check Vitest partition inventory
+        run: npm run test:partition-inventory
+
+      - name: Run fast Vitest partition
+        env:
+          DATABASE_URL: ""
+        run: npm run test:fast
+
+      - name: Enforce release security audit policy
+        run: npm run audit:release
+
+      - name: Verify Node and PDF.js runtime contract
+        shell: bash
+        run: |
+          node --version
+          node --input-type=module <<'NODE'
+          import { access, readFile } from "node:fs/promises";
+          import { getDocument, version } from "pdfjs-dist/legacy/build/pdf.mjs";
+
+          const packageJson = JSON.parse(await readFile("node_modules/pdfjs-dist/package.json", "utf8"));
+          await access("node_modules/pdfjs-dist/legacy/build/pdf.mjs");
+
+          if (process.versions.node !== "22.13.0") {
+            throw new Error(`Expected Node 22.13.0, found ${process.versions.node}`);
+          }
+          if (packageJson.version !== "6.3.289" || version !== "6.3.289") {
+            throw new Error(`Expected pdfjs-dist 6.3.289, found package=${packageJson.version} runtime=${version}`);
+          }
+          if (typeof getDocument !== "function") {
+            throw new Error("pdfjs-dist legacy getDocument is unavailable");
+          }
+
+          console.log(`Node ${process.versions.node}; pdfjs-dist ${packageJson.version}; legacy getDocument available`);
+          NODE
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check Drizzle schema
+        run: npm run db:check
+
+      # Keep the standalone production build as a separate required diagnostic.
+      - name: Build production application
+        run: npm run build
+
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgres://litreview:litreview@127.0.0.1:5432/litreview
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: litreview
+          POSTGRES_PASSWORD: litreview
+          POSTGRES_DB: litreview
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U litreview -d litreview"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.13.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify integration runtime and database preflight
+        run: npm run verify:preflight -- --mode integration
+
+      - name: Run integration Vitest partition once
+        run: npm run test:integration
+
+  e2e:
+    name: e2e
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -53,47 +169,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify Node and PDF.js runtime contract
-        shell: bash
-        run: |
-          node --version
-          node --input-type=module <<'NODE'
-          import { access, readFile } from "node:fs/promises";
-          import { getDocument, version } from "pdfjs-dist/legacy/build/pdf.mjs";
-
-          const packageJson = JSON.parse(await readFile("node_modules/pdfjs-dist/package.json", "utf8"));
-          await access("node_modules/pdfjs-dist/legacy/build/pdf.mjs");
-
-          if (process.versions.node.split(".").slice(0, 3).join(".") !== "22.13.0") {
-            throw new Error(`Expected Node 22.13.0, found ${process.versions.node}`);
-          }
-          if (packageJson.version !== "6.3.289" || version !== "6.3.289") {
-            throw new Error(`Expected pdfjs-dist 6.3.289, found package=${packageJson.version} runtime=${version}`);
-          }
-          if (typeof getDocument !== "function") {
-            throw new Error("pdfjs-dist legacy getDocument is unavailable");
-          }
-
-          console.log(`Node ${process.versions.node}; pdfjs-dist ${packageJson.version}; legacy getDocument available`);
-          NODE
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Check Drizzle schema
-        run: npm run db:check
-
-      - name: Run full Vitest suite
-        run: npm test
-
-      - name: Run full integration suite
-        run: npm run test:integration
-
-      - name: Build production application
-        run: npm run build
+      - name: Verify E2E runtime, database, marker, and temporary storage preflight
+        env:
+          PLAYWRIGHT_DIAGNOSTICS_FILE: ${{ runner.temp }}/slice56-playwright-lifecycle.jsonl
+        run: npm run verify:preflight -- --mode e2e
 
       - name: Install Playwright Chromium and Linux dependencies
         run: npx playwright install --with-deps chromium
@@ -102,13 +181,73 @@ jobs:
         shell: bash
         run: test ! -e .ai/playwright-db.json
 
-      # e2e:server intentionally performs its own migration-owning production
-      # build; keep this second build for the existing release lifecycle and
-      # retain the standalone build gate above for isolated diagnostics.
-      - name: Run serial Playwright release suite
-        run: npx playwright test --workers=1 --retries=0
+      # e2e:server retains its migration-owning production build. This is
+      # separate from the quality lane's standalone build by design.
+      - name: Run complete serial Playwright release suite
+        env:
+          PLAYWRIGHT_DIAGNOSTICS_FILE: ${{ runner.temp }}/slice56-playwright-lifecycle.jsonl
+        run: npm run test:e2e:release
 
-      - name: Assert Playwright cleanup
+      - name: Assert Playwright database, marker, and storage cleanup
         if: always()
         shell: bash
-        run: test ! -e .ai/playwright-db.json
+        run: |
+          test ! -e .ai/playwright-db.json
+          TMP_ROOT="$(node -p 'require("node:os").tmpdir()')"
+          if [ -z "$TMP_ROOT" ] || [ ! -d "$TMP_ROOT" ]; then
+            echo "Could not resolve the Playwright temporary storage root."
+            exit 1
+          fi
+          if find "$TMP_ROOT" -maxdepth 1 -type d -name 'litreview_playwright_storage_*' -print -quit | grep -q .; then
+            echo "Playwright storage cleanup left a temporary storage root."
+            exit 1
+          fi
+
+      - name: Upload failed Playwright traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-traces-and-screenshots
+          path: |
+            test-results/**/*.zip
+            test-results/**/*.png
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload sanitized Playwright startup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-sanitized-startup-diagnostics
+          path: ${{ runner.temp }}/slice56-playwright-lifecycle.jsonl
+          if-no-files-found: warn
+          retention-days: 7
+
+  verify:
+    name: verify
+    if: always()
+    needs:
+      - quality
+      - integration
+      - e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.13.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Require every verification lane to succeed
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+        run: npm run verify:ci-aggregate

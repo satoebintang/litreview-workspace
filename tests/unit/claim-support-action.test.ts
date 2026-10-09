@@ -1,4 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/app/server", async () => {
+  const { DomainError } = await import("@/domain/errors");
+  return {
+    claimSupportReadServices: {
+      searchClaimSupportOptions: vi.fn(async (input: { kind?: string }) => {
+        if (input.kind !== "evidence" && input.kind !== "extractionRevision" && input.kind !== "synthesisRevision") {
+          throw new DomainError("VALIDATION_ERROR", "Claim support kind is invalid");
+        }
+        return { page: 1, items: [] };
+      }),
+    },
+  };
+});
+
 import { searchClaimSupportOptionsAction } from "@/app/actions/claim-support-search";
 
 describe("Claim support search action boundary", () => {
