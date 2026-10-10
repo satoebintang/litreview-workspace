@@ -2,12 +2,15 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ExtractionEvidencePreview } from "@/application/extraction-evidence-selection-read-services";
+import { normalizeExtractionEvidenceSearchQuery } from "@/application/extraction-evidence-search-query";
 
 type BrowseState = {
   open: boolean;
   fieldId: string | null;
   after: string | null;
   pageSize: number;
+  query: string;
+  queryError: string | null;
 };
 
 type WorksheetContextValue = {
@@ -44,20 +47,61 @@ export function ExtractionWorksheetProvider({
       url.searchParams.set("evidencePageSize", String(next.pageSize));
       if (next.after) url.searchParams.set("evidenceAfter", next.after);
       else url.searchParams.delete("evidenceAfter");
+      if (next.query) url.searchParams.set("evidenceQuery", next.query);
+      else url.searchParams.delete("evidenceQuery");
     } else {
       url.searchParams.delete("evidenceField");
       url.searchParams.delete("evidenceAfter");
       url.searchParams.delete("evidencePageSize");
+      url.searchParams.delete("evidenceQuery");
     }
+    const previousState = window.history.state && typeof window.history.state === "object" ? window.history.state : {};
+    const historyState = {
+      ...previousState,
+      __traceworkEvidenceBrowse: {
+        open: next.open,
+        fieldId: next.fieldId,
+        after: next.after,
+        pageSize: next.pageSize,
+        query: next.query,
+      },
+    };
     const method = historyMode === "replace" ? "replaceState" : "pushState";
-    window.history[method](window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    window.history[method](historyState, "", `${url.pathname}${url.search}${url.hash}`);
   }, []);
   const restoreBrowseFromLocation = useCallback(() => {
     const url = new URL(window.location.href);
-    const hasBrowse = ["evidenceField", "evidenceAfter", "evidencePageSize"].some((name) => url.searchParams.has(name));
+    const hasBrowse = ["evidenceField", "evidenceAfter", "evidencePageSize", "evidenceQuery"].some((name) => url.searchParams.has(name));
     if (!hasBrowse) {
-      setBrowse({ open: false, fieldId: defaultFieldId, after: null, pageSize: 20 });
+      const state = window.history.state && typeof window.history.state === "object"
+        ? (window.history.state as { __traceworkEvidenceBrowse?: Partial<BrowseState> }).__traceworkEvidenceBrowse
+        : undefined;
+      const requestedFieldId = state?.fieldId;
+      const fieldId = typeof requestedFieldId === "string" && fieldIds.includes(requestedFieldId) ? requestedFieldId : defaultFieldId;
+      const queryValues = state?.query;
+      const rawQuery = typeof queryValues === "string" ? queryValues : "";
+      let query = rawQuery;
+      let queryError: string | null = null;
+      try {
+        query = normalizeExtractionEvidenceSearchQuery(rawQuery);
+      } catch (error) {
+        queryError = error instanceof Error ? error.message : "Evidence search query is invalid.";
+      }
+      const requestedPageSize = state?.pageSize;
+      const pageSize = typeof requestedPageSize === "number" && Number.isSafeInteger(requestedPageSize) && requestedPageSize >= 1 && requestedPageSize <= 50
+        ? requestedPageSize
+        : 20;
+      setBrowse({ open: false, fieldId, after: null, pageSize, query, queryError });
       return;
+    }
+    const queryValues = url.searchParams.getAll("evidenceQuery");
+    const rawQuery: unknown = queryValues.length > 1 ? queryValues : queryValues[0] ?? "";
+    let query = typeof rawQuery === "string" ? rawQuery : "";
+    let queryError: string | null = null;
+    try {
+      query = normalizeExtractionEvidenceSearchQuery(rawQuery);
+    } catch (error) {
+      queryError = error instanceof Error ? error.message : "Evidence search query is invalid.";
     }
     const requestedFieldId = url.searchParams.get("evidenceField");
     const fieldId = requestedFieldId && fieldIds.includes(requestedFieldId) ? requestedFieldId : defaultFieldId;
@@ -66,19 +110,28 @@ export function ExtractionWorksheetProvider({
     const validPageSize = Number.isSafeInteger(parsedPageSize) && parsedPageSize >= 1 && parsedPageSize <= 50;
     const pageSize = validPageSize ? parsedPageSize : 20;
     const invalidField = !requestedFieldId || !fieldIds.includes(requestedFieldId);
-    const invalidBrowseShape = invalidField || !validPageSize;
+    const invalidBrowseShape = invalidField || !validPageSize || url.searchParams.getAll("evidenceAfter").length > 1;
+    const requestedAfter = url.searchParams.get("evidenceAfter");
     const next: BrowseState = {
       open: fieldId !== null,
       fieldId,
-      after: invalidBrowseShape ? null : url.searchParams.get("evidenceAfter"),
+      after: queryError || !invalidBrowseShape ? requestedAfter : null,
       pageSize,
+      query,
+      queryError,
     };
+    if (queryError) {
+      setBrowse(next);
+      return;
+    }
     if (invalidBrowseShape) {
       setBrowse(next);
       const repaired = new URL(window.location.href);
       repaired.searchParams.set("evidenceField", fieldId ?? "");
       repaired.searchParams.set("evidencePageSize", String(pageSize));
       repaired.searchParams.delete("evidenceAfter");
+      if (query) repaired.searchParams.set("evidenceQuery", query);
+      else repaired.searchParams.delete("evidenceQuery");
       window.history.replaceState(window.history.state, "", `${repaired.pathname}${repaired.search}${repaired.hash}`);
       return;
     }
@@ -113,7 +166,7 @@ export function ExtractionWorksheetProvider({
     commitBrowse,
   ]);
   useEffect(() => {
-    if (initialBrowse.open) commitBrowse(initialBrowse, "replace");
+    if (initialBrowse.open && initialBrowse.queryError === null) commitBrowse(initialBrowse, "replace");
   }, [initialBrowse, commitBrowse]);
   return <ExtractionWorksheetContext.Provider value={value}>{children}</ExtractionWorksheetContext.Provider>;
 }

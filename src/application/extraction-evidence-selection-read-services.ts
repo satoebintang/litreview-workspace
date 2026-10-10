@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import { DomainError } from "@/domain/errors";
 import { idSchema } from "@/domain/validation";
@@ -7,7 +7,10 @@ import {
   decodeExtractionEvidenceCandidateCursor,
   effectiveExtractionEvidencePageSize,
   encodeExtractionEvidenceCandidateCursor,
+  hashExtractionEvidenceSearchQuery,
+  type ExtractionEvidenceCandidateCursor,
 } from "./extraction-evidence-selection-cursor";
+import { normalizeExtractionEvidenceSearchQuery } from "./extraction-evidence-search-query";
 
 type RawRow = Record<string, unknown>;
 export type ExtractionEvidencePreview = {
@@ -62,24 +65,58 @@ function mapPreview(row: RawRow): ExtractionEvidencePreview {
   };
 }
 
-function encodeCursor(projectId: string, paperId: string, pageSize: number, last: { createdAt: string; id: string }): string {
+function encodeCursor(
+  projectId: string,
+  paperId: string,
+  pageSize: number,
+  queryHash: string,
+  last: { createdAt: string; id: string },
+): string {
   return encodeExtractionEvidenceCandidateCursor({
     kind: "paper-extraction-evidence-candidate",
-    version: 1,
+    version: 2,
     projectId,
     paperId,
     pageSize,
     createdAt: last.createdAt,
     id: last.id,
+    queryHash,
   });
+}
+
+export function buildExtractionEvidenceCandidateKeyQuery(input: {
+  projectId: string;
+  paperId: string;
+  pageSize: number;
+  query: string;
+  cursor: ExtractionEvidenceCandidateCursor | null;
+}): SQL {
+  const boundary = input.cursor
+    ? sql`and (e.created_at < ${input.cursor.createdAt}::timestamptz or (e.created_at = ${input.cursor.createdAt}::timestamptz and e.id > ${input.cursor.id}::uuid))`
+    : sql``;
+  const matching = input.query
+    ? sql`and (strpos(lower(e.source_text), lower(${input.query})) > 0 or strpos(lower(e.note), lower(${input.query})) > 0)`
+    : sql``;
+  return sql`
+    select e.id::text as evidence_id,
+      to_char(e.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_created_at
+    from evidence e
+    where e.project_id=${input.projectId}::uuid and e.paper_id=${input.paperId}::uuid
+      ${matching}
+      ${boundary}
+    order by e.created_at desc, e.id asc
+    limit ${input.pageSize + 1}
+  `;
 }
 
 export function createExtractionEvidenceSelectionReadServices(db: Database) {
   async function getPaperExtractionEvidenceCandidatePage(
     projectIdInput: string,
     paperIdInput: string,
-    options: { pageSize?: number; after?: string | null } = {},
+    options: { pageSize?: number; after?: string | null; query?: unknown } = {},
   ): Promise<ExtractionEvidenceCandidatePage> {
+    const query = options.query === undefined ? "" : normalizeExtractionEvidenceSearchQuery(options.query);
+    const queryHash = hashExtractionEvidenceSearchQuery(query);
     const projectId = ensureId(projectIdInput).toLowerCase();
     const paperId = ensureId(paperIdInput).toLowerCase();
     const pageSize = effectiveExtractionEvidencePageSize(options.pageSize);
@@ -95,19 +132,10 @@ export function createExtractionEvidenceSelectionReadServices(db: Database) {
       if (!scope) throw new DomainError("PROJECT_NOT_FOUND", "Project was not found");
       if (scope.paper_id == null) throw new DomainError("CROSS_PROJECT_REFERENCE", "Paper does not belong to this project");
 
-      const cursor = decodeExtractionEvidenceCandidateCursor(options.after, { projectId, paperId, pageSize });
-      const boundary = cursor
-        ? sql`and (e.created_at < ${cursor.createdAt}::timestamptz or (e.created_at = ${cursor.createdAt}::timestamptz and e.id > ${cursor.id}::uuid))`
-        : sql``;
-      const keyRows = rows(await tx.execute(sql`
-        select e.id::text as evidence_id,
-          to_char(e.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_created_at
-        from evidence e
-        where e.project_id=${projectId}::uuid and e.paper_id=${paperId}::uuid
-          ${boundary}
-        order by e.created_at desc, e.id asc
-        limit ${pageSize + 1}
-      `));
+      const cursor = decodeExtractionEvidenceCandidateCursor(options.after, { projectId, paperId, pageSize, queryHash });
+      const keyRows = rows(await tx.execute(buildExtractionEvidenceCandidateKeyQuery({
+        projectId, paperId, pageSize, query, cursor,
+      })));
       const hasNext = keyRows.length > pageSize;
       const visibleKeys = keyRows.slice(0, pageSize).map((row) => ({ id: String(row.evidence_id), createdAt: String(row.cursor_created_at) }));
       const visibleIds = visibleKeys.map((key) => key.id);
@@ -141,7 +169,7 @@ export function createExtractionEvidenceSelectionReadServices(db: Database) {
         items,
         pageSize,
         hasNext,
-        nextCursor: hasNext && lastVisible ? encodeCursor(projectId, paperId, pageSize, lastVisible) : null,
+        nextCursor: hasNext && lastVisible ? encodeCursor(projectId, paperId, pageSize, queryHash, lastVisible) : null,
       };
     }, READ_TRANSACTION);
   }

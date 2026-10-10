@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { aiExtractionProviderAvailable, extractionReadServices, reviewServices } from "@/app/server";
-import { decodeExtractionEvidenceCandidateCursor } from "@/application/extraction-evidence-selection-cursor";
+import { decodeExtractionEvidenceCandidateCursor, hashExtractionEvidenceSearchQuery } from "@/application/extraction-evidence-selection-cursor";
+import { normalizeExtractionEvidenceSearchQuery } from "@/application/extraction-evidence-search-query";
 import { DomainError } from "@/domain/errors";
 import type { ExtractionFieldType } from "@/domain/types";
 import { ExtractionWorksheet } from "./ExtractionWorksheet";
@@ -13,10 +14,18 @@ function queryValue(query: SearchParams, key: string): string | null {
 }
 
 function boundedBrowseState(query: SearchParams, projectId: string, paperId: string, fieldIds: string[]) {
-  const hasBrowseState = ["evidenceField", "evidenceAfter", "evidencePageSize"].some((key) => query[key] !== undefined);
+  const hasBrowseState = ["evidenceField", "evidenceAfter", "evidencePageSize", "evidenceQuery"].some((key) => query[key] !== undefined);
   const firstFieldId = fieldIds[0] ?? null;
   if (!hasBrowseState || !firstFieldId) {
-    return { open: false, fieldId: firstFieldId, after: null, pageSize: 20 };
+    return { open: false, fieldId: firstFieldId, after: null, pageSize: 20, query: "", queryError: null };
+  }
+  const rawQuery = query.evidenceQuery === undefined ? "" : query.evidenceQuery;
+  let evidenceQuery = typeof rawQuery === "string" ? rawQuery : "";
+  let queryError: string | null = null;
+  try {
+    evidenceQuery = normalizeExtractionEvidenceSearchQuery(rawQuery);
+  } catch (error) {
+    queryError = error instanceof Error ? error.message : "Evidence search query is invalid.";
   }
   const requestedField = queryValue(query, "evidenceField");
   const fieldId = requestedField && fieldIds.includes(requestedField) ? requestedField : firstFieldId;
@@ -25,16 +34,22 @@ function boundedBrowseState(query: SearchParams, projectId: string, paperId: str
   const invalidPageSize = !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 50;
   if (invalidPageSize) pageSize = 20;
   let after = queryValue(query, "evidenceAfter");
-  if (!requestedField || !fieldIds.includes(requestedField) || query.evidenceAfter !== after || invalidPageSize) after = null;
-  if (after) {
+  const invalidBrowseShape = !requestedField || !fieldIds.includes(requestedField) || query.evidenceAfter !== after || invalidPageSize;
+  if (queryError === null && invalidBrowseShape) after = null;
+  if (queryError === null && after) {
     try {
-      decodeExtractionEvidenceCandidateCursor(after, { projectId, paperId, pageSize });
+      decodeExtractionEvidenceCandidateCursor(after, {
+        projectId,
+        paperId,
+        pageSize,
+        queryHash: hashExtractionEvidenceSearchQuery(evidenceQuery),
+      });
     } catch {
       after = null;
       pageSize = 20;
     }
   }
-  return { open: true, fieldId, after, pageSize };
+  return { open: true, fieldId, after, pageSize, query: evidenceQuery, queryError };
 }
 
 export default async function ExtractionPaperPage({ params, searchParams }: {
@@ -84,7 +99,7 @@ export default async function ExtractionPaperPage({ params, searchParams }: {
         />}
       </section>
       <p className="footer-note">Each save records the complete observation, note, and Evidence set as a new immutable revision. Older revisions retain their own provenance. A successful save redirects the page, so unsaved drafts in other Fields are not guaranteed to survive.</p>
-      <p className="footer-note">The Evidence browser loads bounded pages only when opened. Candidate search is not available in this slice.</p>
+      <p className="footer-note">The Evidence browser loads bounded pages only when opened. Passage and note search checks complete Evidence text, so the matching words may be outside the visible preview; open exact Evidence detail to inspect the full source record.</p>
       <p className="footer-note">When a response state is not “Value reported,” the released save parser omits the researcher note from the new revision. The note remains visible in the draft until a successful save, but is not saved for those states.</p>
     </div></div>;
 }

@@ -674,7 +674,7 @@ describe("bounded-context module boundaries", () => {
       { name: "selectSynthesisPreparationRevisionAction", signature: "(form: FormData) => Promise<void>" },
       { name: "deselectSynthesisPreparationRevisionAction", signature: "(form: FormData) => Promise<void>" },
       { name: "saveExtractionWorksheetRevisionAction", signature: "(previousState: ExtractionWorksheetActionState, form: FormData) => Promise<ExtractionWorksheetActionState>" },
-      { name: "getPaperExtractionEvidenceCandidatePageAction", signature: "(projectId: string, paperId: string, options: { pageSize?: number; after?: string | null; }) => Promise<ExtractionEvidenceCandidatePageActionResult>" },
+      { name: "getPaperExtractionEvidenceCandidatePageAction", signature: "(projectId: string, paperId: string, options: { pageSize?: number; after?: string | null; query?: unknown; }) => Promise<ExtractionEvidenceCandidatePageActionResult>" },
     ];
     const actionContext = semanticContext([actionsFacade]);
     const semanticFacade = programSourceFile(actionContext.program, actionsFacade);

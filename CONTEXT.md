@@ -773,3 +773,44 @@ stress run measured 136,575 and 136,975-byte project-wide and replacement DTOs,
 so the combined maximum is 136,975 UTF-8 bytes. The 50k withdrawn-heavy and
 zero-eligible profiles confirm that parent-current rejection work can greatly
 exceed a page even though transfer and hydration remain bounded.
+
+## Slice 57 Extraction Evidence passage and note search
+
+The Extraction worksheet's shared Evidence browser supports explicit,
+case-insensitive literal substring search across complete same-Paper passage
+and note text. Search is submitted explicitly, trimmed at the edges, preserves
+internal whitespace and punctuation, and is limited to 200 Unicode code
+points. Results keep the existing Project/Paper scope, review warnings,
+eligibility behavior, candidate keyset ordering, and visible-only preview
+hydration. Search does not replace immutable Evidence identity or selected
+support membership.
+
+The normalized query is carried by `evidenceQuery` and bound into cursor v2
+with Project, Paper, and page size. Cursor v1 remains compatible for an empty
+query. Query validation errors do not trigger cursor repair; invalid cursor
+state may recover once while retaining a valid query. Stale request results
+are ignored. Stable Field forms preserve all unsaved values and selected
+supports across search, clearing, pagination, Field switching, request
+failures, and browser Back/Forward. Successful-save redirects and writers are
+unchanged.
+
+No schema, index, migration, or package-script change was required. The reader
+keeps its read-only `REPEATABLE READ` transaction and 15-second statement
+timeout. This does not guarantee O(pageSize) database work: rare and absent
+matches can scan a Paper's candidate population, and PostgreSQL may scan the
+Evidence relation before applying the scope and substring predicates.
+
+The Node 22.13.0 / PostgreSQL 16.15 disposable benchmark captured 25 search
+workloads, five empty-query baselines, six boundary profiles, and 33 final-SQL
+plans over 63,025 Evidence rows. At 50,000 candidates, median/max application
+times were 235.74/240.91 ms for common matches, 379.22/426.42 ms for a rare
+passage, 322.60/360.66 ms for a rare note, 332.39/333.65 ms for long Unicode,
+and 332.41/361.03 ms for zero results. All observed the 15-second timeout;
+rare/zero plans used a sequential scan and recorded no temporary I/O. The
+maximum DTO was 111,197 UTF-8 bytes at page size 50; traversal and the
+interleaved Paper profiles matched their direct-SQL oracles. Timing is
+diagnostic and does not establish cold-cache or larger-than-50k performance.
+The disposable database was verified absent. Full evidence is in
+[`docs/adr/0057-extraction-evidence-passage-note-search.md`](docs/adr/0057-extraction-evidence-passage-note-search.md)
+and
+[`docs/benchmarks/slice57-extraction-evidence-search-read-paths.json`](docs/benchmarks/slice57-extraction-evidence-search-read-paths.json).

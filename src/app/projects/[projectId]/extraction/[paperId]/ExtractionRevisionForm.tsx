@@ -167,7 +167,7 @@ export function ExtractionRevisionForm({
   ]);
 
   function updateBrowseForField() {
-    setBrowse({ open: true, fieldId: field.id, after: null, pageSize: browse.pageSize });
+    setBrowse({ ...browse, open: true, fieldId: field.id, after: null });
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
