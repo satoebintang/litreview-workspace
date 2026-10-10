@@ -4,6 +4,8 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { and, eq } from "drizzle-orm";
 import { createDb } from "@/db/client";
 import { createReviewServices } from "@/application/services";
+import { createExtractionReadServices } from "@/application/extraction-read-services";
+import { parseExtractionValueFormData } from "@/app/extraction-form-state";
 import { extractionRevisionEvidence, extractionValueRevisions } from "@/db/schema";
 import {
   completeWhileLockHeld,
@@ -17,6 +19,7 @@ import {
 const databaseUrl = process.env.DATABASE_URL ?? "postgres://litreview:litreview@127.0.0.1:5432/litreview";
 const { db, client } = createDb(databaseUrl);
 const services = createReviewServices(db);
+const extractionReads = createExtractionReadServices(db);
 let projectId = "";
 let raceConnection: ReturnType<typeof createDb> | undefined;
 let raceServices: ReturnType<typeof createReviewServices>;
@@ -227,5 +230,155 @@ describe("Slice 3 extraction provenance", () => {
     } finally {
       await finishHeld(held);
     }
+  });
+
+  it("preserves researcher notes for not_reported and not_applicable through FormData parse to worksheet and exact history read paths while clearing notes for cleared", async () => {
+    const paper = await includedPaper();
+    const field = await services.createExtractionField(projectId, { name: "Methodology limitation", fieldType: "short_text" });
+    const evidenceA = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "Passage A explaining missing metric", pageNumber: 3 });
+    const evidenceB = await services.recordEvidence(projectId, { paperId: paper.id, sourceText: "Passage B confirming omission", pageNumber: 4 });
+
+    // Step 1: not_reported with researcher note and multiple Evidence IDs
+    const notReportedForm = new FormData();
+    notReportedForm.set("state", "not_reported");
+    notReportedForm.set("researcherNote", "  Metric was not reported in results section  ");
+    notReportedForm.append("evidenceIds", evidenceA.id);
+    notReportedForm.append("evidenceIds", evidenceB.id);
+
+    const parsedNotReported = parseExtractionValueFormData(notReportedForm);
+    expect(parsedNotReported).toEqual({
+      state: "not_reported",
+      researcherNote: "Metric was not reported in results section",
+      evidenceIds: [evidenceA.id, evidenceB.id],
+    });
+
+    const finalizedNotReported = await services.reviseExtractionValue(projectId, paper.id, field.id, parsedNotReported);
+    expect(finalizedNotReported).toMatchObject({
+      value_state: "not_reported",
+      researcher_note: "Metric was not reported in results section",
+    });
+
+    const evidenceLinks = await client`select evidence_id::text as id from extraction_revision_evidence where project_id=${projectId}::uuid and revision_id=${finalizedNotReported.id}::uuid`;
+    expect(evidenceLinks.map((item) => item.id).sort()).toEqual([evidenceA.id, evidenceB.id].sort());
+
+    // Verify raw PostgreSQL row insertion
+    const [rawNotReported] = await client`select id, value_state, researcher_note from extraction_value_revisions where project_id=${projectId}::uuid and id=${finalizedNotReported.id}::uuid`;
+    expect(rawNotReported.value_state).toBe("not_reported");
+    expect(rawNotReported.researcher_note).toBe("Metric was not reported in results section");
+
+    // Verify current worksheet projection
+    const worksheetAfterNotReported = await extractionReads.getPaperExtractionWorksheet(projectId, paper.id);
+    const notReportedValue = worksheetAfterNotReported.values.find((val) => val.field.id === field.id);
+    expect(notReportedValue?.currentRevision?.valueState).toBe("not_reported");
+    expect(notReportedValue?.currentRevision?.researcherNote).toBe("Metric was not reported in results section");
+    expect(notReportedValue?.supportStatus).toBe("grounded");
+    expect(notReportedValue?.currentRevision?.evidence.map((item) => item.id).sort()).toEqual([evidenceA.id, evidenceB.id].sort());
+
+    // Verify exact historical revision read model
+    const exactNotReported = await extractionReads.getExtractionRevisionExact(projectId, paper.id, field.id, finalizedNotReported.id);
+    expect(exactNotReported.revision.valueState).toBe("not_reported");
+    expect(exactNotReported.revision.researcherNote).toBe("Metric was not reported in results section");
+    expect(exactNotReported.revision.evidence.map((item) => item.id).sort()).toEqual([evidenceA.id, evidenceB.id].sort());
+    expect(exactNotReported.isCurrentRevision).toBe(true);
+
+    // Step 2: not_applicable with researcher note and single Evidence ID
+    const notApplicableForm = new FormData();
+    notApplicableForm.set("state", "not_applicable");
+    notApplicableForm.set("researcherNote", "Field is not applicable to qualitative observational design");
+    notApplicableForm.append("evidenceIds", evidenceA.id);
+
+    const parsedNotApplicable = parseExtractionValueFormData(notApplicableForm);
+    expect(parsedNotApplicable).toEqual({
+      state: "not_applicable",
+      researcherNote: "Field is not applicable to qualitative observational design",
+      evidenceIds: [evidenceA.id],
+    });
+
+    const finalizedNotApplicable = await services.reviseExtractionValue(projectId, paper.id, field.id, parsedNotApplicable);
+    expect(finalizedNotApplicable).toMatchObject({
+      value_state: "not_applicable",
+      researcher_note: "Field is not applicable to qualitative observational design",
+    });
+
+    // Verify current worksheet updated to not_applicable
+    const worksheetAfterNA = await extractionReads.getPaperExtractionWorksheet(projectId, paper.id);
+    const naValue = worksheetAfterNA.values.find((val) => val.field.id === field.id);
+    expect(naValue?.currentRevision?.valueState).toBe("not_applicable");
+    expect(naValue?.currentRevision?.researcherNote).toBe("Field is not applicable to qualitative observational design");
+    expect(naValue?.supportStatus).toBe("grounded");
+    expect(naValue?.currentRevision?.evidence.map((item) => item.id)).toEqual([evidenceA.id]);
+
+    // Verify exact historical revision of both revisions (verifying immutability across revisions)
+    const exactNA = await extractionReads.getExtractionRevisionExact(projectId, paper.id, field.id, finalizedNotApplicable.id);
+    expect(exactNA.revision.valueState).toBe("not_applicable");
+    expect(exactNA.revision.researcherNote).toBe("Field is not applicable to qualitative observational design");
+    expect(exactNA.revision.evidence.map((item) => item.id)).toEqual([evidenceA.id]);
+    expect(exactNA.isCurrentRevision).toBe(true);
+
+    const exactPriorNotReported = await extractionReads.getExtractionRevisionExact(projectId, paper.id, field.id, finalizedNotReported.id);
+    expect(exactPriorNotReported.revision.valueState).toBe("not_reported");
+    expect(exactPriorNotReported.revision.researcherNote).toBe("Metric was not reported in results section");
+    expect(exactPriorNotReported.revision.evidence.map((item) => item.id).sort()).toEqual([evidenceA.id, evidenceB.id].sort());
+    expect(exactPriorNotReported.isCurrentRevision).toBe(false);
+
+    // Step 3: cleared with note in FormData -> parser omits note -> persisted revision has null note
+    const clearedForm = new FormData();
+    clearedForm.set("state", "cleared");
+    clearedForm.set("researcherNote", "This note must be omitted on clear");
+    clearedForm.append("evidenceIds", evidenceA.id);
+
+    const parsedCleared = parseExtractionValueFormData(clearedForm);
+    expect(parsedCleared).toEqual({
+      state: "cleared",
+      evidenceIds: [evidenceA.id],
+    });
+    expect(parsedCleared).not.toHaveProperty("researcherNote");
+
+    const finalizedCleared = await services.reviseExtractionValue(projectId, paper.id, field.id, parsedCleared);
+    expect(finalizedCleared).toMatchObject({
+      value_state: "cleared",
+      researcher_note: null,
+    });
+
+    // Verify raw PostgreSQL row insertion for cleared
+    const [rawCleared] = await client`select id, value_state, researcher_note from extraction_value_revisions where project_id=${projectId}::uuid and id=${finalizedCleared.id}::uuid`;
+    expect(rawCleared.value_state).toBe("cleared");
+    expect(rawCleared.researcher_note).toBeNull();
+
+    // Verify current worksheet updated to cleared (cleared observation has null researcherNote and ungrounded support)
+    const worksheetAfterCleared = await extractionReads.getPaperExtractionWorksheet(projectId, paper.id);
+    const clearedValue = worksheetAfterCleared.values.find((val) => val.field.id === field.id);
+    expect(clearedValue?.currentRevision?.valueState).toBe("cleared");
+    expect(clearedValue?.currentRevision?.researcherNote).toBeNull();
+    expect(clearedValue?.supportStatus).toBe("ungrounded");
+
+    // Verify exact historical revision of cleared
+    const exactCleared = await extractionReads.getExtractionRevisionExact(projectId, paper.id, field.id, finalizedCleared.id);
+    expect(exactCleared.revision.valueState).toBe("cleared");
+    expect(exactCleared.revision.researcherNote).toBeNull();
+    expect(exactCleared.isCurrentRevision).toBe(true);
+
+    // Verify immutable triggers reject mutation of the non-present revision with note
+    await expect(db.update(extractionValueRevisions).set({ researcherNote: "mutated" }).where(eq(extractionValueRevisions.id, finalizedNotReported.id))).rejects.toThrow();
+
+    // Step 4: Duplicate Evidence rejection on non-present state through FormData
+    const duplicateEvidenceForm = new FormData();
+    duplicateEvidenceForm.set("state", "not_reported");
+    duplicateEvidenceForm.set("researcherNote", "duplicate guard");
+    duplicateEvidenceForm.append("evidenceIds", evidenceA.id);
+    duplicateEvidenceForm.append("evidenceIds", evidenceA.id);
+    const parsedDuplicate = parseExtractionValueFormData(duplicateEvidenceForm);
+    await expect(services.reviseExtractionValue(projectId, paper.id, field.id, parsedDuplicate)).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    // Step 5: Cross-project Evidence rejection on non-present state through FormData
+    const otherProject = await services.createProject({ title: `Foreign project ${crypto.randomUUID()}` });
+    const otherPaper = await services.addPaper(otherProject.id, { title: "Foreign Paper" });
+    const foreignEvidence = await services.recordEvidence(otherProject.id, { paperId: otherPaper.id, sourceText: "Foreign source", pageNumber: 1 });
+    const foreignEvidenceForm = new FormData();
+    foreignEvidenceForm.set("state", "not_applicable");
+    foreignEvidenceForm.set("researcherNote", "foreign guard");
+    foreignEvidenceForm.append("evidenceIds", foreignEvidence.id);
+    const parsedForeign = parseExtractionValueFormData(foreignEvidenceForm);
+    await expect(services.reviseExtractionValue(projectId, paper.id, field.id, parsedForeign)).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
   });
 });

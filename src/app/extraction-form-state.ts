@@ -39,13 +39,21 @@ function formText(form: FormData, key: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** Preserve the released parser behavior, including its non-present note omission. */
+/** Preserve researcher notes for present, not_reported, and not_applicable states, while preserving released note omission for cleared. */
 export function parseExtractionValueFormData(form: FormData) {
   const state = formText(form, "state") || "present";
   const evidenceIds = form.getAll("evidenceIds").filter((id): id is string => typeof id === "string");
+  if (state === "cleared") {
+    return {
+      state: "cleared" as const,
+      evidenceIds,
+    };
+  }
+  const researcherNote = formText(form, "researcherNote") || undefined;
   if (state !== "present") {
     return {
-      state: state as "not_reported" | "not_applicable" | "cleared",
+      state: state as "not_reported" | "not_applicable",
+      researcherNote,
       evidenceIds,
     };
   }
@@ -57,7 +65,7 @@ export function parseExtractionValueFormData(form: FormData) {
   return {
     state: "present" as const,
     value,
-    researcherNote: formText(form, "researcherNote") || undefined,
+    researcherNote,
     evidenceIds,
   };
 }

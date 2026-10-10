@@ -100,6 +100,6 @@ export default async function ExtractionPaperPage({ params, searchParams }: {
       </section>
       <p className="footer-note">Each save records the complete observation, note, and Evidence set as a new immutable revision. Older revisions retain their own provenance. A successful save redirects the page, so unsaved drafts in other Fields are not guaranteed to survive.</p>
       <p className="footer-note">The Evidence browser loads bounded pages only when opened. Passage and note search checks complete Evidence text, so the matching words may be outside the visible preview; open exact Evidence detail to inspect the full source record.</p>
-      <p className="footer-note">When a response state is not “Value reported,” the released save parser omits the researcher note from the new revision. The note remains visible in the draft until a successful save, but is not saved for those states.</p>
+      <p className="footer-note">Researcher notes are preserved for “Value reported,” “Not reported in paper,” and “Not applicable” responses. When clearing a response, the researcher note is omitted from the new revision.</p>
     </div></div>;
 }
