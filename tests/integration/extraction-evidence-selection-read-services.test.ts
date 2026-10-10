@@ -140,4 +140,103 @@ describe("Slice 55 bounded Extraction Evidence candidate reads", () => {
     await expect(candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, foreignPaper.id)).rejects.toMatchObject({ code: "CROSS_PROJECT_REFERENCE" });
     await expect(candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, emptyPaper.id, { pageSize: 1, after: "bad-cursor" })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
+
+  it("filters complete same-Paper passage and note text before keyset pagination", async () => {
+    const project = await services!.createProject({ title: `Slice 57 search ${randomUUID()}` });
+    const paper = await services!.addPaper(project.id, { title: "Search paper" });
+    const otherPaper = await services!.addPaper(project.id, { title: "Other search paper" });
+    const longSource = `${"prefix ".repeat(190)}RARE-TAIL-Ω`;
+    const longNote = `${"researcher note ".repeat(50)}NOTE-TAIL-NEEDLE`;
+    const drafts = [
+      { sourceText: longSource, note: null, pageNumber: 1 },
+      { sourceText: "Ordinary source", note: longNote, pageNumber: 2 },
+      { sourceText: "COMMON term in the passage", note: null, pageNumber: 3 },
+      { sourceText: "Another common TERM result", note: "unrelated" , pageNumber: 4 },
+      { sourceText: "COMMON term in a third passage", note: null, pageNumber: 5 },
+      { sourceText: "Literal token 50%_\\Path 'quoted'", note: null, pageNumber: 6 },
+      { sourceText: "CAFÉ 🙂 in Unicode text", note: null, pageNumber: 7 },
+      { sourceText: `Replacement marker ${"\uFFFD".repeat(3)} is literal searchable text`, note: null, pageNumber: 8 },
+    ];
+    const evidenceIds: string[] = [];
+    for (const draft of drafts) {
+      const [row] = await appClient!<{ id: string }[]>`insert into evidence
+        (project_id,paper_id,source_text,note,page_number,created_at,updated_at)
+        values (${project.id}::uuid,${paper.id}::uuid,${draft.sourceText},${draft.note},${draft.pageNumber},'2026-10-06T12:00:00.123456Z'::timestamptz,'2026-10-06T12:00:00.123456Z'::timestamptz)
+        returning id::text as id`;
+      evidenceIds.push(row.id);
+    }
+    const otherPaperEvidence = await services!.recordEvidence(project.id, {
+      paperId: otherPaper.id, sourceText: "COMMON term in another Paper", pageNumber: 1,
+    });
+
+    queryLog.length = 0;
+    const firstCommonPage = await candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, {
+      pageSize: 1, query: "  COMMON term  ",
+    });
+    expect(firstCommonPage.items).toHaveLength(1);
+    expect(firstCommonPage.hasNext).toBe(true);
+    expect(firstCommonPage.nextCursor).toBeTruthy();
+    expect(queryLog.filter((query) => /^\s*(select|with)\b/i.test(query))).toHaveLength(3);
+    await expect(candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, {
+      pageSize: 1, query: "common TERM", after: firstCommonPage.nextCursor,
+    })).rejects.toMatchObject({ code: "VALIDATION_ERROR", details: { input: "pagination" } });
+
+    const traversed: string[] = [];
+    let after: string | null = null;
+    do {
+      const result = await candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, {
+        pageSize: 1, query: "COMMON term", after,
+      });
+      traversed.push(...result.items.map((item) => item.id));
+      after = result.nextCursor;
+    } while (after);
+    const oracle = await appClient!<{ id: string }[]>`select e.id::text as id
+      from evidence e where e.project_id=${project.id}::uuid and e.paper_id=${paper.id}::uuid
+        and (position(lower('common term') in lower(e.source_text)) > 0
+          or position(lower('common term') in lower(e.note)) > 0)
+      order by e.created_at desc,e.id asc`;
+    expect(traversed).toEqual(oracle.map((row) => row.id));
+    expect(new Set(traversed).size).toBe(traversed.length);
+    expect(traversed).not.toContain(otherPaperEvidence.id);
+
+    const passageHit = await candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, { query: "rare-tail-ω" });
+    expect(passageHit.items).toHaveLength(1);
+    expect(passageHit.items[0]).toMatchObject({ sourceTextTruncated: true, notePreview: null });
+    expect(passageHit.items[0]!.sourceTextPreview).not.toContain("RARE-TAIL-Ω");
+
+    const noteHit = await candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, { query: "note-tail-needle" });
+    expect(noteHit.items).toHaveLength(1);
+    expect(noteHit.items[0]).toMatchObject({ sourceTextPreview: "Ordinary source", noteTruncated: true });
+    expect(noteHit.items[0]!.notePreview).not.toContain("NOTE-TAIL-NEEDLE");
+
+    expect((await candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, { query: "50%_\\path 'quoted'" })).items.map((item) => item.id))
+      .toEqual([evidenceIds[5]]);
+    expect((await candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, { query: "café 🙂" })).items.map((item) => item.id))
+      .toEqual([evidenceIds[6]]);
+
+    queryLog.length = 0;
+    const noMatches = await candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, { query: "no-such-evidence-term" });
+    expect(noMatches).toMatchObject({ items: [], hasNext: false, nextCursor: null });
+    expect(queryLog.filter((query) => /^\s*(select|with)\b/i.test(query))).toHaveLength(2);
+
+    const emptyQuery = await candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, { query: "   " });
+    const omittedQuery = await candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id);
+    expect(emptyQuery.items.map((item) => item.id)).toEqual(omittedQuery.items.map((item) => item.id));
+    const replacementQuery = "\uFFFD".repeat(3);
+    const replacementHit = await candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, { query: replacementQuery });
+    expect(replacementHit.items.map((item) => item.id)).toEqual([evidenceIds[7]]);
+    await expect(candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, {
+      query: replacementQuery, after: "bad-cursor",
+    })).rejects.toMatchObject({ code: "VALIDATION_ERROR", details: { input: "pagination" } });
+    queryLog.length = 0;
+    await expect(candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, { query: "bad\0query", after: "bad-cursor" }))
+      .rejects.toMatchObject({ code: "VALIDATION_ERROR", details: { input: "query" } });
+    expect(queryLog).toHaveLength(0);
+    await expect(candidateReads!.getPaperExtractionEvidenceCandidatePage(project.id, paper.id, { query: null }))
+      .rejects.toMatchObject({ code: "VALIDATION_ERROR", details: { input: "query" } });
+    expect(queryLog).toHaveLength(0);
+
+    const selectedOutsideSearch = await candidateReads!.getPaperExtractionEvidenceSupportMetadata(project.id, paper.id, [evidenceIds[0]!]);
+    expect(selectedOutsideSearch.map((item) => item.id)).toEqual([evidenceIds[0]]);
+  });
 });

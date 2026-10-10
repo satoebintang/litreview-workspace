@@ -6,7 +6,7 @@ import { ExtractionRevisionForm, type ExtractionRevisionFormField, type Extracti
 import { ExtractionWorksheetEvidencePicker } from "./ExtractionWorksheetEvidencePicker";
 import { ExtractionWorksheetProvider } from "./ExtractionWorksheetContext";
 
-type BrowseState = { open: boolean; fieldId: string | null; after: string | null; pageSize: number };
+type BrowseState = { open: boolean; fieldId: string | null; after: string | null; pageSize: number; query: string; queryError: string | null };
 
 export type ExtractionWorksheetItem = {
   field: ExtractionRevisionFormField;

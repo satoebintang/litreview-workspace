@@ -114,6 +114,14 @@ npm run test:e2e -- tests/e2e/<spec-file>.spec.ts
 
 `test:fast` covers unit tests, architecture tests, and root-level tests without resolving a database URL. `test:integration` owns one disposable database for the serial integration partition. `test:partition-inventory` lists both Vitest configurations and fails on overlap, omission, an unknown test path, configuration errors, or zero selected files. Keep file parallelism disabled until test isolation is proven.
 
+The Extraction Evidence passage/note search benchmark runs separately with
+`npx --no-install tsx scripts/benchmark-extraction-evidence-search-read-paths.ts`.
+It requires PostgreSQL 16 and a `DATABASE_URL` role permitted to create and
+drop its uniquely named disposable database. It writes the measured SQL plans
+and results to
+[`docs/benchmarks/slice57-extraction-evidence-search-read-paths.json`](docs/benchmarks/slice57-extraction-evidence-search-read-paths.json)
+and does not add a package script or schema objects.
+
 ### Complete local verification
 
 ```bash

@@ -3,6 +3,7 @@ import {
   decodeExtractionEvidenceCandidateCursor,
   effectiveExtractionEvidencePageSize,
   encodeExtractionEvidenceCandidateCursor,
+  hashExtractionEvidenceSearchQuery,
   EXTRACTION_EVIDENCE_CURSOR_MAX_LENGTH,
 } from "@/application/extraction-evidence-selection-cursor";
 
@@ -24,6 +25,28 @@ describe("Extraction Evidence candidate cursor", () => {
     const encoded = encodeExtractionEvidenceCandidateCursor(cursor);
     expect(decodeExtractionEvidenceCandidateCursor(encoded, { projectId, paperId, pageSize: 20 })).toEqual(cursor);
     expect(cursor.createdAt).toContain(".123456Z");
+  });
+
+  it("emits a compact v2 cursor bound to the normalized search query", () => {
+    const queryHash = hashExtractionEvidenceSearchQuery("rare Ω passage");
+    const searchedCursor = { ...cursor, version: 2 as const, queryHash };
+    const encoded = encodeExtractionEvidenceCandidateCursor(searchedCursor);
+    expect(encoded.length).toBeLessThan(EXTRACTION_EVIDENCE_CURSOR_MAX_LENGTH);
+    expect(decodeExtractionEvidenceCandidateCursor(encoded, { projectId, paperId, pageSize: 20, queryHash })).toEqual(searchedCursor);
+    expect(() => decodeExtractionEvidenceCandidateCursor(encoded, {
+      projectId, paperId, pageSize: 20, queryHash: hashExtractionEvidenceSearchQuery("different"),
+    })).toThrow();
+    expect(() => decodeExtractionEvidenceCandidateCursor(encoded, { projectId, paperId, pageSize: 20 })).toThrow();
+  });
+
+  it("accepts legacy v1 cursors only for an empty query", () => {
+    const encoded = encodeExtractionEvidenceCandidateCursor(cursor);
+    expect(decodeExtractionEvidenceCandidateCursor(encoded, {
+      projectId, paperId, pageSize: 20, queryHash: hashExtractionEvidenceSearchQuery(""),
+    })).toEqual(cursor);
+    expect(() => decodeExtractionEvidenceCandidateCursor(encoded, {
+      projectId, paperId, pageSize: 20, queryHash: hashExtractionEvidenceSearchQuery("passage"),
+    })).toThrow();
   });
 
   it("rejects malformed, noncanonical, unsupported, mismatched, and overlong cursors", () => {
